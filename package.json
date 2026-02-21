@@ -1,0 +1,37 @@
+{
+  "name": "pickup",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "dev:native": "turbo -F native dev",
+    "dev:web": "turbo -F web dev",
+    "dev:server": "turbo -F server dev",
+    "db:push": "turbo -F @pickup/db db:push",
+    "db:studio": "turbo -F @pickup/db db:studio",
+    "db:generate": "turbo -F @pickup/db db:generate",
+    "db:migrate": "turbo -F @pickup/db db:migrate",
+    "db:local": "turbo -F @pickup/db db:local",
+    "check": "biome check --write .",
+    "ruler:apply": "pnpm dlx @intellectronica/ruler@latest apply --local-only"
+  },
+  "dependencies": {
+    "@pickup/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.0",
+    "@pickup/config": "workspace:*",
+    "@types/node": "^22.13.14",
+    "turbo": "^2.6.3",
+    "typescript": "catalog:"
+  },
+  "packageManager": "pnpm@10.28.2"
+}

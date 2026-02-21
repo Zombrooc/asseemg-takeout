@@ -1,0 +1,3 @@
+{
+  "extends": "@pickup/config/tsconfig.base.json"
+}
