@@ -1,0 +1,43 @@
+---
+description: Regras do ecossistema Takeout Offline (retirada de kit, 100% offline)
+globs: apps/web/src-tauri/**/*.rs,apps/native/**/*.ts,apps/native/**/*.tsx,packages/api/**/*.ts,apps/web/src/lib/takeout-api.ts
+alwaysApply: true
+---
+
+# Takeout Offline
+
+## Visão
+
+- Sistema **100% offline** para takeout em eventos de corrida. **Desktop** = fonte de verdade (SQLite + API HTTP na porta 5555, mesmo processo/Tauri). **Mobile** = cliente na LAN; conecta à API do Desktop. Sem dependência de internet.
+
+## Arquitetura
+
+- **Componentes**: Desktop (Tauri + frontend TanStack Router + API HTTP **Tokio/Axum** em Rust + SQLite), Mobile (React Native em `apps/native`), contratos no frontend (`apps/web/src/lib/takeout-api.ts`) e em `packages/api` quando houver.
+- **API em Rust** (`apps/web/src-tauri/src/api/`): handlers (Axum) → services → repository → SQLite (rusqlite). Não há Express; o servidor HTTP sobe no `setup` do Tauri em 0.0.0.0:5555.
+- **Camadas** (não pular): Handler → Service → Repository → SQLite.
+
+## Código
+
+- **Backend**: Rust em `apps/web/src-tauri/src/api/` (handlers, services, repository, db). Testes em `#[cfg(test)]` e em `tests/api_integration.rs`.
+- **Frontend**: TypeScript em `apps/native`, `apps/web`; camelCase; DTOs alinhados às respostas da API (camelCase onde aplicável).
+
+## Testes
+
+- TDD para novas features. Backend: testes unitários nos services/repository (SQLite em memória); testes de integração em `tests/api_integration.rs` (Axum + oneshot). Todo bug com teste de regressão. Padrão: arrange–act–assert.
+
+## API (Axum, porta 5555)
+
+- **Takeout**: GET `/health`, GET `/pair/info`, POST `/pair/renew`, POST `/pair`, GET `/participants/search?q=...&mode=...`, GET `/participants/:id`, POST `/takeout/confirm`, GET `/audit`, POST `/admin/import`. POST `/takeout/confirm` usa `request_id` (UUID) para idempotência. Respostas JSON; HTTP 200, 400, 401, 404, 422.
+- **Sync (somente com internet)**: GET `/sync/pull?eventId=`, POST `/sync/push` — proxy para a plataforma de ticket (thevent); 503 quando sem conectividade. Base URL thevent: `THEVENT_BASE_URL`.
+
+## Segurança (LAN)
+
+- Pareamento: QR com `base_url` (http://IP:5555) e `pairing_token` (curto, expirável). Mobile: POST `/pair` com `device_id` + `pairing_token` → `access_token`. Requisições: `Authorization: Bearer <access_token>`. Token de pareamento expirável/rotacionável na UI Desktop.
+
+## Idempotência e consistência
+
+- POST `/takeout/confirm`: mesma `request_id` retorna estado já persistido (CONFIRMED/DUPLICATE) sem reaplicar. Tabela `takeout_events`: status CONFIRMED | DUPLICATE | FAILED; `request_id` para deduplicação. Mobile: fila local, retry com backoff; remover da fila só quando resposta CONFIRMED.
+
+## Auditoria e logs
+
+- `takeout_events`: request_id, ticket_id, device_id, status, payload_json, created_at. Logs estruturados (nível, mensagem, request_id/ticket_id). GET `/audit` opcional.

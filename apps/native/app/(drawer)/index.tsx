@@ -4,10 +4,13 @@ import { Button, Chip, Separator, Spinner, Surface, useThemeColor } from "heroui
 import { Text, View } from "react-native";
 
 import { Container } from "@/components/container";
-import { trpc } from "@/utils/trpc";
+import { fetchTakeoutHealth } from "@/utils/trpc";
 
 export default function Home() {
-  const healthCheck = useQuery(trpc.healthCheck.queryOptions());
+  const healthCheck = useQuery({
+    queryKey: ["takeout-health"],
+    queryFn: fetchTakeoutHealth,
+  });
   const successColor = useThemeColor("success");
   const dangerColor = useThemeColor("danger");
 
@@ -39,7 +42,7 @@ export default function Home() {
               className={`w-2 h-2 rounded-full mr-3 ${isConnected ? "bg-success" : "bg-muted"}`}
             />
             <View className="flex-1">
-              <Text className="text-foreground text-sm font-medium">TRPC Backend</Text>
+              <Text className="text-foreground text-sm font-medium">Takeout API</Text>
               <Text className="text-muted text-xs mt-0.5">
                 {isLoading
                   ? "Checking connection..."

@@ -2,25 +2,16 @@
   "name": "@pickup/api",
   "type": "module",
   "exports": {
-    ".": {
-      "default": "./src/index.ts"
-    },
-    "./*": {
-      "default": "./src/*.ts"
-    }
+    ".": { "default": "./src/index.ts" },
+    "./*": { "default": "./src/*.ts" }
   },
   "scripts": {},
   "dependencies": {
-    "@pickup/db": "workspace:*",
     "@pickup/env": "workspace:*",
-    "@trpc/client": "catalog:",
-    "@trpc/server": "catalog:",
-    "dotenv": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@pickup/config": "workspace:*",
-    "@types/express": "catalog:",
     "typescript": "catalog:"
   }
 }

@@ -1,33 +1,4 @@
-import type { AppRouter } from "@pickup/api/routers/index";
+import { QueryClient } from "@tanstack/react-query";
 
-import { env } from "@pickup/env/web";
-import { QueryCache, QueryClient } from "@tanstack/react-query";
-import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import { createTRPCOptionsProxy } from "@trpc/tanstack-react-query";
-import { toast } from "sonner";
-
-export const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (error, query) => {
-      toast.error(error.message, {
-        action: {
-          label: "retry",
-          onClick: query.invalidate,
-        },
-      });
-    },
-  }),
-});
-
-export const trpcClient = createTRPCClient<AppRouter>({
-  links: [
-    httpBatchLink({
-      url: `${env.VITE_SERVER_URL}/trpc`,
-    }),
-  ],
-});
-
-export const trpc = createTRPCOptionsProxy<AppRouter>({
-  client: trpcClient,
-  queryClient,
-});
+/** tRPC removed; takeout uses REST (takeout-api.ts) against Axum on :5555. */
+export const queryClient = new QueryClient();

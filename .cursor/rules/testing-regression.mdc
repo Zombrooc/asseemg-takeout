@@ -1,0 +1,30 @@
+---
+description: Exige testes unitários/integração para novas features e regressão em bugs
+alwaysApply: true
+---
+
+# Testes e Regressão
+
+- **Novo bug**: sempre criar teste (unitário ou integração) que reproduz o bug antes de corrigir; o teste deve falhar com o bug e passar após o fix (regressão).
+- **Nova feature**: criar pelo menos um teste unitário e/ou de integração que cubra o comportamento principal.
+- Preferir testes ao lado do código ou em `__tests__`. Padrão: `describe`/`it`, arrange–act–assert.
+- Integração: SQLite em memória quando envolver banco; mocks mínimos.
+
+## Exemplo – bug fix com regressão
+
+```typescript
+// Antes: corrigir o bug
+// 1. Criar teste que falha com o comportamento atual
+it('retorna 422 quando request_id duplicado', async () => {
+  const res = await confirmTakeout({ request_id: 'dup-123', ... });
+  expect(res.status).toBe(422);
+  expect(res.body.status).toBe('DUPLICATE');
+});
+// 2. Corrigir o código até o teste passar
+```
+
+## Checklist
+
+- [ ] Bug: teste de regressão criado que falhava antes e passa depois
+- [ ] Feature: pelo menos um teste cobrindo o fluxo principal
+- [ ] Teste unitário para lógica isolada; integração para API/DB quando necessário
