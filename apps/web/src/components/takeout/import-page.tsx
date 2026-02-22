@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -9,122 +9,124 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { postImport } from "@/lib/takeout-api";
+import type { PullParticipant, PullResponse } from "@/lib/takeout-api";
+import { postImportJson } from "@/lib/takeout-api";
 import { toast } from "sonner";
 
-function parseCsv(text: string): string[][] {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  return lines.map((line) => {
-    const row: string[] = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') {
-        inQuotes = !inQuotes;
-      } else if ((c === "," && !inQuotes) || c === "\n") {
-        row.push(cur.trim());
-        cur = "";
-      } else {
-        cur += c;
-      }
-    }
-    row.push(cur.trim());
-    return row;
-  });
-}
-
 export function ImportPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
-  const [rows, setRows] = useState<string[][]>([]);
+  const [parsed, setParsed] = useState<PullResponse | null>(null);
+  const [participants, setParticipants] = useState<PullParticipant[] | null>(null);
 
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setFile(f);
+    setParticipants(null);
     const reader = new FileReader();
     reader.onload = () => {
-      const text = String(reader.result ?? "");
-      setRows(parseCsv(text));
+      try {
+        const text = String(reader.result ?? "");
+        const data = JSON.parse(text) as PullResponse;
+        if (!data.eventId || !Array.isArray(data.participants)) {
+          toast.error("JSON inválido: esperado eventId e participants");
+          setParsed(null);
+          return;
+        }
+        setParsed(data);
+      } catch {
+        toast.error("Arquivo não é um JSON válido");
+        setParsed(null);
+      }
     };
     reader.readAsText(f, "utf-8");
   }, []);
 
   const importMutation = useMutation({
-    mutationFn: (f: File) => postImport(f),
+    mutationFn: (data: PullResponse) => postImportJson(data),
     onSuccess: (res) => {
-      toast.success(`${res.imported} linha(s) importada(s)`);
-      if (res.errors.length) toast.error(res.errors.join("; "));
+      toast.success(`${res.participants.length} participante(s) importado(s)`);
+      setParticipants(res.participants);
     },
-    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao importar"),
+    onError: (err) =>
+      toast.error(err instanceof Error ? err.message : "Erro ao importar"),
   });
 
   const handleImport = () => {
-    if (!file) {
-      toast.error("Selecione um arquivo CSV");
+    if (!parsed) {
+      toast.error("Selecione um arquivo JSON válido");
       return;
     }
-    importMutation.mutate(file);
+    importMutation.mutate(parsed);
   };
 
-  const [header, ...body] = rows;
+  const list = participants ?? parsed?.participants ?? [];
 
   return (
     <div className="container mx-auto max-w-5xl space-y-6 px-4 py-6">
-      <h1 className="text-xl font-semibold">Importar CSV</h1>
+      <h1 className="text-xl font-semibold">Importar JSON (checkin-sync)</h1>
 
       <div className="flex flex-wrap items-center gap-4">
-        <label className="cursor-pointer">
-          <span className="sr-only">Selecionar CSV</span>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            className="hidden"
-            onChange={onFileChange}
-          />
-          <Button type="button" variant="outline" asChild>
-            <span>Selecionar arquivo</span>
-          </Button>
-        </label>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={onFileChange}
+          aria-label="Selecionar JSON"
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          Selecionar arquivo
+        </Button>
         {file && (
           <span className="text-sm text-muted-foreground">{file.name}</span>
         )}
       </div>
 
-      {rows.length > 0 && (
+      {parsed && (
+        <div className="flex gap-2">
+          <Button
+            onClick={handleImport}
+            disabled={importMutation.isPending}
+          >
+            {importMutation.isPending ? "Importando..." : "Importar e salvar no DB"}
+          </Button>
+        </div>
+      )}
+
+      {list.length > 0 && (
         <>
+          <h2 className="text-lg font-medium">
+            Participantes ({list.length})
+          </h2>
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  {header?.map((cell, i) => (
-                    <TableHead key={i}>{cell}</TableHead>
-                  ))}
+                  <TableHead>Nome</TableHead>
+                  <TableHead>CPF</TableHead>
+                  <TableHead>Ingresso</TableHead>
+                  <TableHead>QR Code</TableHead>
+                  <TableHead>Check-in</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {body.slice(0, 20).map((row, i) => (
-                  <TableRow key={i}>
-                    {row.map((cell, j) => (
-                      <TableCell key={j}>{cell}</TableCell>
-                    ))}
+                {list.map((p) => (
+                  <TableRow key={p.seatId}>
+                    <TableCell>{p.participantName}</TableCell>
+                    <TableCell>{p.cpf}</TableCell>
+                    <TableCell>{p.ticketName}</TableCell>
+                    <TableCell className="font-mono text-xs">{p.qrCode}</TableCell>
+                    <TableCell>{p.checkinDone ? "Sim" : "Não"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-          </div>
-          {body.length > 20 && (
-            <p className="text-sm text-muted-foreground">
-              Mostrando 20 de {body.length} linhas
-            </p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              onClick={handleImport}
-              disabled={importMutation.isPending}
-            >
-              {importMutation.isPending ? "Importando..." : "Importar"}
-            </Button>
           </div>
         </>
       )}

@@ -12,6 +12,14 @@ CREATE TABLE IF NOT EXISTS paired_devices (
   access_token TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS events (
+  event_id TEXT PRIMARY KEY,
+  name TEXT,
+  start_date TEXT,
+  end_date TEXT,
+  start_time TEXT,
+  imported_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS takeout_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   request_id TEXT NOT NULL UNIQUE,
@@ -23,6 +31,7 @@ CREATE TABLE IF NOT EXISTS takeout_events (
 );
 CREATE TABLE IF NOT EXISTS participants (
   id TEXT PRIMARY KEY,
+  event_id TEXT,
   name TEXT,
   cpf TEXT,
   birth_date TEXT,
@@ -51,6 +60,7 @@ impl DbPool {
   pub fn open(path: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {
     let conn = Connection::open(path)?;
     conn.execute_batch(SCHEMA_SQL)?;
+    let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
     Ok(Self {
       conn: Mutex::new(conn),
     })
@@ -59,6 +69,7 @@ impl DbPool {
   pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(SCHEMA_SQL)?;
+    let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
     Ok(Self {
       conn: Mutex::new(conn),
     })

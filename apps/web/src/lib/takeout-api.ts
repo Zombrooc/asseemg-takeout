@@ -14,6 +14,62 @@ export type AuditEvent = {
 };
 export type AuditParams = { status?: string; from?: string; to?: string };
 
+export type EventSummary = {
+  eventId: string;
+  name: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  startTime: string | null;
+  importedAt: string;
+};
+
+export type EventParticipant = {
+  id: string;
+  name: string | null;
+  cpf: string | null;
+  ticketId: string;
+  qrCode: string;
+  checkinDone: boolean;
+};
+
+export type TakeoutConfirmPayload = {
+  request_id: string;
+  ticket_id: string;
+  device_id: string;
+  payload_json?: string;
+};
+
+export type TakeoutConfirmResponse = { status: string };
+
+/** Same structure as thevent sync/checkin pull and POST /sync/import body. */
+export type CustomFormResponse = {
+  name: string;
+  label: string;
+  type: string;
+  response: unknown;
+};
+export type PullParticipant = {
+  seatId: string;
+  ticketId: string;
+  ticketName: string;
+  qrCode: string;
+  participantName: string;
+  cpf: string;
+  birthDate: string | null;
+  age: number | null;
+  customFormResponses: CustomFormResponse[];
+  checkinDone: boolean;
+  checkedInAt: string | null;
+};
+export type PullResponse = {
+  eventId: string;
+  event: { id: string; name: string; startDate?: string; endDate?: string | null; startTime?: string } | null;
+  exportedAt: string;
+  customForm: unknown[];
+  participants: PullParticipant[];
+  checkins: unknown[];
+};
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...init,
@@ -44,15 +100,33 @@ export async function getAudit(params?: AuditParams): Promise<AuditEvent[]> {
   return request<AuditEvent[]>(`/audit${query ? `?${query}` : ""}`);
 }
 
-export async function postImport(file: File): Promise<{ imported: number; errors: string[] }> {
-  const form = new FormData();
-  form.append("file", file);
-  const res = await fetch(`${BASE_URL}/admin/import`, {
+/** Import pull JSON (eventId, event, participants, customForm, checkins). Saves to DB and returns the same data. */
+export async function postImportJson(data: PullResponse): Promise<PullResponse> {
+  const res = await fetch(`${BASE_URL}/sync/import`, {
     method: "POST",
-    body: form,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json() as Promise<{ imported: number; errors: string[] }>;
+  return res.json() as Promise<PullResponse>;
+}
+
+export async function getEvents(): Promise<EventSummary[]> {
+  return request<EventSummary[]>("/events");
+}
+
+export async function getEventParticipants(eventId: string): Promise<EventParticipant[]> {
+  return request<EventParticipant[]>(`/events/${encodeURIComponent(eventId)}/participants`);
+}
+
+export async function postTakeoutConfirm(payload: TakeoutConfirmPayload): Promise<TakeoutConfirmResponse> {
+  const res = await fetch(`${BASE_URL}/takeout/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<TakeoutConfirmResponse>;
 }
 
 export function getTakeoutBaseUrl(): string {

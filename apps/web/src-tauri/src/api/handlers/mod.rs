@@ -9,6 +9,7 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::api::db::DbPool;
+use crate::api::repository::EventsRepository;
 use crate::api::services::{PairingService, TakeoutService};
 use crate::api::thevent;
 
@@ -32,10 +33,13 @@ pub fn router(state: AppState) -> Router {
     .route("/pair", post(pair))
     .route("/participants/search", get(participants_search))
     .route("/participants/:id", get(participants_get))
+    .route("/events", get(events_list))
+    .route("/events/:event_id/participants", get(events_participants))
     .route("/takeout/confirm", post(takeout_confirm))
     .route("/audit", get(audit))
     .route("/admin/import", post(admin_import))
     .route("/sync/pull", get(sync_pull))
+    .route("/sync/import", post(sync_import))
     .route("/sync/push", post(sync_push))
     .layer(cors)
     .with_state(state)
@@ -129,6 +133,31 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
   v.strip_prefix("Bearer ").map(String::from)
 }
 
+async fn events_list(State(state): State<AppState>) -> impl IntoResponse {
+  match EventsRepository::list_events(&state.pool) {
+    Ok(events) => (StatusCode::OK, Json(events)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": format!("{}", e) })),
+    )
+      .into_response(),
+  }
+}
+
+async fn events_participants(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+) -> impl IntoResponse {
+  match EventsRepository::list_participants_by_event(&state.pool, &event_id) {
+    Ok(participants) => (StatusCode::OK, Json(participants)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": format!("{}", e) })),
+    )
+      .into_response(),
+  }
+}
+
 async fn takeout_confirm(
   State(state): State<AppState>,
   headers: HeaderMap,
@@ -203,7 +232,10 @@ struct SyncPullQuery {
   event_id: Option<String>,
 }
 
-async fn sync_pull(Query(q): Query<SyncPullQuery>) -> impl IntoResponse {
+async fn sync_pull(
+  State(state): State<AppState>,
+  Query(q): Query<SyncPullQuery>,
+) -> impl IntoResponse {
   let event_id = match &q.event_id {
     Some(id) if !id.is_empty() => id.as_str(),
     _ => {
@@ -222,18 +254,39 @@ async fn sync_pull(Query(q): Query<SyncPullQuery>) -> impl IntoResponse {
       .into_response();
   }
   match thevent::pull(event_id).await {
-    Ok(body) => {
-      let mut headers = HeaderMap::new();
-      headers.insert(
-        header::CONTENT_TYPE,
-        "application/json;charset=utf-8"
-          .parse()
-          .unwrap(),
-      );
-      (StatusCode::OK, headers, body).into_response()
+    Ok(pull_response) => {
+      if let Err(e) = crate::api::repository::import_pull_to_db(&state.pool, &pull_response) {
+        return (
+          StatusCode::INTERNAL_SERVER_ERROR,
+          Json(serde_json::json!({ "success": false, "reason": e })),
+        )
+          .into_response();
+      }
+      (StatusCode::OK, Json(pull_response)).into_response()
     }
     Err(e) => (
       StatusCode::BAD_GATEWAY,
+      Json(serde_json::json!({ "success": false, "reason": e })),
+    )
+      .into_response(),
+  }
+}
+
+async fn sync_import(
+  State(state): State<AppState>,
+  Json(body): Json<thevent::PullResponse>,
+) -> impl IntoResponse {
+  if body.event_id.is_empty() {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "success": false, "reason": "eventId required" })),
+    )
+      .into_response();
+  }
+  match crate::api::repository::import_pull_to_db(&state.pool, &body) {
+    Ok(()) => (StatusCode::OK, Json(body)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
       Json(serde_json::json!({ "success": false, "reason": e })),
     )
       .into_response(),

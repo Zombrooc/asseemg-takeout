@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 pub struct TakeoutService;
 
-#[derive(serde::Deserialize)]
+#[derive(Clone, serde::Deserialize)]
 pub struct ConfirmTakeoutPayload {
   pub request_id: String,
   pub ticket_id: String,
@@ -13,7 +13,7 @@ pub struct ConfirmTakeoutPayload {
   pub payload_json: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct ConfirmTakeoutResponse {
   pub status: String,
 }
