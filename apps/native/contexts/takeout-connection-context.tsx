@@ -1,9 +1,12 @@
 import { env } from "@pickup/env/native";
 import * as SecureStore from "expo-secure-store";
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 
 import { createTakeoutClient } from "@/lib/takeout-api";
 import type { TakeoutApi } from "@/lib/takeout-api";
+
+const HEALTH_CHECK_INTERVAL_MS = 15_000;
 
 const KEYS = {
   baseUrl: "takeout_base_url",
@@ -25,11 +28,13 @@ type ConnectionState = {
   deviceId: string | null;
   isPaired: boolean;
   isLoading: boolean;
+  isReachable: boolean;
 };
 
 type TakeoutConnectionContextValue = ConnectionState & {
   setConnection: (baseUrl: string, accessToken: string, deviceId: string) => Promise<void>;
   clearConnection: () => Promise<void>;
+  checkReachability: () => Promise<void>;
   api: TakeoutApi | null;
   defaultBaseUrl: string;
 };
@@ -45,7 +50,9 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
     deviceId: null,
     isPaired: false,
     isLoading: true,
+    isReachable: false,
   });
+  const checkInFlight = useRef(false);
 
   const loadStored = useCallback(async () => {
     try {
@@ -61,11 +68,45 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
         deviceId,
         isPaired,
         isLoading: false,
+        isReachable: false,
       });
     } catch {
       setState((s) => ({ ...s, isLoading: false }));
     }
   }, []);
+
+  const checkReachability = useCallback(async () => {
+    const url = state.baseUrl;
+    if (!url || checkInFlight.current) return;
+    checkInFlight.current = true;
+    try {
+      const res = await fetch(`${url.replace(/\/$/, "")}/health`, { method: "GET" });
+      const data = (await res.json()) as { status?: string };
+      const ok = res.ok && data.status === "ok";
+      setState((s) => (s.baseUrl === url ? { ...s, isReachable: ok } : s));
+    } catch {
+      setState((s) => (s.baseUrl === url ? { ...s, isReachable: false } : s));
+    } finally {
+      checkInFlight.current = false;
+    }
+  }, [state.baseUrl]);
+
+  useEffect(() => {
+    if (!state.isPaired || !state.baseUrl) {
+      setState((s) => (s.isReachable ? { ...s, isReachable: false } : s));
+      return;
+    }
+    checkReachability();
+    const id = setInterval(checkReachability, HEALTH_CHECK_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [state.isPaired, state.baseUrl]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+      if (next === "active" && state.isPaired && state.baseUrl) checkReachability();
+    });
+    return () => sub.remove();
+  }, [state.isPaired, state.baseUrl, checkReachability]);
 
   useEffect(() => {
     loadStored();
@@ -85,6 +126,7 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
         deviceId,
         isPaired: true,
         isLoading: false,
+        isReachable: true,
       });
     },
     []
@@ -102,6 +144,7 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
       deviceId: null,
       isPaired: false,
       isLoading: false,
+      isReachable: false,
     });
   }, []);
 
@@ -118,10 +161,11 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
       ...state,
       setConnection,
       clearConnection,
+      checkReachability,
       api,
       defaultBaseUrl,
     }),
-    [state, setConnection, clearConnection, api]
+    [state, setConnection, clearConnection, checkReachability, api]
   );
 
   return (

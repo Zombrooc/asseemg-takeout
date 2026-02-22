@@ -15,6 +15,13 @@ export type EventSummary = {
   importedAt: string;
 };
 
+export type CustomFormResponseItem = {
+  name: string;
+  label: string;
+  type: string;
+  response: unknown;
+};
+
 export type EventParticipant = {
   id: string;
   name: string | null;
@@ -24,6 +31,7 @@ export type EventParticipant = {
   ticketName?: string | null;
   qrCode: string;
   checkinDone: boolean;
+  customFormResponses?: CustomFormResponseItem[];
 };
 
 export type TakeoutConfirmPayload = {

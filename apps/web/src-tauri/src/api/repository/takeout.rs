@@ -90,4 +90,14 @@ impl TakeoutRepository {
     }
     Ok(out)
   }
+
+  /// Deletes all takeout_events whose ticket_id belongs to a participant of the given event.
+  pub fn delete_by_event_id(pool: &DbPool, event_id: &str) -> Result<u64, rusqlite::Error> {
+    let conn = pool.conn.lock().map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+    let n = conn.execute(
+      "DELETE FROM takeout_events WHERE ticket_id IN (SELECT t.id FROM tickets t INNER JOIN participants p ON t.participant_id = p.id WHERE p.event_id = ?1)",
+      params![event_id],
+    )?;
+    Ok(n as u64)
+  }
 }

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::api::db::DbPool;
-use crate::api::repository::EventsRepository;
+use crate::api::repository::{EventsRepository, TakeoutRepository};
 use crate::api::services::{PairingService, TakeoutService};
 use crate::api::thevent;
 
@@ -35,6 +35,7 @@ pub fn router(state: AppState) -> Router {
     .route("/participants/:id", get(participants_get))
     .route("/events", get(events_list))
     .route("/events/:event_id/participants", get(events_participants))
+    .route("/events/:event_id/checkins/reset", post(events_checkins_reset))
     .route("/takeout/confirm", post(takeout_confirm))
     .route("/audit", get(audit))
     .route("/admin/import", post(admin_import))
@@ -150,6 +151,20 @@ async fn events_participants(
 ) -> impl IntoResponse {
   match EventsRepository::list_participants_by_event(&state.pool, &event_id) {
     Ok(participants) => (StatusCode::OK, Json(participants)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": format!("{}", e) })),
+    )
+      .into_response(),
+  }
+}
+
+async fn events_checkins_reset(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+) -> impl IntoResponse {
+  match TakeoutRepository::delete_by_event_id(&state.pool, &event_id) {
+    Ok(deleted) => (StatusCode::OK, Json(serde_json::json!({ "deleted": deleted }))).into_response(),
     Err(e) => (
       StatusCode::INTERNAL_SERVER_ERROR,
       Json(serde_json::json!({ "error": format!("{}", e) })),

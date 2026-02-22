@@ -6,6 +6,8 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import { AppThemeProvider } from "@/contexts/app-theme-context";
+import { TakeoutConnectionProvider } from "@/contexts/takeout-connection-context";
+import { TakeoutQueueProcessor } from "@/components/takeout/queue-processor";
 import { queryClient } from "@/utils/trpc";
 
 export const unstable_settings = {
@@ -16,6 +18,7 @@ function StackLayout() {
   return (
     <Stack screenOptions={{}}>
       <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+      <Stack.Screen name="pair" options={{ title: "Parear" }} />
       <Stack.Screen name="modal" options={{ title: "Modal", presentation: "modal" }} />
     </Stack>
   );
@@ -27,9 +30,12 @@ export default function Layout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardProvider>
           <AppThemeProvider>
-            <HeroUINativeProvider>
-              <StackLayout />
-            </HeroUINativeProvider>
+            <TakeoutConnectionProvider>
+              <TakeoutQueueProcessor />
+              <HeroUINativeProvider>
+                <StackLayout />
+              </HeroUINativeProvider>
+            </TakeoutConnectionProvider>
           </AppThemeProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>

@@ -44,7 +44,13 @@ impl PairingService {
   }
 
   fn generate_token() -> Result<(String, String), String> {
-    let token = uuid::Uuid::new_v4().to_string();
+    const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let mut token = String::with_capacity(6);
+    let mut u = uuid::Uuid::new_v4().as_u128();
+    for _ in 0..6 {
+      token.push(CHARS[(u % CHARS.len() as u128) as usize] as char);
+      u /= CHARS.len() as u128;
+    }
     let expires = SystemTime::now() + Duration::from_secs(TOKEN_TTL_SECS);
     let expires_at = expires
       .duration_since(UNIX_EPOCH)

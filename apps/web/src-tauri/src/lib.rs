@@ -23,9 +23,12 @@ pub fn run() {
         }
         _ => api::db::DbPool::open_in_memory().expect("in-memory db"),
       };
+      let base_url = local_ip_address::local_ip()
+        .map(|ip| format!("http://{}:5555", ip))
+        .unwrap_or_else(|_| "http://127.0.0.1:5555".to_string());
       let state = api::handlers::AppState {
         pool: std::sync::Arc::new(pool),
-        base_url: "http://127.0.0.1:5555".to_string(),
+        base_url,
       };
       let router = api::handlers::router(state);
       std::thread::spawn(move || {

@@ -8,7 +8,7 @@
     },
     "name": "pickup",
     "slug": "pickup",
-    "plugins": ["expo-font"],
+    "plugins": ["expo-font",["expo-camera",{"cameraPermission":"Permitir acesso à câmera para escanear o QR de pareamento."}]],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true

@@ -16,6 +16,16 @@ pub struct EventRow {
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CustomFormResponseRow {
+  pub name: String,
+  pub label: String,
+  #[serde(rename = "type")]
+  pub field_type: String,
+  pub response: serde_json::Value,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventParticipantRow {
   pub id: String,
   pub name: Option<String>,
@@ -25,6 +35,7 @@ pub struct EventParticipantRow {
   pub ticket_name: Option<String>,
   pub qr_code: String,
   pub checkin_done: bool,
+  pub custom_form_responses: Option<Vec<CustomFormResponseRow>>,
 }
 
 impl EventsRepository {
@@ -75,12 +86,32 @@ impl EventsRepository {
       let participant_raw: Option<String> = row.get(7)?;
       let ticket_name = ticket_raw
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| v.get("ticketName").and_then(|n| n.as_str()))
-        .map(String::from);
+        .and_then(|v| v.get("ticketName").and_then(|n| n.as_str().map(String::from)));
       let checkin_done = participant_raw
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
         .and_then(|v| v.get("checkinDone").and_then(|b| b.as_bool()))
         .unwrap_or(false);
+      let custom_form_responses = participant_raw
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+        .and_then(|v| v.get("customFormResponses").and_then(|a| a.as_array()).map(|a| a.to_vec()))
+        .map(|arr| {
+          arr.iter()
+            .map(|item| {
+              let name = item.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+              let label = item.get("label").and_then(|l| l.as_str()).unwrap_or("").to_string();
+              let field_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("").to_string();
+              let response = item.get("response").cloned().unwrap_or(serde_json::Value::Null);
+              CustomFormResponseRow {
+                name,
+                label,
+                field_type,
+                response,
+              }
+            })
+            .collect::<Vec<_>>()
+        });
       Ok(EventParticipantRow {
         id,
         name,
@@ -90,6 +121,7 @@ impl EventsRepository {
         ticket_name,
         qr_code,
         checkin_done,
+        custom_form_responses,
       })
     })?;
     rows.collect()

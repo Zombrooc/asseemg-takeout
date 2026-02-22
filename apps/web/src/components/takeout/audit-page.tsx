@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDateTimeBR } from "@/lib/format-date";
 import {
   getAudit,
   type AuditEvent,
@@ -93,7 +94,7 @@ export function AuditPage() {
                     <StatusBadge status={ev.status} />
                   </TableCell>
                   <TableCell className="text-muted-foreground text-xs">
-                    {new Date(ev.created_at).toLocaleString()}
+                    {formatDateTimeBR(ev.created_at)}
                   </TableCell>
                 </TableRow>
               ))

@@ -6,7 +6,7 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:3001",
-    "beforeDevCommand": "pnpm run dev",
+    "beforeDevCommand": "node scripts/dev-with-wait.mjs",
     "beforeBuildCommand": "pnpm run build"
   },
   "app": {

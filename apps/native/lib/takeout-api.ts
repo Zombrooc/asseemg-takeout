@@ -59,6 +59,10 @@ export function createTakeoutClient(config: {
       const query = q.toString();
       return request<AuditEvent[]>(`/audit${query ? `?${query}` : ""}`);
     },
+    postResetEventCheckins: (eventId: string) =>
+      request<{ deleted: number }>(`/events/${encodeURIComponent(eventId)}/checkins/reset`, {
+        method: "POST",
+      }),
   };
 }
 
