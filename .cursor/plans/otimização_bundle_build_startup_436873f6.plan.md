@@ -16,12 +16,12 @@ Decisões e baseline já fechados conforme documento do usuário. Abaixo: mapeam
 | Item                                                                     | Situação                                                                                            |
 | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
 | [apps/web/src-tauri/tauri.conf.json](apps/web/src-tauri/tauri.conf.json) | `frontendDist: "../dist"` — alinhar a `../dist/web` quando Vite outDir for `dist/web`               |
-| [apps/web/src/routes/\_\_root.tsx](apps/web/src/routes/__root.tsx)       | Devtools importados estaticamente (linhas 3–5, 55–56) → mover para import dinâmico só em DEV        |
+| [apps/web/src/routes/root.tsx](apps/web/src/routes/__root.tsx)           | Devtools importados estaticamente (linhas 3–5, 55–56) → mover para import dinâmico só em DEV        |
 | [apps/web/vite.config.ts](apps/web/vite.config.ts)                       | Sem `build.outDir`, sem `manualChunks`                                                              |
 | [apps/web/src-tauri/Cargo.toml](apps/web/src-tauri/Cargo.toml)           | Sem `[profile.release]`; sem `.cargo/config.toml` para target-dir                                   |
 | [apps/web/package.json](apps/web/package.json)                           | `@prisma/client` e `@hookform/resolvers` presentes; **nenhum uso em apps/web/src** → remoção segura |
 | [apps/native/metro.config.js](apps/native/metro.config.js)               | Sem `blockList`/exclusões para target, dist, .turbo, .git                                           |
-| [apps/native](apps/native)                                               | 6 ficheiros importam `@expo/vector-icons` (root); sem jest.config.\* explícito                      |
+| [apps/native](apps/native)                                               | 6 ficheiros importam `@expo/vector-icons` (root); sem jest.config. explícito                        |
 | Raiz                                                                     | Sem `build:release`, `build:manifest`; [turbo.json](turbo.json) já com `outputs: ["dist/**"]`       |
 | CI                                                                       | `.github/` inexistente → workflow novo                                                              |
 
@@ -38,22 +38,22 @@ Decisões e baseline já fechados conforme documento do usuário. Abaixo: mapeam
 
 ## Fase 1A — Web/Desktop (Vite + Tauri + Rust)
 
-- **[apps/web/src/routes/\_\_root.tsx](apps/web/src/routes/__root.tsx):** carregar React Query e Router devtools apenas em DEV via `import()` dinâmico; não importar em build de produção.
+- **[apps/web/src/routes/root.tsx](apps/web/src/routes/__root.tsx):** carregar React Query e Router devtools apenas em DEV via `import()` dinâmico; não importar em build de produção.
 - **[apps/web/vite.config.ts](apps/web/vite.config.ts):** `build.outDir: "dist/web"`; `build.rollupOptions.output.manualChunks` conservador (ex.: `vendor` para react/router/query, outro para app).
 - **[apps/web/package.json](apps/web/package.json):** remover `@prisma/client` e `@hookform/resolvers` (não usados em `apps/web/src`).
 - **Rust release:** em [apps/web/src-tauri/Cargo.toml](apps/web/src-tauri/Cargo.toml) adicionar `[profile.release]` com `lto = "thin"`, `strip = "symbols"`, `panic = "abort"`, `codegen-units` balanceado.
 - **Target Cargo:** criar `apps/web/src-tauri/.cargo/config.toml` com `build.target-dir` apontando para árvore em `dist/desktop/target` (path relativo ao crate: e.g. `../../../dist/desktop/target`).
 - **[apps/web/src-tauri/tauri.conf.json](apps/web/src-tauri/tauri.conf.json):** `build.frontendDist` para `../dist/web` (consistente com outDir do Vite).
-- **Critério:** bundle web em chunks; artefatos desktop gerados em árvore `dist/desktop/*`.
+- **Critério:** bundle web em chunks; artefatos desktop gerados em árvore `dist/desktop/`.
 
 ---
 
 ## Fase 1B — Mobile (Expo/Metro/EAS)
 
-- **Novo:** [apps/native/eas.json](apps/native/eas.json) com perfis `development`, `preview`, `production`; scripts no [apps/native/package.json](apps/native/package.json) para EAS e export local para `dist/native/*`.
+- **Novo:** [apps/native/eas.json](apps/native/eas.json) com perfis `development`, `preview`, `production`; scripts no [apps/native/package.json](apps/native/package.json) para EAS e export local para `dist/native/`.
 - **[apps/native/metro.config.js](apps/native/metro.config.js):** adicionar exclusões explícitas (ex.: `blockList` ou `watchFolders` excluindo) para `apps/web/src-tauri/target`, `dist`, `.turbo`, `.git`.
 - **Ícones:** trocar imports de `@expo/vector-icons` (root) para módulos específicos (ex.: `@expo/vector-icons/Ionicons`, `@expo/vector-icons/MaterialIcons`) nos 6 ficheiros: `(drawer)/_layout.tsx`, `(drawer)/index.tsx`, `components/theme-toggle.tsx`, `modal.tsx`, `(drawer)/events/[eventId].tsx`, `(drawer)/(tabs)/_layout.tsx`.
-- **Jest:** corrigir configuração Jest/TS/ESM em [apps/native](apps/native) (jest.config.\* ou package.json) para `pnpm --filter native run test` passar; manter cobertura executável.
+- **Jest:** corrigir configuração Jest/TS/ESM em [apps/native](apps/native) (jest.config. ou package.json) para `pnpm --filter native run test` passar; manter cobertura executável.
 - **Critério:** export mobile com outputs em `dist/native`; testes mobile a passar; redução mensurável do JS bundle.
 
 ---
@@ -65,7 +65,7 @@ Decisões e baseline já fechados conforme documento do usuário. Abaixo: mapeam
 - **Novo:** `.github/workflows/build-and-measure.yml` (ou nome acordado) com:
   - Cache: pnpm store, turbo cache, cargo (registry/git e target em `dist/desktop/target`).
   - Passos: install, build, test, check-types; geração e publicação de `build-manifest.json` como artifact.
-- **Opcional:** [.npmrc](.npmrc) para determinismo se necessário; [.gitignore](.gitignore) para outputs residuais em `apps/*` se surgirem.
+- **Opcional:** [.npmrc](.npmrc) para determinismo se necessário; [.gitignore](.gitignore) para outputs residuais em `apps/` se surgirem.
 - **Critério:** `pnpm run build` e `pnpm run build:release` deixam `dist/` completo; CI reproduz comandos e gera manifest.
 
 ---
@@ -76,8 +76,8 @@ Decisões e baseline já fechados conforme documento do usuário. Abaixo: mapeam
 - **Server:** se existir build de server, `outDir` = `dist/server`.
 - **Desktop:** Cargo `target-dir` = `dist/desktop/target`; bundles Tauri finais em `dist/desktop/artifacts` (via Tauri config se necessário).
 - **Mobile:** export local → `dist/native/expo-export-android`, `dist/native/expo-export-ios`; EAS artifacts → `dist/native/artifacts`.
-- Scripts de build: ao fim, limpar outputs residuais em `apps/*` quando inevitável pela ferramenta.
-- **Critério:** nenhum artefato final de build permanece em `apps/*`/`packages/*`; `build-manifest.json` contém tempos e tamanhos por target.
+- Scripts de build: ao fim, limpar outputs residuais em `apps/` quando inevitável pela ferramenta.
+- **Critério:** nenhum artefato final de build permanece em `apps/`_/`packages/`_; `build-manifest.json` contém tempos e tamanhos por target.
 
 ---
 

@@ -11,6 +11,19 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    outDir: path.resolve(__dirname, "../../dist/web"),
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes("node_modules")) {
+            if (id.includes("react") || id.includes("react-dom") || id.includes("@tanstack/react-router") || id.includes("@tanstack/react-query")) return "vendor";
+            return "vendor-misc";
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 3001,
     strictPort: true,

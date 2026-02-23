@@ -181,6 +181,12 @@ pnpm run dev:native
 - `pnpm run ios`
 - `pnpm run test`
 
+## Medicao e validacao de build
+
+- **Manifest:** `pnpm run build:manifest` gera/atualiza `build-manifest.json` na raiz (schema estavel: commit, timestamp, versoes node/pnpm/cargo/rustc, OS, tamanhos de artefatos em `dist/`, resultado de `check-types` e testes mobile). Nao commitar o ficheiro; CI publica como artifact.
+- **Baseline:** `pnpm run build:baseline` mede o tempo de `pnpm run build` e em seguida executa `build:manifest`.
+- **Scripts em `scripts/`:** `measure-build.mjs`, `collect-artifacts.mjs`, `generate-manifest.mjs`, `constants.mjs`.
+
 ## Testes
 
 ### Backend Rust (integracao Axum + SQLite em memoria)

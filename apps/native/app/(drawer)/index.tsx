@@ -1,6 +1,6 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { useQuery } from "@tanstack/react-query";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Link, useRouter } from "expo-router";
 import { Button, Chip, Separator, Spinner, Surface, useThemeColor } from "heroui-native";
 

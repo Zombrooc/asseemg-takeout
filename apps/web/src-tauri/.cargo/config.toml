@@ -1,0 +1,4 @@
+# Redirect Cargo target to monorepo dist so apps/web does not hold a large target/ tree.
+# Path is relative to this file: .cargo is inside src-tauri, so ../../../ is repo root.
+[build]
+target-dir = "../../../dist/desktop/target"

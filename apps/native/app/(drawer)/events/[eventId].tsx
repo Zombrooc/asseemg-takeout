@@ -11,7 +11,7 @@ import { FlatList, Pressable, Text, View } from "@/lib/primitives";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, Input, Surface, Spinner } from "heroui-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { Ionicons } from "@expo/vector-icons";
+import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { Container } from "@/components/container";
 import { ConfirmTakeoutModal } from "@/components/takeout/confirm-takeout-modal";

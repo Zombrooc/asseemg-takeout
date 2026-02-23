@@ -47,6 +47,9 @@ lerna-debug.log*
 # Turbo
 .turbo
 
+# Generated build manifest (CI publishes as artifact)
+build-manifest.json
+
 # Better-T-Stack
 .alchemy
 

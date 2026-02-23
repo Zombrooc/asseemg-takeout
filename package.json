@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "turbo dev --filter=./apps/*",
     "build": "turbo build",
+    "build:release": "turbo build --filter=web --filter=native",
+    "build:manifest": "node scripts/generate-manifest.mjs",
+    "build:baseline": "node scripts/measure-build.mjs build -- pnpm run build && node scripts/generate-manifest.mjs",
     "check-types": "turbo check-types",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",

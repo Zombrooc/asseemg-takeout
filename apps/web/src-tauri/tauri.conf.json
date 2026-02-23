@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "mg.asseemg.retira",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../../dist/web",
     "devUrl": "http://localhost:3001",
     "beforeDevCommand": "node scripts/dev-with-wait.mjs",
     "beforeBuildCommand": "pnpm run build"

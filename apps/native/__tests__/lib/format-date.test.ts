@@ -8,8 +8,9 @@ describe("format-date", () => {
     });
 
     it("formats date in Brazilian format: day de month de year", () => {
-      expect(formatDateBR("2026-02-22")).toBe("22 de fevereiro de 2026");
-      expect(formatDateBR(new Date("2026-01-15"))).toBe("15 de janeiro de 2026");
+      // Use Date(year, monthIndex, day) to avoid timezone-dependent parsing of ISO string
+      expect(formatDateBR(new Date(2026, 1, 22))).toBe("22 de fevereiro de 2026");
+      expect(formatDateBR(new Date(2026, 0, 15))).toBe("15 de janeiro de 2026");
     });
 
     it("returns '—' for invalid date string", () => {

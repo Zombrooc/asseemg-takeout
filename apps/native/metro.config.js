@@ -27,4 +27,13 @@ uniwindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
   return originalResolveRequest(context, moduleName, platform);
 };
 
+// Exclude heavy monorepo dirs from watch/scan (target, dist, .turbo, .git)
+const blockList = [
+  /[\\/]apps[\\/]web[\\/]src-tauri[\\/]target[\\/]/,
+  /[\\/]dist[\\/]/,
+  /[\\/]\.turbo[\\/]/,
+  /[\\/]\.git[\\/]/,
+];
+uniwindConfig.resolver.blockList = [...(uniwindConfig.resolver.blockList ?? []), ...blockList];
+
 module.exports = uniwindConfig;

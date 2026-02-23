@@ -33,6 +33,12 @@ uuid = { version = "1", features = ["v4", "serde"] }
 local-ip-address = "0.6"
 deunicode = "1.6"
 
+[profile.release]
+lto = "thin"
+strip = "symbols"
+panic = "abort"
+codegen-units = 2
+
 [dev-dependencies]
 reqwest = { version = "0.12", features = ["json"] }
 http-body-util = "0.1"
