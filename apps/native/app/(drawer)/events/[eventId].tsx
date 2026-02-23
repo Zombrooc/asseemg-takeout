@@ -32,6 +32,7 @@ function matchesSearch(participant: EventParticipant, q: string): boolean {
     inStr(participant.name) ||
     inStr(participant.cpf) ||
     inStr(participant.birthDate ?? null) ||
+    inStr(participant.sourceTicketId ?? null) ||
     inStr(participant.ticketId) ||
     inStr(participant.qrCode)
   );
@@ -229,7 +230,7 @@ export default function EventScreen() {
           <View className="flex-row justify-between items-center">
             <View className="flex-1">
               <Text className="text-foreground font-medium">{item.name ?? "—"}</Text>
-              <Text className="text-muted-foreground text-sm">{item.ticketId}</Text>
+              <Text className="text-muted-foreground text-sm">{item.sourceTicketId ?? item.ticketId}</Text>
               {isConfirmed ? (
                 <Text className="text-success text-xs mt-1">Check-in feito</Text>
               ) : lockedByOther ? (

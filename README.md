@@ -48,6 +48,10 @@ cd apps/web && pnpm run desktop:dev
 pnpm run dev:native
 ```
 
+- Sem `EXPO_PUBLIC_SERVER_URL`, o app native usa `http://127.0.0.1:5555` por padrÃ£o.
+- Com `EXPO_PUBLIC_SERVER_URL` definida (ex.: `apps/native/.env`), esse valor sobrescreve o padrÃ£o.
+- ApÃ³s alterar `.env`, reinicie o Expo (`pnpm run dev:native`).
+
 ## Scripts (raiz)
 
 - `pnpm run dev`: Turbo dev para todos os apps

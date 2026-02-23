@@ -5,6 +5,7 @@
  * The Vite process is spawned detached so it keeps running after this script exits.
  */
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -14,12 +15,16 @@ const POLL_MS = 400;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const webRoot = join(scriptDir, "..");
+const require = createRequire(import.meta.url);
+const vitePkg = require.resolve("vite/package.json", { paths: [webRoot] });
+const viteBin = join(dirname(vitePkg), "bin", "vite.js");
 
-const vite = spawn("pnpm", ["run", "dev"], {
+const spawnOpts = {
   cwd: webRoot,
   stdio: ["ignore", "pipe", "pipe"],
   detached: true,
-});
+};
+const vite = spawn(process.execPath, [viteBin, "dev"], spawnOpts);
 
 vite.unref();
 

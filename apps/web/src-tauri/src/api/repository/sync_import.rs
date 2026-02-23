@@ -55,12 +55,23 @@ pub fn import_pull_to_db(pool: &DbPool, pull: &PullResponse) -> Result<(), Strin
       .map_err(|e| e.to_string())?;
   }
 
+  conn
+    .execute(
+      "DELETE FROM tickets WHERE participant_id IN (SELECT id FROM participants WHERE event_id = ?1)",
+      params![pull.event_id],
+    )
+    .map_err(|e| e.to_string())?;
+
   for p in &pull.participants {
-    let raw_json = serde_json::json!({ "ticketName": p.ticket_name });
+    let raw_json = serde_json::json!({
+      "ticketId": p.ticket_id,
+      "ticketName": p.ticket_name,
+      "qrCode": p.qr_code,
+    });
     conn
       .execute(
         "INSERT OR REPLACE INTO tickets (id, participant_id, code, raw_json) VALUES (?1, ?2, ?3, ?4)",
-        params![p.ticket_id, p.seat_id, p.qr_code, raw_json.to_string()],
+        params![p.seat_id, p.seat_id, p.qr_code, raw_json.to_string()],
       )
       .map_err(|e| e.to_string())?;
   }
@@ -128,7 +139,68 @@ mod tests {
     let participants = EventsRepository::list_participants_by_event(&pool, "ev-test").unwrap();
     assert_eq!(participants.len(), 1);
     assert_eq!(participants[0].id, "seat1");
-    assert_eq!(participants[0].ticket_id, "tkt1");
+    assert_eq!(participants[0].ticket_id, "seat1");
+    assert_eq!(participants[0].source_ticket_id.as_deref(), Some("tkt1"));
     assert_eq!(participants[0].checkin_done, false);
+  }
+
+  #[test]
+  fn import_preserves_all_participants_when_ticket_id_repeats() {
+    let pool = DbPool::open_in_memory().unwrap();
+    let mut pull = minimal_pull();
+    pull.participants = vec![
+      PullParticipant {
+        seat_id: "seat-a".to_string(),
+        ticket_id: "shared-ticket".to_string(),
+        ticket_name: "5K".to_string(),
+        qr_code: "QR-A".to_string(),
+        participant_name: "Ana".to_string(),
+        cpf: "111".to_string(),
+        birth_date: None,
+        age: None,
+        custom_form_responses: vec![],
+        checkin_done: false,
+        checked_in_at: None,
+      },
+      PullParticipant {
+        seat_id: "seat-b".to_string(),
+        ticket_id: "shared-ticket".to_string(),
+        ticket_name: "5K".to_string(),
+        qr_code: "QR-B".to_string(),
+        participant_name: "Bruno".to_string(),
+        cpf: "222".to_string(),
+        birth_date: None,
+        age: None,
+        custom_form_responses: vec![],
+        checkin_done: false,
+        checked_in_at: None,
+      },
+      PullParticipant {
+        seat_id: "seat-c".to_string(),
+        ticket_id: "another-ticket".to_string(),
+        ticket_name: "10K".to_string(),
+        qr_code: "QR-C".to_string(),
+        participant_name: "Carla".to_string(),
+        cpf: "333".to_string(),
+        birth_date: None,
+        age: None,
+        custom_form_responses: vec![],
+        checkin_done: false,
+        checked_in_at: None,
+      },
+    ];
+
+    super::import_pull_to_db(&pool, &pull).unwrap();
+
+    let participants = EventsRepository::list_participants_by_event(&pool, "ev-test").unwrap();
+    assert_eq!(participants.len(), 3);
+    assert!(participants.iter().any(|p| p.id == "seat-a" && p.ticket_id == "seat-a"));
+    assert!(participants.iter().any(|p| p.id == "seat-b" && p.ticket_id == "seat-b"));
+    assert!(participants.iter().any(|p| p.id == "seat-c" && p.ticket_id == "seat-c"));
+    assert!(participants
+      .iter()
+      .filter(|p| p.source_ticket_id.as_deref() == Some("shared-ticket"))
+      .count()
+      == 2);
   }
 }

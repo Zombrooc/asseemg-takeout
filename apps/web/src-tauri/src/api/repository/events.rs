@@ -32,6 +32,7 @@ pub struct EventParticipantRow {
   pub cpf: Option<String>,
   pub birth_date: Option<String>,
   pub ticket_id: String,
+  pub source_ticket_id: Option<String>,
   pub ticket_name: Option<String>,
   pub qr_code: String,
   pub checkin_done: bool,
@@ -84,8 +85,14 @@ impl EventsRepository {
       let qr_code: String = row.get(5)?;
       let ticket_raw: Option<String> = row.get(6)?;
       let participant_raw: Option<String> = row.get(7)?;
-      let ticket_name = ticket_raw
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+      let ticket_raw_json = ticket_raw
+        .as_ref()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+      let source_ticket_id = ticket_raw_json
+        .as_ref()
+        .and_then(|v| v.get("ticketId").and_then(|n| n.as_str().map(String::from)));
+      let ticket_name = ticket_raw_json
+        .as_ref()
         .and_then(|v| v.get("ticketName").and_then(|n| n.as_str().map(String::from)));
       let checkin_done = participant_raw
         .as_ref()
@@ -118,6 +125,7 @@ impl EventsRepository {
         cpf,
         birth_date,
         ticket_id,
+        source_ticket_id,
         ticket_name,
         qr_code,
         checkin_done,

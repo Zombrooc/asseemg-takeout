@@ -65,7 +65,7 @@ function EventDetailPage() {
                 <TableRow key={p.id}>
                   <TableCell>{p.name ?? "—"}</TableCell>
                   <TableCell>{p.cpf ?? "—"}</TableCell>
-                  <TableCell>{p.ticketId}</TableCell>
+                  <TableCell>{p.sourceTicketId ?? p.ticketId}</TableCell>
                   <TableCell className="font-mono text-xs">{p.qrCode}</TableCell>
                   <TableCell>{p.checkinDone ? "Sim" : "Não"}</TableCell>
                   <TableCell>

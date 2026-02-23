@@ -39,7 +39,7 @@ type TakeoutConnectionContextValue = ConnectionState & {
   defaultBaseUrl: string;
 };
 
-const defaultBaseUrl = env.EXPO_PUBLIC_SERVER_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:5555";
+const defaultBaseUrl = env.EXPO_PUBLIC_SERVER_URL.replace(/\/$/, "");
 
 const TakeoutConnectionContext = createContext<TakeoutConnectionContextValue | null>(null);
 

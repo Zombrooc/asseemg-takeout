@@ -6,6 +6,11 @@ use tauri::Manager;
 pub fn run() {
   tauri::Builder::default()
     .setup(|app| {
+      if let Some(window) = app.get_webview_window("main") {
+        let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/_source-desktop.png"))?;
+        window.set_icon(icon)?;
+      }
+
       if cfg!(debug_assertions) {
         app.handle().plugin(
           tauri_plugin_log::Builder::default()

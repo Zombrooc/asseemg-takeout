@@ -28,6 +28,7 @@ export type EventParticipant = {
   cpf: string | null;
   birthDate?: string | null;
   ticketId: string;
+  sourceTicketId?: string | null;
   ticketName?: string | null;
   qrCode: string;
   checkinDone: boolean;

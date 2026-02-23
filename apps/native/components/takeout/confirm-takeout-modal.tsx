@@ -162,7 +162,7 @@ export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed
           <Row label="CPF" value={participant.cpf ?? "—"} />
           <Row label="Data de nascimento" value={formatBirthDate(participant.birthDate)} />
           <Row label="Idade" value={ageFromBirthDate(participant.birthDate)} />
-          <Row label="Ingresso" value={participant.ticketId} />
+          <Row label="Ingresso" value={participant.sourceTicketId ?? participant.ticketId} />
           <Row label="Tipo de ingresso" value={participant.ticketName ?? "—"} />
           <Row label="Valor pago" value="—" />
         </View>

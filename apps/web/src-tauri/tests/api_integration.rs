@@ -187,3 +187,109 @@ async fn events_checkins_reset_deletes_and_returns_count() {
     .unwrap();
   assert_eq!(count, 0);
 }
+
+#[tokio::test]
+async fn sync_import_with_repeated_ticket_id_keeps_all_participants_and_allows_two_confirms() {
+  let app = app();
+  let import_body = serde_json::json!({
+    "eventId": "ev-repeated",
+    "event": {
+      "id": "ev-repeated",
+      "name": "Repeated Ticket Event",
+      "startDate": "2026-02-23T09:00:00.000Z",
+      "endDate": null,
+      "startTime": "09:00"
+    },
+    "exportedAt": "2026-02-23T12:00:00.000Z",
+    "customForm": [],
+    "participants": [
+      {
+        "seatId": "seat-1",
+        "ticketId": "category-5k",
+        "ticketName": "5K",
+        "qrCode": "QR-1",
+        "participantName": "Alice",
+        "cpf": "111",
+        "birthDate": null,
+        "age": null,
+        "customFormResponses": [],
+        "checkinDone": false,
+        "checkedInAt": null
+      },
+      {
+        "seatId": "seat-2",
+        "ticketId": "category-5k",
+        "ticketName": "5K",
+        "qrCode": "QR-2",
+        "participantName": "Bob",
+        "cpf": "222",
+        "birthDate": null,
+        "age": null,
+        "customFormResponses": [],
+        "checkinDone": false,
+        "checkedInAt": null
+      },
+      {
+        "seatId": "seat-3",
+        "ticketId": "category-10k",
+        "ticketName": "10K",
+        "qrCode": "QR-3",
+        "participantName": "Carol",
+        "cpf": "333",
+        "birthDate": null,
+        "age": null,
+        "customFormResponses": [],
+        "checkinDone": false,
+        "checkedInAt": null
+      }
+    ],
+    "checkins": []
+  });
+
+  let import_req = Request::builder()
+    .uri("/sync/import")
+    .method("POST")
+    .header("content-type", "application/json")
+    .body(Body::from(serde_json::to_vec(&import_body).unwrap()))
+    .unwrap();
+  let import_res = app.clone().oneshot(import_req).await.unwrap();
+  assert_eq!(import_res.status(), StatusCode::OK);
+
+  let list_req = Request::builder()
+    .uri("/events/ev-repeated/participants")
+    .body(Body::empty())
+    .unwrap();
+  let list_res = app.clone().oneshot(list_req).await.unwrap();
+  assert_eq!(list_res.status(), StatusCode::OK);
+  let list_body = body_bytes(list_res.into_body()).await;
+  let participants: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+  let arr = participants.as_array().unwrap();
+  assert_eq!(arr.len(), 3);
+  assert!(arr.iter().all(|p| p.get("ticketId").and_then(|x| x.as_str()).unwrap().starts_with("seat-")));
+  assert_eq!(
+    arr
+      .iter()
+      .filter(|p| p.get("sourceTicketId").and_then(|x| x.as_str()) == Some("category-5k"))
+      .count(),
+    2
+  );
+
+  for seat_ticket_id in ["seat-1", "seat-2"] {
+    let confirm_body = serde_json::json!({
+      "request_id": uuid::Uuid::new_v4().to_string(),
+      "ticket_id": seat_ticket_id,
+      "device_id": "mobile-1"
+    });
+    let confirm_req = Request::builder()
+      .uri("/takeout/confirm")
+      .method("POST")
+      .header("content-type", "application/json")
+      .body(Body::from(serde_json::to_vec(&confirm_body).unwrap()))
+      .unwrap();
+    let confirm_res = app.clone().oneshot(confirm_req).await.unwrap();
+    assert_eq!(confirm_res.status(), StatusCode::OK);
+    let confirm_payload = body_bytes(confirm_res.into_body()).await;
+    let confirm_json: serde_json::Value = serde_json::from_slice(&confirm_payload).unwrap();
+    assert_eq!(confirm_json.get("status").and_then(|v| v.as_str()), Some("CONFIRMED"));
+  }
+}
