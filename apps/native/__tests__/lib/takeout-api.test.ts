@@ -10,7 +10,7 @@ describe("createTakeoutClient", () => {
   it("calls GET /health with skipAuth and no Bearer", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ status: "ok" }),
+      text: () => Promise.resolve(JSON.stringify({ status: "ok" })),
     });
     const client = createTakeoutClient({
       baseUrl,
@@ -30,7 +30,7 @@ describe("createTakeoutClient", () => {
   it("calls GET /events with Authorization Bearer", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve([]),
+      text: () => Promise.resolve("[]"),
     });
     const client = createTakeoutClient({
       baseUrl,
@@ -51,7 +51,7 @@ describe("createTakeoutClient", () => {
   it("POST /takeout/confirm sends request_id, ticket_id, device_id", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ status: "CONFIRMED" }),
+      text: () => Promise.resolve(JSON.stringify({ status: "CONFIRMED" })),
     });
     const client = createTakeoutClient({
       baseUrl,
@@ -85,14 +85,16 @@ describe("createTakeoutClient", () => {
       baseUrl,
       getAccessToken: async () => "bad",
     });
-    await expect(client.getEvents()).rejects.toThrow(TakeoutApiError);
-    await expect(client.getEvents()).rejects.toMatchObject({ status: 401 });
+    await expect(client.getEvents()).rejects.toMatchObject({
+      name: TakeoutApiError.name,
+      status: 401,
+    });
   });
 
   it("POST /events/:eventId/checkins/reset sends request and returns deleted count", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ deleted: 3 }),
+      text: () => Promise.resolve(JSON.stringify({ deleted: 3 })),
     });
     const client = createTakeoutClient({
       baseUrl,
@@ -106,6 +108,54 @@ describe("createTakeoutClient", () => {
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        }),
+      })
+    );
+  });
+
+  it("calls GET /network/addresses without auth when requested", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            baseUrl: "http://192.168.1.10:5555",
+            port: 5555,
+            addresses: [],
+          })
+        ),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "token",
+    });
+    await client.getNetworkAddresses();
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/network/addresses",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "Content-Type": "application/json" }),
+      })
+    );
+    const call = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(call.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("GET /events/:eventId/participants/search sends q and mode", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve("[]"),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "my-token",
+    });
+    await client.searchEventParticipants("ev-123", "joao", "nome");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/events/ev-123/participants/search?q=joao&mode=nome",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer my-token",
           "Content-Type": "application/json",
         }),
       })

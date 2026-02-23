@@ -13,7 +13,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::api::db::DbPool;
 use crate::api::repository::{
-  EventLogRepository, EventsRepository, LocksRepository, ParticipantsRepository, TakeoutRepository,
+  EventLogRepository, EventsRepository, LocksRepository, ParticipantSearchMode, ParticipantsRepository,
+  TakeoutRepository,
 };
 use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
 use crate::api::services::PairingService;
@@ -36,13 +37,14 @@ pub fn router(state: AppState) -> Router {
 
   Router::new()
     .route("/health", get(health))
+    .route("/network/addresses", get(network_addresses))
     .route("/pair/info", get(pair_info))
     .route("/pair/renew", post(pair_renew))
     .route("/pair", post(pair))
-    .route("/participants/search", get(participants_search))
     .route("/participants/:id", get(participants_get))
     .route("/events", get(events_list))
     .route("/events/:event_id/participants", get(events_participants))
+    .route("/events/:event_id/participants/search", get(events_participants_search))
     .route("/events/:event_id/checkins/reset", post(events_checkins_reset))
     .route("/events/:event_id/archive", post(events_archive))
     .route("/events/:event_id/unarchive", post(events_unarchive))
@@ -64,6 +66,76 @@ pub fn router(state: AppState) -> Router {
 
 async fn health() -> impl IntoResponse {
   Json(serde_json::json!({ "status": "ok" }))
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkAddressInfo {
+  interface_name: String,
+  ip: String,
+  url: String,
+  is_primary: bool,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct NetworkAddressesResponse {
+  base_url: String,
+  port: u16,
+  addresses: Vec<NetworkAddressInfo>,
+}
+
+fn parse_base_url_host_port(base_url: &str) -> (Option<String>, u16) {
+  match base_url.parse::<axum::http::Uri>() {
+    Ok(uri) => (
+      uri.host().map(String::from),
+      uri.port_u16().unwrap_or(5555),
+    ),
+    Err(_) => (None, 5555),
+  }
+}
+
+async fn network_addresses(State(state): State<AppState>) -> impl IntoResponse {
+  let (primary_host, port) = parse_base_url_host_port(&state.base_url);
+  let mut by_ip: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+  if let Ok(interfaces) = local_ip_address::list_afinet_netifas() {
+    for (interface_name, ip) in interfaces {
+      if let std::net::IpAddr::V4(ipv4) = ip {
+        if ipv4.is_loopback() {
+          continue;
+        }
+        let ip_str = ipv4.to_string();
+        by_ip
+          .entry(ip_str)
+          .and_modify(|existing_name| {
+            if interface_name < *existing_name {
+              *existing_name = interface_name.clone();
+            }
+          })
+          .or_insert(interface_name);
+      }
+    }
+  }
+
+  let mut addresses = by_ip
+    .into_iter()
+    .map(|(ip, interface_name)| NetworkAddressInfo {
+      url: format!("http://{}:{}", ip, port),
+      is_primary: primary_host.as_deref().map(|host| host == ip).unwrap_or(false),
+      interface_name,
+      ip,
+    })
+    .collect::<Vec<_>>();
+  addresses.sort_by(|a, b| a.interface_name.cmp(&b.interface_name).then(a.ip.cmp(&b.ip)));
+
+  (
+    StatusCode::OK,
+    Json(NetworkAddressesResponse {
+      base_url: state.base_url,
+      port,
+      addresses,
+    }),
+  )
 }
 
 async fn pair_info(State(state): State<AppState>) -> impl IntoResponse {
@@ -107,16 +179,6 @@ async fn pair(State(state): State<AppState>, Json(body): Json<PairBody>) -> impl
     )
       .into_response(),
   }
-}
-
-async fn participants_search(
-  State(state): State<AppState>,
-  _headers: HeaderMap,
-  Query(params): Query<std::collections::HashMap<String, String>>,
-) -> impl IntoResponse {
-  let _ = state;
-  let _ = params;
-  Json(serde_json::json!(Vec::<serde_json::Value>::new()))
 }
 
 async fn participants_get(
@@ -236,6 +298,46 @@ async fn events_participants(
   Path(event_id): Path<String>,
 ) -> impl IntoResponse {
   match EventsRepository::list_participants_by_event(&state.pool, &event_id) {
+    Ok(participants) => (StatusCode::OK, Json(participants)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": format!("{}", e) })),
+    )
+      .into_response(),
+  }
+}
+
+#[derive(serde::Deserialize)]
+struct EventsParticipantsSearchQuery {
+  q: Option<String>,
+  mode: Option<String>,
+}
+
+async fn events_participants_search(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+  Query(q): Query<EventsParticipantsSearchQuery>,
+) -> impl IntoResponse {
+  let query = q.q.unwrap_or_default();
+  let query_trimmed = query.trim().to_string();
+  if query_trimmed.is_empty() {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "q is required" })),
+    )
+      .into_response();
+  }
+
+  let mode = q.mode.unwrap_or_default();
+  let Some(search_mode) = ParticipantSearchMode::from_str(mode.trim()) else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "invalid mode" })),
+    )
+      .into_response();
+  };
+
+  match ParticipantsRepository::search_by_event(&state.pool, &event_id, &query_trimmed, search_mode) {
     Ok(participants) => (StatusCode::OK, Json(participants)).into_response(),
     Err(e) => (
       StatusCode::INTERNAL_SERVER_ERROR,

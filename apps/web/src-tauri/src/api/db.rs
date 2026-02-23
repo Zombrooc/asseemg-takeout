@@ -69,6 +69,10 @@ CREATE TABLE IF NOT EXISTS locks (
 CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_request_id ON takeout_events(request_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_created_at ON takeout_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_participants_event_id ON participants(event_id);
+CREATE INDEX IF NOT EXISTS idx_participants_cpf ON participants(cpf);
+CREATE INDEX IF NOT EXISTS idx_tickets_code ON tickets(code);
+CREATE INDEX IF NOT EXISTS idx_tickets_participant_id ON tickets(participant_id);
 ";
 
 pub struct DbPool {

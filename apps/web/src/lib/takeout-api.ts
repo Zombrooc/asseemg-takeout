@@ -4,6 +4,17 @@ const BASE_URL =
 
 export type HealthResponse = { status: string };
 export type ConnectionInfo = { baseUrl: string; pairingToken: string; expiresAt: string };
+export type NetworkAddress = {
+  interfaceName: string;
+  ip: string;
+  url: string;
+  isPrimary: boolean;
+};
+export type NetworkAddressesResponse = {
+  baseUrl: string;
+  port: number;
+  addresses: NetworkAddress[];
+};
 export type AuditEvent = {
   request_id: string;
   ticket_id: string;
@@ -28,11 +39,15 @@ export type EventParticipant = {
   id: string;
   name: string | null;
   cpf: string | null;
+  birthDate?: string | null;
   ticketId: string;
   sourceTicketId?: string | null;
+  ticketName?: string | null;
   qrCode: string;
   checkinDone: boolean;
+  customFormResponses?: CustomFormResponse[];
 };
+export type ParticipantSearchMode = "qr" | "ticket_id" | "cpf" | "nome" | "birth_date";
 
 export type TakeoutConfirmPayload = {
   request_id: string;
@@ -83,6 +98,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/health");
+}
+
+export async function getNetworkAddresses(): Promise<NetworkAddressesResponse> {
+  return request<NetworkAddressesResponse>("/network/addresses");
 }
 
 export async function getConnectionInfo(): Promise<ConnectionInfo> {
@@ -146,6 +165,19 @@ export async function deleteEvent(eventId: string): Promise<{ deleted: boolean }
 
 export async function getEventParticipants(eventId: string): Promise<EventParticipant[]> {
   return request<EventParticipant[]>(`/events/${encodeURIComponent(eventId)}/participants`);
+}
+
+export async function searchEventParticipants(
+  eventId: string,
+  params: { q: string; mode: ParticipantSearchMode }
+): Promise<EventParticipant[]> {
+  const query = new URLSearchParams({
+    q: params.q,
+    mode: params.mode,
+  });
+  return request<EventParticipant[]>(
+    `/events/${encodeURIComponent(eventId)}/participants/search?${query.toString()}`
+  );
 }
 
 export async function postTakeoutConfirm(payload: TakeoutConfirmPayload): Promise<TakeoutConfirmResponse> {

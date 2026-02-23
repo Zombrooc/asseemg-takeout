@@ -59,6 +59,17 @@ fn app_with_seeded_pool() -> (axum::Router, Arc<DbPool>) {
   (router(state), pool)
 }
 
+async fn import_event(app: &axum::Router, body: serde_json::Value) {
+  let import_req = Request::builder()
+    .uri("/sync/import")
+    .method("POST")
+    .header("content-type", "application/json")
+    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+    .unwrap();
+  let import_res = app.clone().oneshot(import_req).await.unwrap();
+  assert_eq!(import_res.status(), StatusCode::OK);
+}
+
 #[tokio::test]
 async fn health_returns_ok() {
   let app = app();
@@ -80,6 +91,168 @@ async fn pair_info_returns_base_url_and_token() {
   let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
   assert!(json.get("pairingToken").and_then(|v| v.as_str()).unwrap_or("").len() > 0);
   assert_eq!(json.get("baseUrl").and_then(|v| v.as_str()), Some("http://127.0.0.1:5555"));
+}
+
+#[tokio::test]
+async fn network_addresses_returns_shape() {
+  let app = app();
+  let req = Request::builder()
+    .uri("/network/addresses")
+    .body(Body::empty())
+    .unwrap();
+  let res = app.oneshot(req).await.unwrap();
+  assert_eq!(res.status(), StatusCode::OK);
+
+  let body = body_bytes(res.into_body()).await;
+  let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+  assert_eq!(json.get("baseUrl").and_then(|v| v.as_str()), Some("http://127.0.0.1:5555"));
+  assert_eq!(json.get("port").and_then(|v| v.as_u64()), Some(5555));
+  assert!(json.get("addresses").and_then(|v| v.as_array()).is_some());
+}
+
+#[tokio::test]
+async fn participants_search_by_event_supports_modes_and_validation() {
+  let app = app();
+
+  import_event(
+    &app,
+    serde_json::json!({
+      "eventId": "ev-search-1",
+      "event": {
+        "id": "ev-search-1",
+        "name": "Search Event 1",
+        "startDate": "2026-02-23T09:00:00.000Z",
+        "endDate": null,
+        "startTime": "09:00"
+      },
+      "exportedAt": "2026-02-23T12:00:00.000Z",
+      "customForm": [],
+      "participants": [
+        {
+          "seatId": "seat-joao",
+          "ticketId": "cat-5k",
+          "ticketName": "5K",
+          "qrCode": "QR-JOAO",
+          "participantName": "João Silva",
+          "cpf": "123.456.789-00",
+          "birthDate": "1990-01-01",
+          "age": 35,
+          "customFormResponses": [],
+          "checkinDone": false,
+          "checkedInAt": null
+        },
+        {
+          "seatId": "seat-maria",
+          "ticketId": "cat-10k",
+          "ticketName": "10K",
+          "qrCode": "QR-MARIA",
+          "participantName": "Maria",
+          "cpf": "11122233344",
+          "birthDate": "1991-02-02",
+          "age": 34,
+          "customFormResponses": [],
+          "checkinDone": false,
+          "checkedInAt": null
+        }
+      ],
+      "checkins": []
+    }),
+  )
+  .await;
+
+  import_event(
+    &app,
+    serde_json::json!({
+      "eventId": "ev-search-2",
+      "event": {
+        "id": "ev-search-2",
+        "name": "Search Event 2",
+        "startDate": "2026-02-23T09:00:00.000Z",
+        "endDate": null,
+        "startTime": "09:00"
+      },
+      "exportedAt": "2026-02-23T12:00:00.000Z",
+      "customForm": [],
+      "participants": [
+        {
+          "seatId": "seat-joao-ev2",
+          "ticketId": "cat-5k",
+          "ticketName": "5K",
+          "qrCode": "QR-JOAO-EV2",
+          "participantName": "Joao Evento 2",
+          "cpf": "99988877766",
+          "birthDate": "1993-03-03",
+          "age": 32,
+          "customFormResponses": [],
+          "checkinDone": false,
+          "checkedInAt": null
+        }
+      ],
+      "checkins": []
+    }),
+  )
+  .await;
+
+  let nome_req = Request::builder()
+    .uri("/events/ev-search-1/participants/search?q=joao&mode=nome")
+    .body(Body::empty())
+    .unwrap();
+  let nome_res = app.clone().oneshot(nome_req).await.unwrap();
+  assert_eq!(nome_res.status(), StatusCode::OK);
+  let nome_payload = body_bytes(nome_res.into_body()).await;
+  let nome_json: serde_json::Value = serde_json::from_slice(&nome_payload).unwrap();
+  let nome_list = nome_json.as_array().unwrap();
+  assert_eq!(nome_list.len(), 1);
+  assert_eq!(nome_list[0].get("id").and_then(|v| v.as_str()), Some("seat-joao"));
+
+  let cpf_req = Request::builder()
+    .uri("/events/ev-search-1/participants/search?q=12345678900&mode=cpf")
+    .body(Body::empty())
+    .unwrap();
+  let cpf_res = app.clone().oneshot(cpf_req).await.unwrap();
+  assert_eq!(cpf_res.status(), StatusCode::OK);
+  let cpf_payload = body_bytes(cpf_res.into_body()).await;
+  let cpf_json: serde_json::Value = serde_json::from_slice(&cpf_payload).unwrap();
+  let cpf_list = cpf_json.as_array().unwrap();
+  assert_eq!(cpf_list.len(), 1);
+  assert_eq!(cpf_list[0].get("id").and_then(|v| v.as_str()), Some("seat-joao"));
+
+  let qr_req = Request::builder()
+    .uri("/events/ev-search-1/participants/search?q=QR-JOAO&mode=qr")
+    .body(Body::empty())
+    .unwrap();
+  let qr_res = app.clone().oneshot(qr_req).await.unwrap();
+  assert_eq!(qr_res.status(), StatusCode::OK);
+  let qr_payload = body_bytes(qr_res.into_body()).await;
+  let qr_json: serde_json::Value = serde_json::from_slice(&qr_payload).unwrap();
+  let qr_list = qr_json.as_array().unwrap();
+  assert_eq!(qr_list.len(), 1);
+  assert_eq!(qr_list[0].get("id").and_then(|v| v.as_str()), Some("seat-joao"));
+
+  let isolation_req = Request::builder()
+    .uri("/events/ev-search-1/participants/search?q=QR-JOAO-EV2&mode=qr")
+    .body(Body::empty())
+    .unwrap();
+  let isolation_res = app.clone().oneshot(isolation_req).await.unwrap();
+  assert_eq!(isolation_res.status(), StatusCode::OK);
+  let isolation_payload = body_bytes(isolation_res.into_body()).await;
+  let isolation_json: serde_json::Value = serde_json::from_slice(&isolation_payload).unwrap();
+  let isolation_list = isolation_json.as_array().unwrap();
+  assert!(isolation_list.is_empty());
+
+  let bad_mode_req = Request::builder()
+    .uri("/events/ev-search-1/participants/search?q=joao&mode=foo")
+    .body(Body::empty())
+    .unwrap();
+  let bad_mode_res = app.clone().oneshot(bad_mode_req).await.unwrap();
+  assert_eq!(bad_mode_res.status(), StatusCode::BAD_REQUEST);
+
+  let missing_q_req = Request::builder()
+    .uri("/events/ev-search-1/participants/search?mode=nome")
+    .body(Body::empty())
+    .unwrap();
+  let missing_q_res = app.oneshot(missing_q_req).await.unwrap();
+  assert_eq!(missing_q_res.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]

@@ -6,6 +6,19 @@ export type ConnectionInfo = {
   expiresAt: string;
 };
 
+export type NetworkAddress = {
+  interfaceName: string;
+  ip: string;
+  url: string;
+  isPrimary: boolean;
+};
+
+export type NetworkAddressesResponse = {
+  baseUrl: string;
+  port: number;
+  addresses: NetworkAddress[];
+};
+
 export type EventSummary = {
   eventId: string;
   name: string | null;
@@ -34,6 +47,8 @@ export type EventParticipant = {
   checkinDone: boolean;
   customFormResponses?: CustomFormResponseItem[];
 };
+
+export type ParticipantSearchMode = "qr" | "ticket_id" | "cpf" | "nome" | "birth_date";
 
 export type TakeoutConfirmPayload = {
   request_id: string;

@@ -118,11 +118,13 @@ pnpm run dev:native
 ## Endpoints principais da API
 
 - `GET /health`
+- `GET /network/addresses`
 - `GET /pair/info`
 - `POST /pair/renew`
 - `POST /pair`
 - `GET /events`
 - `GET /events/:event_id/participants`
+- `GET /events/:event_id/participants/search?q=<texto>&mode=<modo>`
 - `POST /events/:event_id/checkins/reset`
 - `POST /events/:event_id/archive`
 - `POST /events/:event_id/unarchive`
@@ -137,6 +139,19 @@ pnpm run dev:native
 - `GET /sync/events`
 - `POST /sync/import`
 - `POST /sync/push`
+
+### Exemplos de busca por evento
+
+- Buscar por nome (parcial, sem diferenciar acento/caixa):
+  - `GET /events/ev-123/participants/search?q=joao&mode=nome`
+- Buscar por CPF (exato):
+  - `GET /events/ev-123/participants/search?q=12345678900&mode=cpf`
+- Buscar por QR code (exato):
+  - `GET /events/ev-123/participants/search?q=QR-ABC-123&mode=qr`
+- Buscar por ticket id (exato):
+  - `GET /events/ev-123/participants/search?q=seat-001&mode=ticket_id`
+- Buscar por data de nascimento (exato):
+  - `GET /events/ev-123/participants/search?q=1990-01-01&mode=birth_date`
 
 ## Scripts uteis
 
@@ -181,8 +196,3 @@ cargo test
 cd apps/native
 pnpm run test
 ```
-
-## Limitacoes conhecidas
-
-- O card de enderecos de rede no desktop (`NetworkAddresses`) ainda usa IPs mockados para exibicao.
-- O endpoint `GET /participants/search` esta stubado no backend atual.

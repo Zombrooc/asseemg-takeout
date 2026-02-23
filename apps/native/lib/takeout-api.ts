@@ -4,6 +4,8 @@ import type {
   EventParticipant,
   EventSummary,
   HealthResponse,
+  NetworkAddressesResponse,
+  ParticipantSearchMode,
   SyncEvent,
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
@@ -14,6 +16,8 @@ export type {
   ConnectionInfo,
   EventParticipant,
   EventSummary,
+  NetworkAddressesResponse,
+  ParticipantSearchMode,
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
@@ -46,6 +50,7 @@ export function createTakeoutClient(config: {
 
   return {
     getHealth: () => request<HealthResponse>("/health", { skipAuth: true }),
+    getNetworkAddresses: () => request<NetworkAddressesResponse>("/network/addresses", { skipAuth: true }),
     getConnectionInfo: () => request<ConnectionInfo>("/pair/info", { skipAuth: true }),
     pair: (deviceId: string, pairingToken: string) =>
       request<{ access_token: string }>("/pair", {
@@ -56,6 +61,12 @@ export function createTakeoutClient(config: {
     getEvents: () => request<EventSummary[]>("/events"),
     getEventParticipants: (eventId: string) =>
       request<EventParticipant[]>(`/events/${encodeURIComponent(eventId)}/participants`),
+    searchEventParticipants: (eventId: string, q: string, mode: ParticipantSearchMode) => {
+      const params = new URLSearchParams({ q, mode });
+      return request<EventParticipant[]>(
+        `/events/${encodeURIComponent(eventId)}/participants/search?${params.toString()}`
+      );
+    },
     postTakeoutConfirm: (payload: TakeoutConfirmPayload) =>
       request<TakeoutConfirmResponse>("/takeout/confirm", {
         method: "POST",
