@@ -12,8 +12,9 @@ alwaysApply: true
 
 ## Arquitetura
 
-- **Componentes**: Desktop (Tauri + frontend TanStack Router + API HTTP **Tokio/Axum** em Rust + SQLite), Mobile (React Native em `apps/native`), contratos no frontend (`apps/web/src/lib/takeout-api.ts`) e em `packages/api` quando houver.
+- **Componentes**: Desktop (Tauri + frontend TanStack Router + API HTTP **Tokio/Axum** em Rust + SQLite), Mobile (React Native em `apps/native`), contratos no frontend (`apps/web/src/lib/takeout-api.ts`) e em `packages/api` quando houver. A API takeout **não** vive em `apps/server` (este é stub); está no processo Tauri em `apps/web`.
 - **API em Rust** (`apps/web/src-tauri/src/api/`): handlers (Axum) → services → repository → SQLite (rusqlite). Não há Express; o servidor HTTP sobe no `setup` do Tauri em 0.0.0.0:5555.
+- **Scripts**: para subir desktop + API: na raiz `pnpm run dev:web` e em `apps/web` o comando `pnpm run desktop:dev`.
 - **Camadas** (não pular): Handler → Service → Repository → SQLite.
 
 ## Código

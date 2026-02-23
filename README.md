@@ -1,90 +1,73 @@
-# pickup
+# Takeout Offline
 
-This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Router, Express, TRPC, and more.
+Sistema de retirada de kit em eventos de corrida, 100% offline na LAN. Desktop = fonte de verdade (SQLite + API HTTP na porta 5555); mobile pareia via QR e consome a mesma API.
 
-## Features
+## Stack
 
-- **TypeScript** - For type safety and improved developer experience
-- **TanStack Router** - File-based routing with full type safety
-- **React Native** - Build mobile apps using React
-- **Expo** - Tools for React Native development
-- **TailwindCSS** - Utility-first CSS for rapid UI development
-- **shadcn/ui** - Reusable UI components
-- **Express** - Fast, unopinionated web framework
-- **tRPC** - End-to-end type-safe APIs
-- **Node.js** - Runtime environment
-- **Prisma** - TypeScript-first ORM
-- **SQLite/Turso** - Database engine
-- **Biome** - Linting and formatting
-- **Tauri** - Build native desktop applications
-- **Turborepo** - Optimized monorepo build system
+- **TypeScript**, **React**, **TanStack Router**, **Vite**, **Tailwind**
+- **Tauri** + **Axum** + **rusqlite**: app desktop com API HTTP no mesmo processo (porta 5555)
+- **React Native / Expo**: app mobile na LAN
+- **Turborepo**, **Biome**
+
+A API takeout não usa Express nem tRPC; está em Rust em `apps/web/src-tauri`.
+
+## Estrutura
+
+```
+├── apps/
+│   ├── web/         # Frontend (Vite + TanStack Router) + Tauri + API Axum (5555)
+│   ├── native/      # Mobile (Expo), consome API do desktop na LAN
+│   └── server/      # Stub (API takeout está no Tauri)
+├── packages/
+│   ├── api/         # Contratos vazios/legado
+│   ├── config/      # Configuração compartilhada
+│   ├── db/          # Prisma (schema; uso opcional)
+│   └── env/         # Variáveis de ambiente
+```
 
 ## Getting Started
-
-First, install the dependencies:
 
 ```bash
 pnpm install
 ```
 
-## Database Setup
-
-This project uses SQLite with Prisma.
-
-1. Start the local SQLite database (optional):
+**Desktop + API takeout**: frontend e API sobem juntos com Tauri:
 
 ```bash
-pnpm run db:local
+pnpm run dev:web
+# Em outro terminal:
+cd apps/web && pnpm run desktop:dev
 ```
 
-2. Update your `.env` file in the `apps/server` directory with the appropriate connection details if needed.
+- Frontend: [http://localhost:3001](http://localhost:3001)
+- API: `http://0.0.0.0:5555`
 
-3. Apply the schema to your database:
+**Mobile**: na mesma LAN, use Expo e pareie com o desktop (QR ou IP:5555):
 
 ```bash
-pnpm run db:push
+pnpm run dev:native
 ```
 
-Then, run the development server:
+## Scripts (raiz)
 
-```bash
-pnpm run dev
-```
+- `pnpm run dev`: Turbo dev para todos os apps
+- `pnpm run dev:web`: Só o frontend web (Vite)
+- `pnpm run dev:native`: Expo / mobile
+- `pnpm run dev:server`: Stub (mensagem “API is in Tauri”)
+- `pnpm run build`: Build de todos os apps
+- `pnpm run check-types`: Verificação de tipos
+- `pnpm run check`: Biome (format + lint)
+- `pnpm run db:push`, `db:generate`, `db:migrate`, `db:studio`, `db:local`: Prisma no package `@pickup/db` (quando usado)
 
-Open [http://localhost:3001](http://localhost:3001) in your browser to see the web application.
-Use the Expo Go app to run the mobile application.
-The API is running at [http://localhost:3000](http://localhost:3000).
+## Scripts (apps/web)
 
-## Git Hooks and Formatting
+- `pnpm run desktop:dev`: Tauri em desenvolvimento (inclui API em 5555)
+- `pnpm run desktop:build`: Build do app desktop
 
-- Format and lint fix: `pnpm run check`
+## Takeout
 
-## Project Structure
+Desktop é a fonte de verdade: SQLite (rusqlite) + API HTTP em 0.0.0.0:5555. Mobile descobre o desktop na LAN, lê o QR (URL + pairing_token), faz POST `/pair` e usa `Authorization: Bearer <access_token>` nas requisições. Contratos e client da API em `apps/web/src/lib/takeout-api.ts`.
 
-```
-pickup/
-├── apps/
-│   ├── web/         # Frontend application (React + TanStack Router)
-│   ├── native/      # Mobile application (React Native, Expo)
-│   └── server/      # Backend API (Express, TRPC)
-├── packages/
-│   ├── api/         # API layer / business logic
-│   └── db/          # Database schema & queries
-```
+## Formatação e lint
 
-## Available Scripts
-
-- `pnpm run dev`: Start all applications in development mode
-- `pnpm run build`: Build all applications
-- `pnpm run dev:web`: Start only the web application
-- `pnpm run dev:server`: Start only the server
-- `pnpm run check-types`: Check TypeScript types across all apps
-- `pnpm run dev:native`: Start the React Native/Expo development server
-- `pnpm run db:push`: Push schema changes to database
-- `pnpm run db:generate`: Generate database client/types
-- `pnpm run db:migrate`: Run database migrations
-- `pnpm run db:studio`: Open database studio UI
-- `pnpm run db:local`: Start the local SQLite database
-- `pnpm run check`: Run Biome formatting and linting
-- `cd apps/web && pnpm run desktop:dev`: Start Tauri desktop app in development
-- `cd apps/web && pnpm run desktop:build`: Build Tauri desktop app
+- `pnpm run check`: Biome check e fix

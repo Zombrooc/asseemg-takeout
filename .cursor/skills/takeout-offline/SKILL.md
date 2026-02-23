@@ -1,11 +1,11 @@
 ---
 name: takeout-offline
-description: Implements and reviews code for the takeout ecosystem (desktop Tauri, mobile, shared). Use when working on takeout desktop, takeout mobile, packages/shared, pairing, CSV import, participant search, or takeout confirmation flows.
+description: Implements and reviews code for the takeout ecosystem (desktop Tauri, mobile). Use when working on takeout desktop, takeout mobile, pairing, CSV import, participant search, or takeout confirmation flows.
 ---
 
 # Takeout Offline
 
-Use when implementing or reviewing code in the takeout ecosystem (desktop, mobile, shared).
+Use when implementing or reviewing code in the takeout ecosystem (desktop, mobile).
 
 ## Takeout Desktop
 
@@ -21,11 +21,11 @@ Use when implementing or reviewing code in the takeout ecosystem (desktop, mobil
 - **Confirmation modal**: Show participant (nome, cpf, data nascimento, idade, ticket, categoria, custom_forms, status takeout, valor pago); "Confirmar retirada" button.
 - **Confirmation queue**: Persist pending attempts locally; retry with backoff; remove only when response is CONFIRMED; payload: request_id (UUID), timestamp, staff_device_id, ticket_id/participant_id.
 
-## Shared (packages/shared)
+## Contratos e client
 
-- **Zod schemas**: health, pair (request/response), search (query), participant (response), takeout/confirm (request/response), audit (response).
-- **Utils**: `requestId()` returns UUID v4 for idempotency.
-- **Constants**: BASE_PATH (e.g. `/api` or ``), status codes, endpoint names.
+- **Types e client HTTP**: `apps/web/src/lib/takeout-api.ts` — BASE_URL (default `http://127.0.0.1:5555`), types (HealthResponse, ConnectionInfo, TakeoutConfirmPayload, etc.), funções `getHealth`, `getConnectionInfo`, `confirmTakeout`, `getAudit`, etc.
+- **Mobile**: usa esses types ou reimplementa chamadas; `request_id` é gerado no client (UUID v4), e.g. em `apps/native/components/takeout/confirm-takeout-modal.tsx`.
+- `packages/api` existe mas está vazio (contratos vivem no frontend).
 
 ## External references
 
