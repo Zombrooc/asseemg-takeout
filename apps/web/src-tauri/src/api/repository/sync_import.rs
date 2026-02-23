@@ -131,7 +131,7 @@ mod tests {
     let pull = minimal_pull();
     super::import_pull_to_db(&pool, &pull).unwrap();
 
-    let events = EventsRepository::list_events(&pool).unwrap();
+    let events = EventsRepository::list_events(&pool, true).unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_id, "ev-test");
     assert_eq!(events[0].name.as_deref(), Some("Test Event"));

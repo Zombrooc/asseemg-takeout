@@ -1,20 +1,50 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { EventCard } from "@/components/takeout/event-card";
 import { NetworkAddresses } from "@/components/takeout/network-addresses";
 import { PairingCard } from "@/components/takeout/pairing-card";
 import { ServerStatus } from "@/components/takeout/server-status";
-import { getEvents } from "@/lib/takeout-api";
+import {
+  deleteEvent,
+  getEvents,
+  postEventArchive,
+  type EventSummary,
+} from "@/lib/takeout-api";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
   component: DashboardPage,
 });
 
 function DashboardPage() {
+  const queryClient = useQueryClient();
   const { data: events = [], isLoading } = useQuery({
     queryKey: ["takeout", "events"],
-    queryFn: getEvents,
+    queryFn: () => getEvents(),
+    refetchInterval: 15_000,
   });
+
+  const handleArchive = async (event: EventSummary) => {
+    try {
+      await postEventArchive(event.eventId);
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events"] });
+      toast.success("Evento arquivado");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao arquivar");
+    }
+  };
+
+  const handleDelete = async (event: EventSummary) => {
+    const name = event.name ?? event.eventId;
+    if (!window.confirm(`Apagar o evento "${name}" e todos os participantes?`)) return;
+    try {
+      await deleteEvent(event.eventId);
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events"] });
+      toast.success("Evento apagado");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao apagar");
+    }
+  };
 
   return (
     <div className="container mx-auto max-w-4xl space-y-6 px-4 py-6">
@@ -30,7 +60,14 @@ function DashboardPage() {
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Carregando eventos...</p>
             ) : (
-              events.map((event) => <EventCard key={event.eventId} event={event} />)
+              events.map((event) => (
+                <EventCard
+                  key={event.eventId}
+                  event={event}
+                  onArchive={handleArchive}
+                  onDelete={handleDelete}
+                />
+              ))
             )}
           </div>
         </div>

@@ -12,6 +12,8 @@ pub struct EventRow {
   pub end_date: Option<String>,
   pub start_time: Option<String>,
   pub imported_at: String,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub archived_at: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -40,14 +42,17 @@ pub struct EventParticipantRow {
 }
 
 impl EventsRepository {
-  pub fn list_events(pool: &DbPool) -> Result<Vec<EventRow>, rusqlite::Error> {
+  pub fn list_events(pool: &DbPool, include_archived: bool) -> Result<Vec<EventRow>, rusqlite::Error> {
     let conn = pool
       .conn
       .lock()
       .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
-    let mut stmt = conn.prepare(
-      "SELECT event_id, name, start_date, end_date, start_time, imported_at FROM events ORDER BY imported_at DESC",
-    )?;
+    let sql = if include_archived {
+      "SELECT event_id, name, start_date, end_date, start_time, imported_at, archived_at FROM events ORDER BY imported_at DESC"
+    } else {
+      "SELECT event_id, name, start_date, end_date, start_time, imported_at, archived_at FROM events WHERE archived_at IS NULL ORDER BY imported_at DESC"
+    };
+    let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
       Ok(EventRow {
         event_id: row.get(0)?,
@@ -56,9 +61,49 @@ impl EventsRepository {
         end_date: row.get(3)?,
         start_time: row.get(4)?,
         imported_at: row.get(5)?,
+        archived_at: row.get::<_, Option<String>>(6)?,
       })
     })?;
     rows.collect()
+  }
+
+  pub fn archive_event(pool: &DbPool, event_id: &str) -> Result<usize, rusqlite::Error> {
+    let conn = pool
+      .conn
+      .lock()
+      .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+    conn.execute(
+      "UPDATE events SET archived_at = datetime('now') WHERE event_id = ?1",
+      params![event_id],
+    )
+  }
+
+  pub fn delete_event(pool: &DbPool, event_id: &str) -> Result<(), rusqlite::Error> {
+    let conn = pool
+      .conn
+      .lock()
+      .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+    // ticket_ids for participants of this event
+    let ticket_ids: Vec<String> = conn
+      .prepare(
+        "SELECT t.id FROM tickets t INNER JOIN participants p ON t.participant_id = p.id WHERE p.event_id = ?1",
+      )?
+      .query_map(params![event_id], |row| row.get(0))?
+      .collect::<Result<Vec<_>, _>>()?;
+    for ticket_id in &ticket_ids {
+      let _ = conn.execute("DELETE FROM takeout_events WHERE ticket_id = ?1", params![ticket_id]);
+      let _ = conn.execute("DELETE FROM check_ins WHERE ticket_id = ?1", params![ticket_id]);
+    }
+    let _ = conn.execute(
+      "DELETE FROM tickets WHERE participant_id IN (SELECT id FROM participants WHERE event_id = ?1)",
+      params![event_id],
+    );
+    let _ = conn.execute("DELETE FROM locks WHERE participant_id IN (SELECT id FROM participants WHERE event_id = ?1)", params![event_id]);
+    let _ = conn.execute("DELETE FROM event_log WHERE event_id = ?1", params![event_id]);
+    let _ = conn.execute("DELETE FROM participants WHERE event_id = ?1", params![event_id]);
+    let _ = conn.execute("DELETE FROM custom_forms WHERE event_id = ?1", params![event_id]);
+    let _ = conn.execute("DELETE FROM events WHERE event_id = ?1", params![event_id]);
+    Ok(())
   }
 
   pub fn list_participants_by_event(

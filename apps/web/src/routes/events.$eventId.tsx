@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -14,7 +16,11 @@ import {
   postTakeoutConfirm,
   type EventParticipant,
 } from "@/lib/takeout-api";
+import { useTakeoutWs } from "@/lib/use-takeout-ws";
 import { toast } from "sonner";
+
+const isDev = import.meta.env.DEV;
+const QR_SIZE = 160;
 
 export const Route = createFileRoute("/events/$eventId")({
   component: EventDetailPage,
@@ -23,6 +29,8 @@ export const Route = createFileRoute("/events/$eventId")({
 function EventDetailPage() {
   const { eventId } = Route.useParams();
   const queryClient = useQueryClient();
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+  useTakeoutWs(eventId);
   const { data: participants = [], isLoading } = useQuery({
     queryKey: ["takeout", "events", eventId, "participants"],
     queryFn: () => getEventParticipants(eventId),
@@ -55,7 +63,7 @@ function EventDetailPage() {
                 <TableHead>Nome</TableHead>
                 <TableHead>CPF</TableHead>
                 <TableHead>Ingresso</TableHead>
-                <TableHead>QR Code</TableHead>
+                {isDev && <TableHead>QR Code</TableHead>}
                 <TableHead>Check-in</TableHead>
                 <TableHead className="w-[120px]" />
               </TableRow>
@@ -66,7 +74,32 @@ function EventDetailPage() {
                   <TableCell>{p.name ?? "—"}</TableCell>
                   <TableCell>{p.cpf ?? "—"}</TableCell>
                   <TableCell>{p.sourceTicketId ?? p.ticketId}</TableCell>
-                  <TableCell className="font-mono text-xs">{p.qrCode}</TableCell>
+                  {isDev && (
+                    <TableCell>
+                      {p.qrCode ? (
+                        revealedId === p.id ? (
+                          <button
+                            type="button"
+                            className="cursor-pointer border-0 bg-transparent p-0"
+                            onClick={() => setRevealedId(null)}
+                            title="Clique para ocultar"
+                          >
+                            <QRCodeSVG value={p.qrCode} size={QR_SIZE} level="M" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="flex min-h-[160px] min-w-[160px] cursor-pointer items-center justify-center rounded border border-dashed border-muted-foreground/40 bg-muted/30 text-sm text-muted-foreground hover:bg-muted/50"
+                            onClick={() => setRevealedId(p.id)}
+                          >
+                            Clique para mostrar
+                          </button>
+                        )
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                  )}
                   <TableCell>{p.checkinDone ? "Sim" : "Não"}</TableCell>
                   <TableCell>
                     <Button

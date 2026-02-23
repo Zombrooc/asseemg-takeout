@@ -80,6 +80,7 @@ impl DbPool {
     let conn = Connection::open(path)?;
     conn.execute_batch(SCHEMA_SQL)?;
     let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
     Ok(Self {
       conn: Mutex::new(conn),
     })
@@ -89,6 +90,7 @@ impl DbPool {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(SCHEMA_SQL)?;
     let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
     Ok(Self {
       conn: Mutex::new(conn),
     })

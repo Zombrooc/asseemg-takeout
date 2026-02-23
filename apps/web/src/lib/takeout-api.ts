@@ -21,6 +21,7 @@ export type EventSummary = {
   endDate: string | null;
   startTime: string | null;
   importedAt: string;
+  archivedAt?: string | null;
 };
 
 export type EventParticipant = {
@@ -112,8 +113,26 @@ export async function postImportJson(data: PullResponse): Promise<PullResponse> 
   return res.json() as Promise<PullResponse>;
 }
 
-export async function getEvents(): Promise<EventSummary[]> {
-  return request<EventSummary[]>("/events");
+export async function getEvents(includeArchived?: boolean): Promise<EventSummary[]> {
+  const q = includeArchived ? "?includeArchived=true" : "";
+  return request<EventSummary[]>(`/events${q}`);
+}
+
+export async function postEventArchive(eventId: string): Promise<{ archived: boolean }> {
+  const res = await fetch(`${BASE_URL}/events/${encodeURIComponent(eventId)}/archive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<{ archived: boolean }>;
+}
+
+export async function deleteEvent(eventId: string): Promise<{ deleted: boolean }> {
+  const res = await fetch(`${BASE_URL}/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<{ deleted: boolean }>;
 }
 
 export async function getEventParticipants(eventId: string): Promise<EventParticipant[]> {

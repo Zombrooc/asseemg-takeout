@@ -5,7 +5,7 @@ use axum::{
   },
   http::{header, HeaderMap, StatusCode},
   response::IntoResponse,
-  routing::{get, post},
+  routing::{delete, get, post},
   Json, Router,
 };
 use std::sync::Arc;
@@ -44,6 +44,8 @@ pub fn router(state: AppState) -> Router {
     .route("/events", get(events_list))
     .route("/events/:event_id/participants", get(events_participants))
     .route("/events/:event_id/checkins/reset", post(events_checkins_reset))
+    .route("/events/:event_id/archive", post(events_archive))
+    .route("/events/:event_id", delete(events_delete))
     .route("/takeout/confirm", post(takeout_confirm))
     .route("/ws", get(ws_handler))
     .route("/locks", post(locks_acquire))
@@ -147,12 +149,50 @@ fn bearer_token(headers: &HeaderMap) -> Option<String> {
   v.strip_prefix("Bearer ").map(String::from)
 }
 
-async fn events_list(State(state): State<AppState>) -> impl IntoResponse {
-  match EventsRepository::list_events(&state.pool) {
+#[derive(serde::Deserialize)]
+struct EventsListQuery {
+  #[serde(rename = "includeArchived")]
+  include_archived: Option<bool>,
+}
+
+async fn events_list(
+  State(state): State<AppState>,
+  Query(q): Query<EventsListQuery>,
+) -> impl IntoResponse {
+  let include_archived = q.include_archived.unwrap_or(false);
+  match EventsRepository::list_events(&state.pool, include_archived) {
     Ok(events) => (StatusCode::OK, Json(events)).into_response(),
     Err(e) => (
       StatusCode::INTERNAL_SERVER_ERROR,
       Json(serde_json::json!({ "error": format!("{}", e) })),
+    )
+      .into_response(),
+  }
+}
+
+async fn events_archive(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+) -> impl IntoResponse {
+  match EventsRepository::archive_event(&state.pool, &event_id) {
+    Ok(n) => (StatusCode::OK, Json(serde_json::json!({ "archived": n > 0 }))).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+async fn events_delete(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+) -> impl IntoResponse {
+  match EventsRepository::delete_event(&state.pool, &event_id) {
+    Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "deleted": true }))).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
     )
       .into_response(),
   }
