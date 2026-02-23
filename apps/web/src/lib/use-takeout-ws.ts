@@ -1,6 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getTakeoutBaseUrl } from "./takeout-api";
+
+const RECONNECT_DELAY_MS = 3000;
 
 function wsUrl(baseUrl: string, eventId: string, deviceId: string): string {
   const base = baseUrl.replace(/^http/, "ws").replace(/\/$/, "");
@@ -11,11 +13,14 @@ function wsUrl(baseUrl: string, eventId: string, deviceId: string): string {
 /**
  * Subscribes to takeout WebSocket for the given event and invalidates
  * participants query on participant_checked_in so the table updates in real time.
+ * Reconnects on close after a delay (unless effect is cleaning up).
  */
 export function useTakeoutWs(eventId: string | undefined): void {
   const queryClient = useQueryClient();
   const eventIdRef = useRef(eventId);
   eventIdRef.current = eventId;
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!eventId) return;
@@ -38,10 +43,19 @@ export function useTakeoutWs(eventId: string | undefined): void {
     };
 
     ws.onerror = () => {};
-    ws.onclose = () => {};
+    ws.onclose = () => {
+      timeoutRef.current = setTimeout(() => {
+        timeoutRef.current = null;
+        setReconnectTrigger((n) => n + 1);
+      }, RECONNECT_DELAY_MS);
+    };
 
     return () => {
+      if (timeoutRef.current != null) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
       ws.close();
     };
-  }, [eventId, queryClient]);
+  }, [eventId, queryClient, reconnectTrigger]);
 }

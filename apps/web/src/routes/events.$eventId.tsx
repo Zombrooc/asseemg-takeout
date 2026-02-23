@@ -34,6 +34,7 @@ function EventDetailPage() {
   const { data: participants = [], isLoading } = useQuery({
     queryKey: ["takeout", "events", eventId, "participants"],
     queryFn: () => getEventParticipants(eventId),
+    refetchInterval: 10_000,
   });
 
   const confirmMutation = useMutation({

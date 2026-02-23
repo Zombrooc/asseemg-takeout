@@ -123,7 +123,8 @@ impl EventsRepository {
       .lock()
       .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
     let mut stmt = conn.prepare(
-      "SELECT p.id, p.name, p.cpf, p.birth_date, t.id AS ticket_id, t.code AS qr_code, t.raw_json AS ticket_raw, p.raw_json AS participant_raw
+      "SELECT p.id, p.name, p.cpf, p.birth_date, t.id AS ticket_id, t.code AS qr_code, t.raw_json AS ticket_raw, p.raw_json AS participant_raw,
+       EXISTS (SELECT 1 FROM takeout_events te WHERE te.ticket_id = t.id AND te.status IN ('CONFIRMED', 'DUPLICATE')) AS checkin_done_db
        FROM participants p
        JOIN tickets t ON t.participant_id = p.id
        WHERE p.event_id = ?1
@@ -138,6 +139,7 @@ impl EventsRepository {
       let qr_code: String = row.get(5)?;
       let ticket_raw: Option<String> = row.get(6)?;
       let participant_raw: Option<String> = row.get(7)?;
+      let checkin_done_db: bool = row.get(8)?;
       let ticket_raw_json = ticket_raw
         .as_ref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
@@ -147,11 +149,7 @@ impl EventsRepository {
       let ticket_name = ticket_raw_json
         .as_ref()
         .and_then(|v| v.get("ticketName").and_then(|n| n.as_str().map(String::from)));
-      let checkin_done = participant_raw
-        .as_ref()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-        .and_then(|v| v.get("checkinDone").and_then(|b| b.as_bool()))
-        .unwrap_or(false);
+      let checkin_done = checkin_done_db;
       let custom_form_responses = participant_raw
         .as_ref()
         .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
