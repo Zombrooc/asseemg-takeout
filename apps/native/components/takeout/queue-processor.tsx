@@ -1,11 +1,14 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { getPendingQueue, removeFromQueue, type PendingConfirmItem } from "@/lib/takeout-queue";
+import { TakeoutApiError } from "@/lib/takeout-api";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
 const RETRY_DELAY_MS = 3000;
 const MAX_BACKOFF_MS = 60000;
 
 export function TakeoutQueueProcessor() {
+  const queryClient = useQueryClient();
   const { api, deviceId, isReachable } = useTakeoutConnection();
   const processing = useRef(false);
   const backoff = useRef(RETRY_DELAY_MS);
@@ -31,12 +34,19 @@ export function TakeoutQueueProcessor() {
         });
         if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
           await removeFromQueue(item.request_id);
+          queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
           backoff.current = RETRY_DELAY_MS;
         } else {
           backoff.current = Math.min(backoff.current * 1.5, MAX_BACKOFF_MS);
         }
-      } catch {
-        backoff.current = Math.min(backoff.current * 1.5, MAX_BACKOFF_MS);
+      } catch (e) {
+        if (e instanceof TakeoutApiError && e.status === 409) {
+          await removeFromQueue(item.request_id);
+          queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
+          backoff.current = RETRY_DELAY_MS;
+        } else {
+          backoff.current = Math.min(backoff.current * 1.5, MAX_BACKOFF_MS);
+        }
       }
       processing.current = false;
       if (!cancelled) setTimeout(process, backoff.current);
@@ -46,7 +56,7 @@ export function TakeoutQueueProcessor() {
       cancelled = true;
       clearTimeout(id);
     };
-  }, [api, deviceId, isReachable]);
+  }, [api, deviceId, isReachable, queryClient]);
 
   return null;
 }

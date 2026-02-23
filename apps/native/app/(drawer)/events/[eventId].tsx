@@ -1,8 +1,9 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import type { EventParticipant } from "@/lib/takeout-api-types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, BackHandler, FlatList, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -13,6 +14,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { Container } from "@/components/container";
 import { ConfirmTakeoutModal } from "@/components/takeout/confirm-takeout-modal";
 import { formatDateBR } from "@/lib/format-date";
+import { useTakeoutRealtime } from "@/lib/takeout-realtime";
+import { getPendingQueue } from "@/lib/takeout-queue";
+
+const SYNC_LAST_SEQ_KEY = (eventId: string) => `takeout_sync_last_seq_${eventId}`;
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
@@ -32,16 +37,44 @@ function matchesSearch(participant: EventParticipant, q: string): boolean {
   );
 }
 
+const PENDING_QUEUE_KEY = ["takeout-pending-queue"] as const;
+
 export default function EventScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const navigation = useNavigation();
   const router = useRouter();
-  const { api, isReachable, checkReachability } = useTakeoutConnection();
+  const queryClient = useQueryClient();
+  const { api, isReachable, checkReachability, baseUrl, deviceId } = useTakeoutConnection();
+  const { lockMap } = useTakeoutRealtime(eventId ?? undefined, baseUrl, deviceId);
+
+  useEffect(() => {
+    if (!api || !eventId || !isReachable) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(SYNC_LAST_SEQ_KEY(eventId));
+        const sinceSeq = raw != null ? Number(raw) : 0;
+        const { events, latestSeq } = await api.getSyncEvents(eventId, sinceSeq);
+        if (cancelled) return;
+        if (events.length > 0) {
+          queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
+          queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
+        }
+        await AsyncStorage.setItem(SYNC_LAST_SEQ_KEY(eventId), String(latestSeq));
+      } catch {
+        // ignore
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, eventId, isReachable, queryClient]);
   const [selectedParticipant, setSelectedParticipant] = useState<EventParticipant | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [offlineNoticeVisible, setOfflineNoticeVisible] = useState(false);
+  const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(new Set());
   const [permission, requestPermission] = useCameraPermissions();
 
   const eventQuery = useQuery({
@@ -61,6 +94,17 @@ export default function EventScreen() {
     queryFn: () => (api ? api.getAudit() : Promise.reject(new Error("No API"))),
     enabled: !!api && !!eventId && isReachable,
   });
+
+  const pendingQueueQuery = useQuery({
+    queryKey: PENDING_QUEUE_KEY,
+    queryFn: getPendingQueue,
+    refetchInterval: isReachable ? 5000 : false,
+  });
+
+  const pendingTicketIds = useMemo(
+    () => new Set((pendingQueueQuery.data ?? []).map((i) => i.ticket_id)),
+    [pendingQueueQuery.data]
+  );
 
   const event = useMemo(
     () => eventQuery.data?.find((e) => e.eventId === eventId) ?? null,
@@ -96,6 +140,17 @@ export default function EventScreen() {
     [auditQuery.data]
   );
 
+  useEffect(() => {
+    if (!auditQuery.data?.length) return;
+    setConflictTicketIds((prev) => {
+      const next = new Set(prev);
+      auditQuery.data?.forEach((a) => {
+        if (a.status === "CONFIRMED" || a.status === "DUPLICATE") next.delete(a.ticket_id);
+      });
+      return next;
+    });
+  }, [auditQuery.data]);
+
   const total = participants.length;
   const confirmed = participants.filter((p) => auditConfirmedTicketIds.has(p.ticketId)).length;
   const pending = total - confirmed;
@@ -115,21 +170,33 @@ export default function EventScreen() {
         Alert.alert("Check-in já realizado", "Este ingresso já teve check-in realizado.");
         return;
       }
+      if (
+        deviceId != null &&
+        lockMap[participant.id] != null &&
+        lockMap[participant.id] !== deviceId
+      ) {
+        Alert.alert(
+          "Em atendimento",
+          "Este participante está sendo atendido por outro dispositivo. Aguarde para fazer o check-in."
+        );
+        return;
+      }
       setSelectedParticipant(participant);
     },
-    [participants, auditConfirmedTicketIds]
+    [participants, auditConfirmedTicketIds, lockMap, deviceId]
   );
 
   const offlineNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleQueuedOffline = useCallback(() => {
     setOfflineNoticeVisible(true);
+    queryClient.invalidateQueries({ queryKey: PENDING_QUEUE_KEY });
     if (offlineNoticeTimeoutRef.current) clearTimeout(offlineNoticeTimeoutRef.current);
     offlineNoticeTimeoutRef.current = setTimeout(() => {
       setOfflineNoticeVisible(false);
       offlineNoticeTimeoutRef.current = null;
     }, 3500);
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     return () => {
@@ -151,27 +218,58 @@ export default function EventScreen() {
   }, [api, eventId, auditQuery, participantsQuery]);
 
   const renderItem = useCallback(
-    ({ item }: { item: EventParticipant }) => (
-      <Surface variant="secondary" className="p-4 rounded-xl mb-2 mx-4">
-        <View className="flex-row justify-between items-center">
-          <View className="flex-1">
-            <Text className="text-foreground font-medium">{item.name ?? "—"}</Text>
-            <Text className="text-muted-foreground text-sm">{item.ticketId}</Text>
-            {auditConfirmedTicketIds.has(item.ticketId) ? (
-              <Text className="text-success text-xs mt-1">Check-in feito</Text>
-            ) : null}
+    ({ item }: { item: EventParticipant }) => {
+      const isConfirmed = auditConfirmedTicketIds.has(item.ticketId);
+      const isPendingSync = pendingTicketIds.has(item.ticketId);
+      const isConflict = conflictTicketIds.has(item.ticketId);
+      const lockedByOther =
+        deviceId != null && lockMap[item.id] != null && lockMap[item.id] !== deviceId;
+      return (
+        <Surface variant="secondary" className="p-4 rounded-xl mb-2 mx-4">
+          <View className="flex-row justify-between items-center">
+            <View className="flex-1">
+              <Text className="text-foreground font-medium">{item.name ?? "—"}</Text>
+              <Text className="text-muted-foreground text-sm">{item.ticketId}</Text>
+              {isConfirmed ? (
+                <Text className="text-success text-xs mt-1">Check-in feito</Text>
+              ) : lockedByOther ? (
+                <Text className="text-warning text-xs mt-1">
+                  Em atendimento por outro dispositivo — aguarde para fazer check-in
+                </Text>
+              ) : isConflict ? (
+                <Text className="text-danger text-xs mt-1">Conflito — já retirado por outro</Text>
+              ) : isPendingSync ? (
+                <Text className="text-warning text-xs mt-1">Pendente</Text>
+              ) : null}
+            </View>
+            {isConflict ? (
+              <Button
+                size="sm"
+                variant="bordered"
+                onPress={() => setConflictTicketIds((prev) => { const n = new Set(prev); n.delete(item.ticketId); return n; })}
+              >
+                Dispensar
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                onPress={() => setSelectedParticipant(item)}
+                isDisabled={isConfirmed || isPendingSync || lockedByOther}
+              >
+                {isConfirmed
+                  ? "OK"
+                  : lockedByOther
+                    ? "Em atendimento"
+                    : isPendingSync
+                      ? "Pendente"
+                      : "Fazer check-in"}
+              </Button>
+            )}
           </View>
-          <Button
-            size="sm"
-            onPress={() => setSelectedParticipant(item)}
-            isDisabled={auditConfirmedTicketIds.has(item.ticketId)}
-          >
-            {auditConfirmedTicketIds.has(item.ticketId) ? "OK" : "Fazer check-in"}
-          </Button>
-        </View>
-      </Surface>
-    ),
-    [auditConfirmedTicketIds]
+        </Surface>
+      );
+    },
+    [auditConfirmedTicketIds, pendingTicketIds, conflictTicketIds, lockMap, deviceId]
   );
 
   if (!eventId) {
@@ -337,6 +435,10 @@ export default function EventScreen() {
           auditQuery.refetch();
         }}
         onQueuedOffline={handleQueuedOffline}
+        onConflict={(ticketId) => {
+          setConflictTicketIds((prev) => new Set(prev).add(ticketId));
+          auditQuery.refetch();
+        }}
       />
     </>
   );

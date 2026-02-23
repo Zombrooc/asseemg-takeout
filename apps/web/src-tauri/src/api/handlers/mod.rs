@@ -1,5 +1,8 @@
 use axum::{
-  extract::{Multipart, Path, Query, State},
+  extract::{
+    ws::{WebSocket, WebSocketUpgrade},
+    Multipart, Path, Query, State,
+  },
   http::{header, HeaderMap, StatusCode},
   response::IntoResponse,
   routing::{get, post},
@@ -9,14 +12,19 @@ use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 
 use crate::api::db::DbPool;
-use crate::api::repository::{EventsRepository, TakeoutRepository};
-use crate::api::services::{PairingService, TakeoutService};
+use crate::api::repository::{
+  EventLogRepository, EventsRepository, LocksRepository, ParticipantsRepository, TakeoutRepository,
+};
+use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
+use crate::api::services::PairingService;
 use crate::api::thevent;
+use crate::api::ws::WsRegistry;
 
 #[derive(Clone)]
 pub struct AppState {
   pub pool: Arc<DbPool>,
   pub base_url: String,
+  pub ws_registry: Arc<WsRegistry>,
 }
 
 
@@ -37,9 +45,14 @@ pub fn router(state: AppState) -> Router {
     .route("/events/:event_id/participants", get(events_participants))
     .route("/events/:event_id/checkins/reset", post(events_checkins_reset))
     .route("/takeout/confirm", post(takeout_confirm))
+    .route("/ws", get(ws_handler))
+    .route("/locks", post(locks_acquire))
+    .route("/locks/renew", post(locks_renew))
+    .route("/locks/:participant_id", get(locks_status).delete(locks_release))
     .route("/audit", get(audit))
     .route("/admin/import", post(admin_import))
     .route("/sync/pull", get(sync_pull))
+    .route("/sync/events", get(sync_events))
     .route("/sync/import", post(sync_import))
     .route("/sync/push", post(sync_push))
     .layer(cors)
@@ -173,15 +186,200 @@ async fn events_checkins_reset(
   }
 }
 
+#[derive(serde::Deserialize)]
+#[allow(dead_code)]
+struct WsQuery {
+  event_id: String,
+  device_id: Option<String>,
+  last_seq: Option<String>,
+}
+
+async fn ws_handler(
+  ws: WebSocketUpgrade,
+  Query(q): Query<WsQuery>,
+  State(state): State<AppState>,
+) -> impl IntoResponse {
+  let event_id = q.event_id.clone();
+  let registry = state.ws_registry.clone();
+  ws.on_upgrade(move |socket| handle_ws_socket(socket, event_id, registry))
+}
+
+async fn handle_ws_socket(socket: WebSocket, event_id: String, registry: Arc<WsRegistry>) {
+  let (id, mut rx) = registry.register(event_id.clone());
+  let mut socket = socket;
+  while let Some(msg) = rx.recv().await {
+    if let Ok(()) = socket.send(axum::extract::ws::Message::Text(msg)).await {
+      // continue
+    } else {
+      break;
+    }
+  }
+  registry.unregister(&event_id, id);
+}
+
+#[derive(serde::Deserialize)]
+struct LockBody {
+  #[serde(rename = "participantId")]
+  participant_id: String,
+  #[serde(rename = "deviceId")]
+  device_id: String,
+}
+
+async fn locks_acquire(
+  State(state): State<AppState>,
+  Json(body): Json<LockBody>,
+) -> impl IntoResponse {
+  match LocksRepository::acquire(&state.pool, &body.participant_id, &body.device_id) {
+    Ok(crate::api::repository::AcquireResult::Acquired) => {
+      if let Ok(Some(ev_id)) = ParticipantsRepository::get_event_id_by_participant_id(&state.pool, &body.participant_id)
+      {
+        let payload_json = serde_json::json!({
+          "participant_id": body.participant_id,
+          "device_id": body.device_id
+        })
+        .to_string();
+        let _ = EventLogRepository::insert(&state.pool, &ev_id, "lock_acquired", Some(&payload_json));
+        let msg = serde_json::json!({
+          "type": "lock_acquired",
+          "participant_id": body.participant_id,
+          "device_id": body.device_id
+        });
+        state.ws_registry.broadcast(&ev_id, &msg.to_string());
+      }
+      (StatusCode::OK, Json(serde_json::json!({ "acquired": true }))).into_response()
+    }
+    Ok(crate::api::repository::AcquireResult::AlreadyHeldBy { device_id: held_by }) => (
+      StatusCode::CONFLICT,
+      Json(serde_json::json!({ "acquired": false, "heldBy": held_by })),
+    )
+      .into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+async fn locks_renew(
+  State(state): State<AppState>,
+  Json(body): Json<LockBody>,
+) -> impl IntoResponse {
+  match LocksRepository::renew(&state.pool, &body.participant_id, &body.device_id) {
+    Ok(true) => (StatusCode::OK, Json(serde_json::json!({ "renewed": true }))).into_response(),
+    Ok(false) => (
+      StatusCode::CONFLICT,
+      Json(serde_json::json!({ "renewed": false })),
+    )
+      .into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+#[derive(serde::Deserialize)]
+struct LocksReleaseQuery {
+  #[serde(rename = "deviceId")]
+  device_id: Option<String>,
+}
+
+async fn locks_status(
+  State(state): State<AppState>,
+  Path(participant_id): Path<String>,
+) -> impl IntoResponse {
+  match LocksRepository::get_holder(&state.pool, &participant_id) {
+    Ok(Some((device_id, expires_at))) => (
+      StatusCode::OK,
+      Json(serde_json::json!({ "heldBy": device_id, "expiresAt": expires_at })),
+    )
+      .into_response(),
+    Ok(None) => (
+      StatusCode::OK,
+      Json(serde_json::json!({ "heldBy": null, "expiresAt": null })),
+    )
+      .into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+async fn locks_release(
+  State(state): State<AppState>,
+  Path(participant_id): Path<String>,
+  Query(q): Query<LocksReleaseQuery>,
+) -> impl IntoResponse {
+  let device_id = q.device_id.as_deref();
+  match LocksRepository::release(&state.pool, &participant_id, device_id) {
+    Ok(n) if n > 0 => {
+      if let Ok(Some(ev_id)) = ParticipantsRepository::get_event_id_by_participant_id(&state.pool, &participant_id) {
+        let payload_json = serde_json::json!({
+          "participant_id": participant_id,
+          "device_id": device_id.unwrap_or_default()
+        })
+        .to_string();
+        let _ = EventLogRepository::insert(&state.pool, &ev_id, "lock_released", Some(&payload_json));
+        let msg = serde_json::json!({
+          "type": "lock_released",
+          "participant_id": participant_id
+        });
+        state.ws_registry.broadcast(&ev_id, &msg.to_string());
+      }
+      (StatusCode::OK, Json(serde_json::json!({ "released": true }))).into_response()
+    }
+    _ => (StatusCode::OK, Json(serde_json::json!({ "released": false }))).into_response(),
+  }
+}
+
 async fn takeout_confirm(
   State(state): State<AppState>,
   headers: HeaderMap,
   Json(payload): Json<crate::api::services::takeout::ConfirmTakeoutPayload>,
 ) -> impl IntoResponse {
   let device_id = bearer_token(&headers).unwrap_or_else(|| "unknown".to_string());
-  match TakeoutService::confirm(state.pool.clone(), device_id, payload) {
-    Ok(r) => (StatusCode::OK, Json(r)).into_response(),
-    Err(e) => (
+  match TakeoutService::confirm(state.pool.clone(), device_id, payload.clone()) {
+    Ok(r) => {
+      if r.status == "CONFIRMED" {
+        if let Ok(Some(ev_id)) = ParticipantsRepository::get_event_id_by_ticket_id(&state.pool, &payload.ticket_id) {
+          let payload_json = serde_json::json!({
+            "ticket_id": payload.ticket_id,
+            "request_id": payload.request_id
+          })
+          .to_string();
+          let _ = EventLogRepository::insert(
+            &state.pool,
+            &ev_id,
+            "participant_checked_in",
+            Some(&payload_json),
+          );
+          let msg = serde_json::json!({
+            "type": "participant_checked_in",
+            "ticket_id": payload.ticket_id,
+            "request_id": payload.request_id
+          });
+          state.ws_registry.broadcast(&ev_id, &msg.to_string());
+        }
+      }
+      (StatusCode::OK, Json(r)).into_response()
+    }
+    Err(ConfirmError::Conflict {
+      existing_request_id,
+      ticket_id,
+    }) => (
+      StatusCode::CONFLICT,
+      Json(ConfirmConflictBody {
+        status: "CONFLICT".to_string(),
+        existing_request_id,
+        ticket_id,
+      }),
+    )
+      .into_response(),
+    Err(ConfirmError::Validation(e)) => (
       StatusCode::BAD_REQUEST,
       Json(serde_json::json!({ "error": e, "status": "FAILED" })),
     )
@@ -245,6 +443,46 @@ async fn admin_import(
 struct SyncPullQuery {
   #[serde(rename = "eventId")]
   event_id: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct SyncEventsQuery {
+  #[serde(rename = "eventId")]
+  event_id: Option<String>,
+  #[serde(rename = "sinceSeq")]
+  since_seq: Option<i64>,
+}
+
+async fn sync_events(
+  State(state): State<AppState>,
+  Query(q): Query<SyncEventsQuery>,
+) -> impl IntoResponse {
+  let event_id = match &q.event_id {
+    Some(id) if !id.is_empty() => id.as_str(),
+    _ => {
+      return (
+        StatusCode::BAD_REQUEST,
+        Json(serde_json::json!({ "error": "eventId required" })),
+      )
+        .into_response();
+    }
+  };
+  let since_seq = q.since_seq.unwrap_or(0);
+  match EventLogRepository::list_since(&state.pool, event_id, since_seq) {
+    Ok(events) => {
+      let latest_seq = EventLogRepository::latest_seq(&state.pool, event_id).unwrap_or(0);
+      (
+        StatusCode::OK,
+        Json(serde_json::json!({ "events": events, "latestSeq": latest_seq })),
+      )
+        .into_response()
+    }
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
 }
 
 async fn sync_pull(

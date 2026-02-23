@@ -3,6 +3,28 @@ use crate::api::db::DbPool;
 pub struct ParticipantsRepository;
 
 impl ParticipantsRepository {
+  pub fn get_event_id_by_participant_id(pool: &DbPool, participant_id: &str) -> Result<Option<String>, rusqlite::Error> {
+    let conn = pool.conn.lock().map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+    let mut stmt = conn.prepare("SELECT event_id FROM participants WHERE id = ?1")?;
+    let mut rows = stmt.query([participant_id])?;
+    if let Some(row) = rows.next()? {
+      return Ok(Some(row.get::<_, String>(0)?));
+    }
+    Ok(None)
+  }
+
+  pub fn get_event_id_by_ticket_id(pool: &DbPool, ticket_id: &str) -> Result<Option<String>, rusqlite::Error> {
+    let conn = pool.conn.lock().map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+    let mut stmt = conn.prepare(
+      "SELECT p.event_id FROM participants p INNER JOIN tickets t ON t.participant_id = p.id WHERE t.id = ?1",
+    )?;
+    let mut rows = stmt.query([ticket_id])?;
+    if let Some(row) = rows.next()? {
+      return Ok(Some(row.get::<_, String>(0)?));
+    }
+    Ok(None)
+  }
+
   pub fn search(
     _pool: &DbPool,
     _q: &str,

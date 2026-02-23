@@ -29,6 +29,7 @@ pub fn run() {
       let state = api::handlers::AppState {
         pool: std::sync::Arc::new(pool),
         base_url,
+        ws_registry: std::sync::Arc::new(api::ws::WsRegistry::new()),
       };
       let router = api::handlers::router(state);
       std::thread::spawn(move || {

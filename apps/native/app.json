@@ -6,12 +6,43 @@
     "web": {
       "bundler": "metro"
     },
-    "name": "pickup",
+    "name": "ASSEEMG Retira",
     "slug": "pickup",
-    "plugins": ["expo-font",["expo-camera",{"cameraPermission":"Permitir acesso à câmera para escanear o QR de pareamento."}]],
+    "plugins": [
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Permitir acesso à câmera para escanear o QR de pareamento."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "backgroundColor": "#000000"
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "backgroundColor": "#000000",
+      "resizeMode": "contain"
+    },
+    "android": {
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.anonymous.pickup"
+    },
+    "ios": {
+      "bundleIdentifier": "com.anonymous.pickup"
     }
   }
 }

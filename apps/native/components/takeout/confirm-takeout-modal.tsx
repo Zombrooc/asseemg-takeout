@@ -1,10 +1,13 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { formatDateBR } from "@/lib/format-date";
+import { TakeoutApiError } from "@/lib/takeout-api";
 import type { CustomFormResponseItem, EventParticipant } from "@/lib/takeout-api-types";
 import { addToQueue } from "@/lib/takeout-queue";
 import { Button } from "heroui-native";
-import React, { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Alert, Modal, Pressable, Text, View } from "react-native";
+
+const LOCK_RENEW_INTERVAL_MS = 15_000;
 
 function formatBirthDate(s: string | null | undefined): string {
   return formatDateBR(s);
@@ -39,12 +42,58 @@ type Props = {
   onClose: () => void;
   onConfirmed: () => void;
   onQueuedOffline?: () => void;
+  onConflict?: (ticketId: string) => void;
 };
 
-export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed, onQueuedOffline }: Props) {
+export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed, onQueuedOffline, onConflict }: Props) {
   const { api, deviceId } = useTakeoutConnection();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lockState, setLockState] = useState<"heldByMe" | "heldByOther" | null>(null);
+  const renewIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!visible || !participant || !api || !deviceId) {
+      setLockState(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        await api.postLocksAcquire(participant.id, deviceId);
+        if (cancelled) return;
+        setLockState("heldByMe");
+        renewIntervalRef.current = setInterval(() => {
+          api.postLocksRenew(participant.id, deviceId).catch(() => {});
+        }, LOCK_RENEW_INTERVAL_MS);
+      } catch (e) {
+        if (cancelled) return;
+        if (e instanceof TakeoutApiError && e.status === 409) {
+          setLockState("heldByOther");
+        } else {
+          setLockState(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (renewIntervalRef.current) {
+        clearInterval(renewIntervalRef.current);
+        renewIntervalRef.current = null;
+      }
+      if (participant && api && deviceId) {
+        api.deleteLocksRelease(participant.id, deviceId).catch(() => {});
+      }
+    };
+  }, [visible, participant?.id, api, deviceId]);
+
+  const handleClose = () => {
+    if (participant && api && deviceId && lockState === "heldByMe") {
+      api.deleteLocksRelease(participant.id, deviceId).catch(() => {});
+    }
+    setLockState(null);
+    onClose();
+  };
 
   const handleConfirm = async () => {
     if (!participant || !api || !deviceId) return;
@@ -62,12 +111,21 @@ export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed
         device_id: deviceId,
       });
       if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
+        if (participant && api && deviceId) {
+          api.deleteLocksRelease(participant.id, deviceId).catch(() => {});
+        }
         onConfirmed();
         onClose();
       } else {
         setError("Resposta inesperada: " + res.status);
       }
-    } catch {
+    } catch (e) {
+      if (e instanceof TakeoutApiError && e.status === 409) {
+        onClose();
+        onConflict?.(participant.ticketId);
+        Alert.alert("Conflito", "Check-in já realizado por outro dispositivo.");
+        return;
+      }
       try {
         await addToQueue({
           request_id: requestId,
@@ -86,11 +144,19 @@ export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed
 
   if (!participant) return null;
 
+  const isLockedByOther = lockState === "heldByOther";
+  const canConfirm = !isLockedByOther;
+
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <Pressable className="flex-1 bg-black/50 justify-center items-center p-4" onPress={onClose}>
+      <Pressable className="flex-1 bg-black/50 justify-center items-center p-4" onPress={handleClose}>
         <Pressable className="p-6 bg-background rounded-xl min-w-[280px]" onPress={(e) => e.stopPropagation()}>
         <Text className="text-lg font-semibold text-foreground mb-4">Confirmar check-in</Text>
+        {lockState === "heldByMe" ? (
+          <Text className="text-muted-foreground text-sm mb-2">Em atendimento por você</Text>
+        ) : isLockedByOther ? (
+          <Text className="text-warning text-sm mb-2">Em atendimento por outro dispositivo</Text>
+        ) : null}
         <View className="gap-2 mb-4">
           <Row label="Nome" value={participant.name ?? "—"} />
           <Row label="CPF" value={participant.cpf ?? "—"} />
@@ -116,10 +182,10 @@ export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed
         ) : null}
         {error ? <Text className="text-danger text-sm mb-3">{error}</Text> : null}
         <View className="flex-row gap-3">
-          <Button variant="bordered" onPress={onClose} isDisabled={loading}>
+          <Button variant="bordered" onPress={handleClose} isDisabled={loading}>
             Cancelar
           </Button>
-          <Button onPress={handleConfirm} isLoading={loading} isDisabled={loading}>
+          <Button onPress={handleConfirm} isLoading={loading} isDisabled={loading || !canConfirm}>
             Confirmar check-in
           </Button>
         </View>

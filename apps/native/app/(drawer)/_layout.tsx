@@ -24,7 +24,7 @@ function DrawerLayout() {
       <Drawer.Screen
         name="index"
         options={{
-          headerTitle: "Home",
+          headerTitle: "ASSEEMG Retira - Mobile",
           drawerLabel: ({ color, focused }) => (
             <Text style={{ color: focused ? color : themeColorForeground }}>Home</Text>
           ),

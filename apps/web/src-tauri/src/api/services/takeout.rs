@@ -1,5 +1,5 @@
 use crate::api::db::DbPool;
-use crate::api::repository::{TakeoutEventRow, TakeoutRepository};
+use crate::api::repository::{ConfirmAtomicResult, TakeoutEventRow, TakeoutRepository};
 use std::sync::Arc;
 
 pub struct TakeoutService;
@@ -18,34 +18,52 @@ pub struct ConfirmTakeoutResponse {
   pub status: String,
 }
 
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ConfirmConflictBody {
+  pub status: String,
+  pub existing_request_id: String,
+  pub ticket_id: String,
+}
+
+#[derive(Debug)]
+pub enum ConfirmError {
+  Validation(String),
+  Conflict {
+    existing_request_id: String,
+    ticket_id: String,
+  },
+}
+
 impl TakeoutService {
   pub fn confirm(
     pool: Arc<DbPool>,
     device_id: String,
     payload: ConfirmTakeoutPayload,
-  ) -> Result<ConfirmTakeoutResponse, String> {
+  ) -> Result<ConfirmTakeoutResponse, ConfirmError> {
     if payload.request_id.is_empty() {
-      return Err("request_id is required".to_string());
+      return Err(ConfirmError::Validation("request_id is required".to_string()));
     }
-    if let Some((status,)) = TakeoutRepository::find_by_request_id(&pool, &payload.request_id)
-      .map_err(|e| e.to_string())?
-    {
-      return Ok(ConfirmTakeoutResponse {
-        status: if status == "CONFIRMED" { "DUPLICATE".to_string() } else { status },
-      });
-    }
-    TakeoutRepository::insert_event(
+    let r = TakeoutRepository::confirm_atomic(
       &pool,
       &payload.request_id,
       &payload.ticket_id,
       &device_id,
-      "CONFIRMED",
       payload.payload_json.as_deref(),
     )
-    .map_err(|e| e.to_string())?;
-    Ok(ConfirmTakeoutResponse {
-      status: "CONFIRMED".to_string(),
-    })
+    .map_err(|e| ConfirmError::Validation(e.to_string()))?;
+    match r {
+      ConfirmAtomicResult::Confirmed => Ok(ConfirmTakeoutResponse {
+        status: "CONFIRMED".to_string(),
+      }),
+      ConfirmAtomicResult::Duplicate => Ok(ConfirmTakeoutResponse {
+        status: "DUPLICATE".to_string(),
+      }),
+      ConfirmAtomicResult::Conflict { existing_request_id } => Err(ConfirmError::Conflict {
+        existing_request_id,
+        ticket_id: payload.ticket_id,
+      }),
+    }
   }
 
   pub fn list_audit(
@@ -91,6 +109,33 @@ mod tests {
       payload_json: None,
     };
     let err = TakeoutService::confirm(pool, "d1".to_string(), payload).unwrap_err();
-    assert!(err.contains("request_id"));
+    match &err {
+      ConfirmError::Validation(s) => assert!(s.contains("request_id")),
+      _ => panic!("expected Validation"),
+    }
+  }
+
+  #[test]
+  fn confirm_second_request_id_same_ticket_returns_conflict() {
+    let pool = mem_pool();
+    let payload1 = ConfirmTakeoutPayload {
+      request_id: uuid::Uuid::new_v4().to_string(),
+      ticket_id: "T1".to_string(),
+      device_id: "d1".to_string(),
+      payload_json: None,
+    };
+    let r1 = TakeoutService::confirm(pool.clone(), "d1".to_string(), payload1).unwrap();
+    assert_eq!(r1.status, "CONFIRMED");
+    let payload2 = ConfirmTakeoutPayload {
+      request_id: uuid::Uuid::new_v4().to_string(),
+      ticket_id: "T1".to_string(),
+      device_id: "d2".to_string(),
+      payload_json: None,
+    };
+    let err = TakeoutService::confirm(pool, "d2".to_string(), payload2).unwrap_err();
+    match &err {
+      ConfirmError::Conflict { ticket_id, .. } => assert_eq!(ticket_id, "T1"),
+      _ => panic!("expected Conflict"),
+    }
   }
 }

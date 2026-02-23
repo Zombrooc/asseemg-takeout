@@ -38,7 +38,7 @@ export default function Home() {
   if (!isPaired) {
     return (
       <Container className="px-4 py-6">
-        <Text className="text-2xl font-semibold text-foreground mb-2">Takeout</Text>
+        <Text className="text-2xl font-semibold text-foreground mb-2">ASSEEMG Retira - Mobile</Text>
         <Text className="text-muted-foreground mb-6">
           Conecte ao app desktop na mesma rede para ver eventos e registrar retiradas.
         </Text>

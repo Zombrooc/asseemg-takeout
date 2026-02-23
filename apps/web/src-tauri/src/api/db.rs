@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS takeout_events (
   payload_json TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS check_ins (
+  ticket_id TEXT PRIMARY KEY,
+  request_id TEXT NOT NULL UNIQUE,
+  device_id TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS participants (
   id TEXT PRIMARY KEY,
   event_id TEXT,
@@ -48,6 +54,19 @@ CREATE TABLE IF NOT EXISTS custom_forms (
   event_id TEXT,
   definition_json TEXT
 );
+CREATE TABLE IF NOT EXISTS event_log (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  payload_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS locks (
+  participant_id TEXT PRIMARY KEY,
+  device_id TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_request_id ON takeout_events(request_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_created_at ON takeout_events(created_at);
 ";

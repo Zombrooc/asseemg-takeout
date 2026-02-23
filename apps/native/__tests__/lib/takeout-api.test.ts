@@ -88,4 +88,27 @@ describe("createTakeoutClient", () => {
     await expect(client.getEvents()).rejects.toThrow(TakeoutApiError);
     await expect(client.getEvents()).rejects.toMatchObject({ status: 401 });
   });
+
+  it("POST /events/:eventId/checkins/reset sends request and returns deleted count", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: () => Promise.resolve({ deleted: 3 }),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "token",
+    });
+    const result = await client.postResetEventCheckins("ev-123");
+    expect(result).toEqual({ deleted: 3 });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/events/ev-123/checkins/reset",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer token",
+          "Content-Type": "application/json",
+        }),
+      })
+    );
+  });
 });

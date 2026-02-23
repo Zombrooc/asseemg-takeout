@@ -43,6 +43,20 @@ export type TakeoutConfirmPayload = {
 
 export type TakeoutConfirmResponse = { status: string };
 
+export type TakeoutConfirmConflictResponse = {
+  status: string;
+  existing_request_id: string;
+  ticket_id: string;
+};
+
+export type SyncEvent = {
+  seq: number;
+  eventId: string;
+  type: string;
+  payloadJson?: string | null;
+  createdAt: number;
+};
+
 export type AuditEvent = {
   request_id: string;
   ticket_id: string;

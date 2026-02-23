@@ -1,0 +1,70 @@
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+function wsUrl(baseUrl: string, eventId: string, deviceId: string, lastSeq?: string): string {
+  const base = baseUrl.replace(/^http/, "ws").replace(/\/$/, "");
+  const params = new URLSearchParams({ event_id: eventId, device_id: deviceId });
+  if (lastSeq != null) params.set("last_seq", lastSeq);
+  return `${base}/ws?${params.toString()}`;
+}
+
+/** participantId -> deviceId que está atendendo */
+export type LockMap = Record<string, string>;
+
+export function useTakeoutRealtime(
+  eventId: string | undefined,
+  baseUrl: string | null,
+  deviceId: string | null
+): { lockMap: LockMap } {
+  const queryClient = useQueryClient();
+  const wsRef = useRef<WebSocket | null>(null);
+  const [lockMap, setLockMap] = useState<LockMap>({});
+
+  const setLockMapRef = useRef(setLockMap);
+  setLockMapRef.current = setLockMap;
+
+  const updateLockMap = useCallback((updater: (prev: LockMap) => LockMap) => {
+    setLockMapRef.current(updater);
+  }, []);
+
+  useEffect(() => {
+    if (!eventId || !baseUrl || !deviceId) return;
+    const url = wsUrl(baseUrl, eventId, deviceId);
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data as string) as {
+          type?: string;
+          participant_id?: string;
+          device_id?: string;
+        };
+        if (data.type === "participant_checked_in") {
+          queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
+          queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
+        } else if (data.type === "lock_acquired" && data.participant_id != null && data.device_id != null) {
+          updateLockMap((prev) => ({ ...prev, [data.participant_id!]: data.device_id! }));
+        } else if (data.type === "lock_released" && data.participant_id != null) {
+          updateLockMap((prev) => {
+            const next = { ...prev };
+            delete next[data.participant_id!];
+            return next;
+          });
+        }
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    ws.onerror = () => {};
+    ws.onclose = () => {};
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [eventId, baseUrl, deviceId, queryClient, updateLockMap]);
+
+  return { lockMap };
+}
