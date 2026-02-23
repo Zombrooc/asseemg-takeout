@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Platform, Pressable } from "react-native";
+import { Platform } from "react-native";
+
+import { Pressable } from "@/lib/primitives";
 import Animated, { FadeOut, ZoomIn } from "react-native-reanimated";
 import { withUniwind } from "uniwind";
 

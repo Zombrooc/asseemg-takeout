@@ -3,9 +3,9 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import { Button, Input } from "heroui-native";
 import React, { useCallback, useState } from "react";
-import { Text, View } from "react-native";
 
 import { Container } from "@/components/container";
+import { Text, View } from "@/lib/primitives";
 
 function generateDeviceId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {

@@ -1,4 +1,9 @@
 import "@/global.css";
+import { Uniwind } from "uniwind";
+
+// Garantir tema antes de qualquer componente usar useThemeColor/useCSSVariable
+Uniwind.setTheme("light");
+
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";

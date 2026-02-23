@@ -2,4 +2,11 @@
 @import "uniwind";
 @import "heroui-native/styles";
 
-@source './node_modules/heroui-native/lib';
+@source "./app";
+@source "./components";
+@source "./contexts";
+@source "./lib";
+@source "./utils";
+/* heroui-native: monorepo usa ../../node_modules; pnpm local usa ./node_modules */
+@source "../../node_modules/heroui-native/lib";
+@source "../../node_modules/heroui-native/src";

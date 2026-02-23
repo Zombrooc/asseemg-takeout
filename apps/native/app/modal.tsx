@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Button, Surface, useThemeColor } from "heroui-native";
-import { Text, View } from "react-native";
 
 import { Container } from "@/components/container";
+import { Text, View } from "@/lib/primitives";
 
 function Modal() {
   const accentForegroundColor = useThemeColor("accent-foreground");
@@ -21,7 +21,7 @@ function Modal() {
               <Ionicons name="checkmark" size={24} color={accentForegroundColor} />
             </View>
             <Text className="text-foreground font-medium text-lg mb-1">Modal Screen</Text>
-            <Text className="text-muted text-sm text-center mb-4">
+            <Text className="text-muted-foreground text-sm text-center mb-4">
               This is an example modal screen for dialogs and confirmations.
             </Text>
           </View>

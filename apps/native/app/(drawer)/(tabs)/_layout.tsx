@@ -2,24 +2,28 @@ import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { useThemeColor } from "heroui-native";
 
+import { safeThemeColor } from "@/utils/theme-colors";
+
 export default function TabLayout() {
   const themeColorForeground = useThemeColor("foreground");
   const themeColorBackground = useThemeColor("background");
+  const fg = safeThemeColor(themeColorForeground, "#000000");
+  const bg = safeThemeColor(themeColorBackground, "#ffffff");
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         headerStyle: {
-          backgroundColor: themeColorBackground,
+          backgroundColor: bg,
         },
-        headerTintColor: themeColorForeground,
+        headerTintColor: fg,
         headerTitleStyle: {
-          color: themeColorForeground,
+          color: fg,
           fontWeight: "600",
         },
         tabBarStyle: {
-          backgroundColor: themeColorBackground,
+          backgroundColor: bg,
         },
       }}
     >

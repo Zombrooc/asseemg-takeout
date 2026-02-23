@@ -4,8 +4,10 @@ import type { EventParticipant } from "@/lib/takeout-api-types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, BackHandler, FlatList, Pressable, Text, View } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, BackHandler, StyleSheet } from "react-native";
+
+import { FlatList, Pressable, Text, View } from "@/lib/primitives";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button, Input, Surface, Spinner } from "heroui-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -13,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { Container } from "@/components/container";
 import { ConfirmTakeoutModal } from "@/components/takeout/confirm-takeout-modal";
+import { ParticipantListItem } from "@/components/takeout/participant-list-item";
 import { formatDateBR } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
@@ -26,8 +29,7 @@ function normalize(s: string): string {
 function matchesSearch(participant: EventParticipant, q: string): boolean {
   const nq = normalize(q);
   if (!nq) return true;
-  const inStr = (val: string | null | undefined) =>
-    val != null && normalize(String(val)).includes(nq);
+  const inStr = (val: string | null | undefined) => val != null && normalize(String(val)).includes(nq);
   return (
     inStr(participant.name) ||
     inStr(participant.cpf) ||
@@ -39,6 +41,16 @@ function matchesSearch(participant: EventParticipant, q: string): boolean {
 }
 
 const PENDING_QUEUE_KEY = ["takeout-pending-queue"] as const;
+
+const listStyles = StyleSheet.create({
+  contentContainer: {
+    paddingVertical: 8,
+  },
+});
+
+const EmptyList = memo(function EmptyList() {
+  return <Text className="text-muted-foreground text-center py-8">Nenhum participante.</Text>;
+});
 
 export default function EventScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -70,6 +82,7 @@ export default function EventScreen() {
       cancelled = true;
     };
   }, [api, eventId, isReachable, queryClient]);
+
   const [selectedParticipant, setSelectedParticipant] = useState<EventParticipant | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
@@ -107,10 +120,7 @@ export default function EventScreen() {
     [pendingQueueQuery.data]
   );
 
-  const event = useMemo(
-    () => eventQuery.data?.find((e) => e.eventId === eventId) ?? null,
-    [eventQuery.data, eventId]
-  );
+  const event = useMemo(() => eventQuery.data?.find((e) => e.eventId === eventId) ?? null, [eventQuery.data, eventId]);
 
   useEffect(() => {
     if (event?.name) {
@@ -129,14 +139,18 @@ export default function EventScreen() {
 
   const insets = useSafeAreaInsets();
   const participants = participantsQuery.data ?? [];
-  const filteredParticipants = useMemo(
-    () => participants.filter((p) => matchesSearch(p, searchQuery)),
-    [participants, searchQuery]
+  const participantsById = useMemo(
+    () => new Map(participants.map((participant) => [participant.id, participant])),
+    [participants]
   );
+  const filteredParticipants = useMemo(() => participants.filter((p) => matchesSearch(p, searchQuery)), [participants, searchQuery]);
+
   const auditConfirmedTicketIds = useMemo(
     () =>
       new Set(
-        (auditQuery.data ?? []).filter((a) => a.status === "CONFIRMED" || a.status === "DUPLICATE").map((a) => a.ticket_id)
+        (auditQuery.data ?? [])
+          .filter((a) => a.status === "CONFIRMED" || a.status === "DUPLICATE")
+          .map((a) => a.ticket_id)
       ),
     [auditQuery.data]
   );
@@ -171,11 +185,7 @@ export default function EventScreen() {
         Alert.alert("Check-in já realizado", "Este ingresso já teve check-in realizado.");
         return;
       }
-      if (
-        deviceId != null &&
-        lockMap[participant.id] != null &&
-        lockMap[participant.id] !== deviceId
-      ) {
+      if (deviceId != null && lockMap[participant.id] != null && lockMap[participant.id] !== deviceId) {
         Alert.alert(
           "Em atendimento",
           "Este participante está sendo atendido por outro dispositivo. Aguarde para fazer o check-in."
@@ -218,59 +228,60 @@ export default function EventScreen() {
     }
   }, [api, eventId, auditQuery, participantsQuery]);
 
+  const handlePrimaryAction = useCallback(
+    (participantId: string) => {
+      const participant = participantsById.get(participantId);
+      if (!participant) return;
+      setSelectedParticipant(participant);
+    },
+    [participantsById]
+  );
+
+  const handleDismissConflict = useCallback((ticketId: string) => {
+    setConflictTicketIds((prev) => {
+      const next = new Set(prev);
+      next.delete(ticketId);
+      return next;
+    });
+  }, []);
+
+  const handleConfirmed = useCallback(() => {
+    setSelectedParticipant(null);
+    participantsQuery.refetch();
+    auditQuery.refetch();
+  }, [participantsQuery, auditQuery]);
+
+  const handleConflict = useCallback(
+    (ticketId: string) => {
+      setConflictTicketIds((prev) => new Set(prev).add(ticketId));
+      auditQuery.refetch();
+    },
+    [auditQuery]
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: EventParticipant }) => {
       const isConfirmed = auditConfirmedTicketIds.has(item.ticketId);
       const isPendingSync = pendingTicketIds.has(item.ticketId);
       const isConflict = conflictTicketIds.has(item.ticketId);
-      const lockedByOther =
-        deviceId != null && lockMap[item.id] != null && lockMap[item.id] !== deviceId;
+      const lockedByOther = deviceId != null && lockMap[item.id] != null && lockMap[item.id] !== deviceId;
+
       return (
-        <Surface variant="secondary" className="p-4 rounded-xl mb-2 mx-4">
-          <View className="flex-row justify-between items-center">
-            <View className="flex-1">
-              <Text className="text-foreground font-medium">{item.name ?? "—"}</Text>
-              <Text className="text-muted-foreground text-sm">{item.sourceTicketId ?? item.ticketId}</Text>
-              {isConfirmed ? (
-                <Text className="text-success text-xs mt-1">Check-in feito</Text>
-              ) : lockedByOther ? (
-                <Text className="text-warning text-xs mt-1">
-                  Em atendimento por outro dispositivo — aguarde para fazer check-in
-                </Text>
-              ) : isConflict ? (
-                <Text className="text-danger text-xs mt-1">Conflito — já retirado por outro</Text>
-              ) : isPendingSync ? (
-                <Text className="text-warning text-xs mt-1">Pendente</Text>
-              ) : null}
-            </View>
-            {isConflict ? (
-              <Button
-                size="sm"
-                variant="bordered"
-                onPress={() => setConflictTicketIds((prev) => { const n = new Set(prev); n.delete(item.ticketId); return n; })}
-              >
-                Dispensar
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onPress={() => setSelectedParticipant(item)}
-                isDisabled={isConfirmed || isPendingSync || lockedByOther}
-              >
-                {isConfirmed
-                  ? "OK"
-                  : lockedByOther
-                    ? "Em atendimento"
-                    : isPendingSync
-                      ? "Pendente"
-                      : "Fazer check-in"}
-              </Button>
-            )}
-          </View>
-        </Surface>
+        <ParticipantListItem
+          id={item.id}
+          ticketId={item.ticketId}
+          name={item.name}
+          ticketLabel={item.sourceTicketId ?? item.ticketId}
+          isConfirmed={isConfirmed}
+          isPendingSync={isPendingSync}
+          isConflict={isConflict}
+          lockedByOther={lockedByOther}
+          onPrimaryAction={handlePrimaryAction}
+          onDismissConflict={handleDismissConflict}
+        />
       );
     },
-    [auditConfirmedTicketIds, pendingTicketIds, conflictTicketIds, lockMap, deviceId]
+    [auditConfirmedTicketIds, pendingTicketIds, conflictTicketIds, lockMap, deviceId, handlePrimaryAction, handleDismissConflict]
   );
 
   if (!eventId) {
@@ -289,6 +300,7 @@ export default function EventScreen() {
         </Container>
       );
     }
+
     if (!permission.granted) {
       return (
         <Container className="px-4 py-6">
@@ -301,6 +313,7 @@ export default function EventScreen() {
         </Container>
       );
     }
+
     return (
       <View className="flex-1 bg-black">
         <View
@@ -319,12 +332,14 @@ export default function EventScreen() {
           </Text>
           <View className="min-w-[44px]" />
         </View>
+
         <CameraView
           style={{ flex: 1 }}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ["qr"], interval: 500 }}
           onBarcodeScanned={onQrScanned}
         />
+
         <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70">
           <Text className="text-white text-center text-sm mb-2">Aponte para o QR code do ingresso</Text>
           <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
@@ -341,9 +356,7 @@ export default function EventScreen() {
         {event ? (
           <View className="px-4 pt-2 pb-3 border-b border-border">
             <Text className="text-lg font-semibold text-foreground">{event.name ?? eventId}</Text>
-            {event.startDate ? (
-              <Text className="text-muted-foreground text-sm mt-0.5">{formatDateBR(event.startDate)}</Text>
-            ) : null}
+            {event.startDate ? <Text className="text-muted-foreground text-sm mt-0.5">{formatDateBR(event.startDate)}</Text> : null}
           </View>
         ) : null}
 
@@ -388,9 +401,7 @@ export default function EventScreen() {
 
         {offlineNoticeVisible ? (
           <Surface variant="tertiary" className="mx-4 mt-2 px-3 py-2 rounded-lg">
-            <Text className="text-muted-foreground text-xs">
-              Sem conexão. Check-in será sincronizado quando houver rede.
-            </Text>
+            <Text className="text-muted-foreground text-xs">Sem conexão. Check-in será sincronizado quando houver rede.</Text>
           </Surface>
         ) : null}
 
@@ -416,12 +427,16 @@ export default function EventScreen() {
         ) : (
           <FlatList
             data={filteredParticipants}
-            keyExtractor={(p) => p.id}
+            keyExtractor={(participant) => participant.id}
             renderItem={renderItem}
-            contentContainerStyle={{ paddingVertical: 8 }}
-            ListEmptyComponent={
-              <Text className="text-muted-foreground text-center py-8">Nenhum participante.</Text>
-            }
+            contentContainerStyle={listStyles.contentContainer}
+            ListEmptyComponent={EmptyList}
+            initialNumToRender={12}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews
+            keyboardShouldPersistTaps="handled"
           />
         )}
       </Container>
@@ -430,16 +445,9 @@ export default function EventScreen() {
         visible={!!selectedParticipant}
         participant={selectedParticipant}
         onClose={() => setSelectedParticipant(null)}
-        onConfirmed={() => {
-          setSelectedParticipant(null);
-          participantsQuery.refetch();
-          auditQuery.refetch();
-        }}
+        onConfirmed={handleConfirmed}
         onQueuedOffline={handleQueuedOffline}
-        onConflict={(ticketId) => {
-          setConflictTicketIds((prev) => new Set(prev).add(ticketId));
-          auditQuery.refetch();
-        }}
+        onConflict={handleConflict}
       />
     </>
   );

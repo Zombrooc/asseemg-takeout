@@ -5,7 +5,9 @@ import type { CustomFormResponseItem, EventParticipant } from "@/lib/takeout-api
 import { addToQueue } from "@/lib/takeout-queue";
 import { Button } from "heroui-native";
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Modal, Pressable, Text, View } from "react-native";
+import { Alert } from "react-native";
+
+import { Modal, Pressable, Text, View } from "@/lib/primitives";
 
 const LOCK_RENEW_INTERVAL_MS = 15_000;
 

@@ -3,9 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import { Button, Chip, Separator, Spinner, Surface, useThemeColor } from "heroui-native";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 import { Container } from "@/components/container";
+import { ActivityIndicator, Pressable, Text, View } from "@/lib/primitives";
 import { formatDateBR } from "@/lib/format-date";
 
 export default function Home() {
