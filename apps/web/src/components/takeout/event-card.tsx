@@ -15,15 +15,16 @@ import type { EventSummary } from "@/lib/takeout-api";
 type EventCardProps = {
   event: EventSummary;
   onArchive?: (event: EventSummary) => void | Promise<void>;
+  onUnarchive?: (event: EventSummary) => void | Promise<void>;
   onDelete?: (event: EventSummary) => void | Promise<void>;
 };
 
-export function EventCard({ event, onArchive, onDelete }: EventCardProps) {
+export function EventCard({ event, onArchive, onUnarchive, onDelete }: EventCardProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-2 pb-2">
         <CardTitle className="text-base">{event.name ?? event.eventId}</CardTitle>
-        {(onArchive != null || onDelete != null) && (
+        {(onArchive != null || onUnarchive != null || onDelete != null) && (
           <DropdownMenu>
             <DropdownMenuTrigger
               className="rounded p-1 hover:bg-muted"
@@ -35,6 +36,11 @@ export function EventCard({ event, onArchive, onDelete }: EventCardProps) {
               {onArchive != null && (
                 <DropdownMenuItem onClick={() => onArchive(event)}>
                   Arquivar
+                </DropdownMenuItem>
+              )}
+              {onUnarchive != null && (
+                <DropdownMenuItem onClick={() => onUnarchive(event)}>
+                  Desarquivar
                 </DropdownMenuItem>
               )}
               {onDelete != null && (

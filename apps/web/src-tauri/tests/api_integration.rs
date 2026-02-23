@@ -189,6 +189,56 @@ async fn events_checkins_reset_deletes_and_returns_count() {
 }
 
 #[tokio::test]
+async fn events_archive_then_unarchive_restores_event_in_list() {
+  let (app, _pool) = app_with_seeded_pool();
+
+  let list_req = Request::builder().uri("/events").body(Body::empty()).unwrap();
+  let list_res = app.clone().oneshot(list_req).await.unwrap();
+  assert_eq!(list_res.status(), StatusCode::OK);
+  let list_body = body_bytes(list_res.into_body()).await;
+  let events: Vec<serde_json::Value> = serde_json::from_slice(&list_body).unwrap();
+  assert_eq!(events.len(), 1);
+  assert_eq!(events[0].get("eventId").and_then(|v| v.as_str()), Some("ev1"));
+
+  let archive_req = Request::builder()
+    .uri("/events/ev1/archive")
+    .method("POST")
+    .body(Body::empty())
+    .unwrap();
+  let archive_res = app.clone().oneshot(archive_req).await.unwrap();
+  assert_eq!(archive_res.status(), StatusCode::OK);
+  let archive_body = body_bytes(archive_res.into_body()).await;
+  let archive_json: serde_json::Value = serde_json::from_slice(&archive_body).unwrap();
+  assert_eq!(archive_json.get("archived").and_then(|v| v.as_bool()), Some(true));
+
+  let list_after_req = Request::builder().uri("/events").body(Body::empty()).unwrap();
+  let list_after_res = app.clone().oneshot(list_after_req).await.unwrap();
+  assert_eq!(list_after_res.status(), StatusCode::OK);
+  let list_after_body = body_bytes(list_after_res.into_body()).await;
+  let events_after: Vec<serde_json::Value> = serde_json::from_slice(&list_after_body).unwrap();
+  assert!(events_after.is_empty(), "archived event should be excluded from default list");
+
+  let unarchive_req = Request::builder()
+    .uri("/events/ev1/unarchive")
+    .method("POST")
+    .body(Body::empty())
+    .unwrap();
+  let unarchive_res = app.clone().oneshot(unarchive_req).await.unwrap();
+  assert_eq!(unarchive_res.status(), StatusCode::OK);
+  let unarchive_body = body_bytes(unarchive_res.into_body()).await;
+  let unarchive_json: serde_json::Value = serde_json::from_slice(&unarchive_body).unwrap();
+  assert_eq!(unarchive_json.get("unarchived").and_then(|v| v.as_bool()), Some(true));
+
+  let list_restored_req = Request::builder().uri("/events").body(Body::empty()).unwrap();
+  let list_restored_res = app.oneshot(list_restored_req).await.unwrap();
+  assert_eq!(list_restored_res.status(), StatusCode::OK);
+  let list_restored_body = body_bytes(list_restored_res.into_body()).await;
+  let events_restored: Vec<serde_json::Value> = serde_json::from_slice(&list_restored_body).unwrap();
+  assert_eq!(events_restored.len(), 1);
+  assert_eq!(events_restored[0].get("eventId").and_then(|v| v.as_str()), Some("ev1"));
+}
+
+#[tokio::test]
 async fn sync_import_with_repeated_ticket_id_keeps_all_participants_and_allows_two_confirms() {
   let app = app();
   let import_body = serde_json::json!({

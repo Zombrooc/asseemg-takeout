@@ -22,6 +22,7 @@ export default function Home() {
     queryKey: ["takeout-events"],
     queryFn: () => (api ? api.getEvents() : Promise.reject(new Error("No API"))),
     enabled: !!api && isPaired && isReachable,
+    refetchInterval: 15_000,
   });
 
   const successColor = useThemeColor("success");

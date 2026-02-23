@@ -127,6 +127,15 @@ export async function postEventArchive(eventId: string): Promise<{ archived: boo
   return res.json() as Promise<{ archived: boolean }>;
 }
 
+export async function postEventUnarchive(eventId: string): Promise<{ unarchived: boolean }> {
+  const res = await fetch(`${BASE_URL}/events/${encodeURIComponent(eventId)}/unarchive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<{ unarchived: boolean }>;
+}
+
 export async function deleteEvent(eventId: string): Promise<{ deleted: boolean }> {
   const res = await fetch(`${BASE_URL}/events/${encodeURIComponent(eventId)}`, {
     method: "DELETE",

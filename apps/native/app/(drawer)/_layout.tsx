@@ -4,10 +4,15 @@ import { Drawer } from "expo-router/drawer";
 import { useThemeColor } from "heroui-native";
 import React from "react";
 
+import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
+import { useEventsListRealtime } from "@/lib/takeout-realtime";
 import { safeThemeColor } from "@/utils/theme-colors";
 import { Pressable, Text } from "@/lib/primitives";
 
 function DrawerLayout() {
+  const { baseUrl, deviceId } = useTakeoutConnection();
+  useEventsListRealtime(baseUrl, deviceId);
+
   const themeColorForeground = useThemeColor("foreground");
   const themeColorBackground = useThemeColor("background");
   const fg = safeThemeColor(themeColorForeground, "#000000");

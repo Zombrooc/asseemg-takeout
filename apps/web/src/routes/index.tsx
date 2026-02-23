@@ -8,6 +8,7 @@ import {
   deleteEvent,
   getEvents,
   postEventArchive,
+  postEventUnarchive,
   type EventSummary,
 } from "@/lib/takeout-api";
 import { toast } from "sonner";
@@ -20,9 +21,12 @@ function DashboardPage() {
   const queryClient = useQueryClient();
   const { data: events = [], isLoading } = useQuery({
     queryKey: ["takeout", "events"],
-    queryFn: () => getEvents(),
+    queryFn: () => getEvents(true),
     refetchInterval: 15_000,
   });
+
+  const activeEvents = events.filter((e) => !e.archivedAt);
+  const archivedEvents = events.filter((e) => e.archivedAt);
 
   const handleArchive = async (event: EventSummary) => {
     try {
@@ -31,6 +35,16 @@ function DashboardPage() {
       toast.success("Evento arquivado");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao arquivar");
+    }
+  };
+
+  const handleUnarchive = async (event: EventSummary) => {
+    try {
+      await postEventUnarchive(event.eventId);
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events"] });
+      toast.success("Evento desarquivado");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao desarquivar");
     }
   };
 
@@ -60,7 +74,7 @@ function DashboardPage() {
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Carregando eventos...</p>
             ) : (
-              events.map((event) => (
+              activeEvents.map((event) => (
                 <EventCard
                   key={event.eventId}
                   event={event}
@@ -70,6 +84,21 @@ function DashboardPage() {
               ))
             )}
           </div>
+          {!isLoading && archivedEvents.length > 0 && (
+            <div className="mt-8">
+              <h2 className="mb-3 text-lg font-medium text-muted-foreground">Eventos arquivados</h2>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {archivedEvents.map((event) => (
+                  <EventCard
+                    key={event.eventId}
+                    event={event}
+                    onUnarchive={handleUnarchive}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       <PairingCard />

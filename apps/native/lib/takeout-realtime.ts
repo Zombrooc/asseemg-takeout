@@ -68,3 +68,41 @@ export function useTakeoutRealtime(
 
   return { lockMap };
 }
+
+/** Canal WS para notificação de mudança na lista de eventos (arquivar/apagar/desarquivar no desktop). */
+export const EVENTS_LIST_CHANNEL = "_events";
+
+/**
+ * Conecta ao canal global da lista de eventos. Ao receber events_list_changed, invalida a query de eventos
+ * para que todos os staffs vejam a lista atualizada (eventos arquivados/apagados somem na hora).
+ */
+export function useEventsListRealtime(
+  baseUrl: string | null,
+  deviceId: string | null
+): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!baseUrl || !deviceId) return;
+    const url = wsUrl(baseUrl, EVENTS_LIST_CHANNEL, deviceId);
+    const ws = new WebSocket(url);
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data as string) as { type?: string };
+        if (data.type === "events_list_changed") {
+          queryClient.invalidateQueries({ queryKey: ["takeout-events"] });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    ws.onerror = () => {};
+    ws.onclose = () => {};
+
+    return () => {
+      ws.close();
+    };
+  }, [baseUrl, deviceId, queryClient]);
+}

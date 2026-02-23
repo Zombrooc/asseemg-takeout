@@ -78,6 +78,14 @@ impl EventsRepository {
     )
   }
 
+  pub fn unarchive_event(pool: &DbPool, event_id: &str) -> Result<usize, rusqlite::Error> {
+    let conn = pool
+      .conn
+      .lock()
+      .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+    conn.execute("UPDATE events SET archived_at = NULL WHERE event_id = ?1", params![event_id])
+  }
+
   pub fn delete_event(pool: &DbPool, event_id: &str) -> Result<(), rusqlite::Error> {
     let conn = pool
       .conn

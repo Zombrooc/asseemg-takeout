@@ -45,6 +45,7 @@ pub fn router(state: AppState) -> Router {
     .route("/events/:event_id/participants", get(events_participants))
     .route("/events/:event_id/checkins/reset", post(events_checkins_reset))
     .route("/events/:event_id/archive", post(events_archive))
+    .route("/events/:event_id/unarchive", post(events_unarchive))
     .route("/events/:event_id", delete(events_delete))
     .route("/takeout/confirm", post(takeout_confirm))
     .route("/ws", get(ws_handler))
@@ -170,12 +171,40 @@ async fn events_list(
   }
 }
 
+const EVENTS_LIST_CHANNEL: &str = "_events";
+
 async fn events_archive(
   State(state): State<AppState>,
   Path(event_id): Path<String>,
 ) -> impl IntoResponse {
   match EventsRepository::archive_event(&state.pool, &event_id) {
-    Ok(n) => (StatusCode::OK, Json(serde_json::json!({ "archived": n > 0 }))).into_response(),
+    Ok(n) => {
+      if n > 0 {
+        let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
+        state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+      }
+      (StatusCode::OK, Json(serde_json::json!({ "archived": n > 0 }))).into_response()
+    }
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+async fn events_unarchive(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+) -> impl IntoResponse {
+  match EventsRepository::unarchive_event(&state.pool, &event_id) {
+    Ok(n) => {
+      if n > 0 {
+        let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
+        state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+      }
+      (StatusCode::OK, Json(serde_json::json!({ "unarchived": n > 0 }))).into_response()
+    }
     Err(e) => (
       StatusCode::INTERNAL_SERVER_ERROR,
       Json(serde_json::json!({ "error": e.to_string() })),
@@ -189,7 +218,11 @@ async fn events_delete(
   Path(event_id): Path<String>,
 ) -> impl IntoResponse {
   match EventsRepository::delete_event(&state.pool, &event_id) {
-    Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "deleted": true }))).into_response(),
+    Ok(()) => {
+      let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
+      state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+      (StatusCode::OK, Json(serde_json::json!({ "deleted": true }))).into_response()
+    }
     Err(e) => (
       StatusCode::INTERNAL_SERVER_ERROR,
       Json(serde_json::json!({ "error": e.to_string() })),
