@@ -19,6 +19,7 @@ pnpm turbo run lint
 pnpm turbo run typecheck
 pnpm turbo run test
 pnpm turbo run build
+pnpm --filter web run test
 pnpm --filter native run test
 cargo test --manifest-path apps/web/src-tauri/Cargo.toml
 ```

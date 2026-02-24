@@ -3,8 +3,11 @@ import { RouterProvider, createRouter } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
 
 import Loader from "./components/loader";
+import { normalizeInitialLocation } from "./lib/initial-location";
 import { routeTree } from "./routeTree.gen";
 import { queryClient } from "./utils/trpc";
+
+normalizeInitialLocation(window.location, window.history.replaceState.bind(window.history));
 
 const router = createRouter({
   routeTree,

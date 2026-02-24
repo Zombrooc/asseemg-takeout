@@ -25,12 +25,6 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
         content: "pickup is a web application",
       },
     ],
-    links: [
-      {
-        rel: "icon",
-        href: "/favicon.ico",
-      },
-    ],
   }),
 });
 

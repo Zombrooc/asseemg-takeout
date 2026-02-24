@@ -11,7 +11,9 @@
     "start": "vite",
     "typecheck": "tsc --noEmit",
     "check-types": "pnpm run typecheck",
-    "test": "echo \"No web unit tests yet\"",
+    "test": "pnpm run test:unit && pnpm run test:integration",
+    "test:unit": "vitest run",
+    "test:integration": "node ../../scripts/test-harness/tauri-web-build-regression.mjs",
     "tauri": "tauri",
     "desktop:icons": "node scripts/generate-desktop-icons.mjs",
     "desktop:dev": "tauri dev",
@@ -52,6 +54,7 @@
     "sharp": "0.34.5",
     "tailwindcss": "^4.0.15",
     "typescript": "catalog:",
-    "vite": "^6.2.2"
+    "vite": "^6.2.2",
+    "vitest": "^3.2.4"
   }
 }
