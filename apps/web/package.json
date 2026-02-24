@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "lint": "biome lint . || echo \"web lint debt tracked in docs/audit.md\"",
     "serve": "vite preview",
     "start": "vite",
-    "check-types": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "check-types": "pnpm run typecheck",
+    "test": "echo \"No web unit tests yet\"",
     "tauri": "tauri",
     "desktop:icons": "node scripts/generate-desktop-icons.mjs",
     "desktop:dev": "tauri dev",

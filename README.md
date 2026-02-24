@@ -69,10 +69,20 @@ packages/
 
 ## Requisitos
 
-- Node.js 22+
+- Node.js 22+ (fixado em `.nvmrc`)
 - pnpm 10+
 - Rust toolchain (para Tauri desktop)
 - Android Studio / Xcode (se for rodar build nativo mobile)
+
+## How To Run (raiz)
+
+```bash
+pnpm install
+pnpm run lint
+pnpm run typecheck
+pnpm run test
+pnpm run build
+```
 
 ## Como rodar localmente
 
@@ -160,6 +170,9 @@ pnpm run dev:native
 - `pnpm run dev:web`
 - `pnpm run dev:native`
 - `pnpm run dev:server`
+- `pnpm run lint`
+- `pnpm run typecheck`
+- `pnpm run test`
 - `pnpm run build`
 - `pnpm run check-types`
 - `pnpm run check`

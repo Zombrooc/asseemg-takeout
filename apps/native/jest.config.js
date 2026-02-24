@@ -5,6 +5,7 @@ module.exports = {
   testEnvironment: "node",
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
+    "^@pickup/api/(.*)$": "<rootDir>/../../packages/api/src/$1",
   },
   transform: {
     "^.+\\.tsx?$": ["ts-jest", { useESM: false, tsconfig: { module: "commonjs", esModuleInterop: true } }],

@@ -8,6 +8,12 @@
     "./web": "./src/web.ts",
     "./native": "./src/native.ts"
   },
+  "scripts": {
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit",
+    "check-types": "pnpm run typecheck",
+    "test": "echo \"No package tests for @pickup/env yet\""
+  },
   "dependencies": {
     "@t3-oss/env-core": "^0.13.1",
     "dotenv": "catalog:",

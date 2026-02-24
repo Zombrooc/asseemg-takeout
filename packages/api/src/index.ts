@@ -1,2 +1,2 @@
 /** Shared API contracts (types/schemas). tRPC/Express removed; REST API lives in Tauri (Axum). */
-export {};
+export * from "./takeout-contracts";

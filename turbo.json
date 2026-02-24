@@ -10,8 +10,14 @@
     "lint": {
       "dependsOn": ["^lint"]
     },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
     "check-types": {
-      "dependsOn": ["^check-types"]
+      "dependsOn": ["typecheck"]
+    },
+    "test": {
+      "dependsOn": ["^test"]
     },
     "dev": {
       "cache": false,
@@ -26,6 +32,9 @@
     "db:migrate": {
       "cache": false,
       "persistent": true
+    },
+    "db:seed": {
+      "cache": false
     },
     "db:studio": {
       "cache": false,

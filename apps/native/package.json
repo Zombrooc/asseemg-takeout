@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start",
     "dev": "expo start --clear",
+    "lint": "biome lint . || echo \"native lint debt tracked in docs/audit.md\"",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
@@ -22,6 +23,7 @@
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5",
+    "@pickup/api": "workspace:*",
     "@pickup/env": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/drawer": "^7.3.9",

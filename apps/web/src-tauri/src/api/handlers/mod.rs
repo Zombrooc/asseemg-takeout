@@ -382,11 +382,27 @@ async fn ws_handler(
 async fn handle_ws_socket(socket: WebSocket, event_id: String, registry: Arc<WsRegistry>) {
   let (id, mut rx) = registry.register(event_id.clone());
   let mut socket = socket;
-  while let Some(msg) = rx.recv().await {
-    if let Ok(()) = socket.send(axum::extract::ws::Message::Text(msg)).await {
-      // continue
-    } else {
-      break;
+  let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
+  loop {
+    tokio::select! {
+      msg = rx.recv() => {
+        let Some(msg) = msg else {
+          break;
+        };
+        if socket.send(axum::extract::ws::Message::Text(msg)).await.is_err() {
+          break;
+        }
+      }
+      _ = heartbeat.tick() => {
+        let heartbeat_msg = serde_json::json!({
+          "type": "heartbeat",
+          "sentAt": chrono::Utc::now().timestamp_millis(),
+        })
+        .to_string();
+        if socket.send(axum::extract::ws::Message::Text(heartbeat_msg)).await.is_err() {
+          break;
+        }
+      }
     }
   }
   registry.unregister(&event_id, id);

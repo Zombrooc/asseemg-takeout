@@ -5,7 +5,12 @@
     ".": { "default": "./src/index.ts" },
     "./*": { "default": "./src/*.ts" }
   },
-  "scripts": {},
+  "scripts": {
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit",
+    "check-types": "pnpm run typecheck",
+    "test": "echo \"No package tests for @pickup/api yet\""
+  },
   "dependencies": {
     "@pickup/env": "workspace:*",
     "zod": "catalog:"

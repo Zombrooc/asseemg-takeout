@@ -1,62 +1,31 @@
+import type {
+  AuditEvent,
+  ConnectionInfo,
+  EventParticipant,
+  EventSummary,
+  HealthResponse,
+  NetworkAddressesResponse,
+  ParticipantSearchMode,
+  TakeoutConfirmPayload,
+  TakeoutConfirmResponse,
+} from "@pickup/api/takeout-contracts";
+
 const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_TAKEOUT_API_URL) ||
   "http://127.0.0.1:5555";
 
-export type HealthResponse = { status: string };
-export type ConnectionInfo = { baseUrl: string; pairingToken: string; expiresAt: string };
-export type NetworkAddress = {
-  interfaceName: string;
-  ip: string;
-  url: string;
-  isPrimary: boolean;
-};
-export type NetworkAddressesResponse = {
-  baseUrl: string;
-  port: number;
-  addresses: NetworkAddress[];
-};
-export type AuditEvent = {
-  request_id: string;
-  ticket_id: string;
-  device_id: string;
-  status: "CONFIRMED" | "DUPLICATE" | "FAILED";
-  payload_json: string | null;
-  created_at: string;
+export type {
+  AuditEvent,
+  ConnectionInfo,
+  EventParticipant,
+  EventSummary,
+  HealthResponse,
+  NetworkAddressesResponse,
+  ParticipantSearchMode,
+  TakeoutConfirmPayload,
+  TakeoutConfirmResponse,
 };
 export type AuditParams = { status?: string; from?: string; to?: string };
-
-export type EventSummary = {
-  eventId: string;
-  name: string | null;
-  startDate: string | null;
-  endDate: string | null;
-  startTime: string | null;
-  importedAt: string;
-  archivedAt?: string | null;
-};
-
-export type EventParticipant = {
-  id: string;
-  name: string | null;
-  cpf: string | null;
-  birthDate?: string | null;
-  ticketId: string;
-  sourceTicketId?: string | null;
-  ticketName?: string | null;
-  qrCode: string;
-  checkinDone: boolean;
-  customFormResponses?: CustomFormResponse[];
-};
-export type ParticipantSearchMode = "qr" | "ticket_id" | "cpf" | "nome" | "birth_date";
-
-export type TakeoutConfirmPayload = {
-  request_id: string;
-  ticket_id: string;
-  device_id: string;
-  payload_json?: string;
-};
-
-export type TakeoutConfirmResponse = { status: string };
 
 /** Same structure as thevent sync/checkin pull and POST /sync/import body. */
 export type CustomFormResponse = {

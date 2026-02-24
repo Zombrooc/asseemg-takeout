@@ -4,7 +4,10 @@
   "main": "src/index.ts",
   "scripts": {
     "build": "tsdown",
-    "check-types": "tsc -b",
+    "lint": "biome lint .",
+    "typecheck": "tsc -b",
+    "check-types": "pnpm run typecheck",
+    "test": "echo \"No server tests (server is stub)\"",
     "dev": "echo 'API is in Tauri (desktop:dev)'",
     "start": "echo 'API is in Tauri'"
   },
