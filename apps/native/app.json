@@ -21,6 +21,14 @@
         {
           "image": "./assets/splash.png"
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
       ]
     ],
     "experiments": {
@@ -40,7 +48,12 @@
       "package": "com.asseemg.pickup"
     },
     "ios": {
-      "bundleIdentifier": "com.asseemg.pickup"
+      "bundleIdentifier": "com.asseemg.pickup",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
     },
     "extra": {
       "eas": {
