@@ -24,22 +24,12 @@ uniwindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === "react-native" && !fromNodeModules) {
     return { type: "sourceFile", filePath: reactNativeShimPath };
   }
-  let result = originalResolveRequest(context, moduleName, platform);
-  // pnpm: whatwg-fetch (dep of @expo/metro-runtime) may not be hoisted; resolve from monorepo root
-  if ((!result || result.type === "empty") && moduleName === "whatwg-fetch") {
-    try {
-      const rootDir = path.resolve(__dirname, "..", "..");
-      const filePath = require.resolve(moduleName, { paths: [rootDir] });
-      return { type: "sourceFile", filePath };
-    } catch (_) {}
-  }
-  return result;
+  return originalResolveRequest(context, moduleName, platform);
 };
 
-// Exclude heavy monorepo dirs from watch/scan (target, dist, .turbo, .git)
+// Exclude heavy monorepo dirs from watch/scan. Não bloquear dist (react-native e deps usam .../dist/ como entry)
 const blockList = [
   /[\\/]apps[\\/]web[\\/]src-tauri[\\/]target[\\/]/,
-  /[\\/]dist[\\/]/,
   /[\\/]\.turbo[\\/]/,
   /[\\/]\.git[\\/]/,
 ];

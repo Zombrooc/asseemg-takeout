@@ -70,6 +70,18 @@ jobs:
       - name: Test native
         run: pnpm --filter native run test
 
+      - name: Verify change policy
+        run: |
+          if [ -n "${{ github.event.pull_request.base.sha }}" ]; then
+            git diff --name-only ${{ github.event.pull_request.base.sha }}...HEAD | node scripts/verify-change-policy.mjs
+          else
+            git diff --name-only HEAD~1 | node scripts/verify-change-policy.mjs
+          fi
+
+      - name: Metro bundle check
+        run: node scripts/test-harness/run-bundle-check.mjs
+        timeout-minutes: 5
+
       - name: Test Rust
         run: cargo test --manifest-path apps/web/src-tauri/Cargo.toml
 

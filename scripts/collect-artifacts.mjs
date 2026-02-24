@@ -42,12 +42,12 @@ async function sumFilesInDir(dir, suffix = null) {
 }
 
 const out = {};
-const webAssets = join(root, "dist", "web", "assets");
+const webAssets = join(root, "apps", "web", "dist", "assets");
 out.webJs = await sumFilesInDir(webAssets, ".js");
 out.webCss = await sumFilesInDir(webAssets, ".css");
-const desktopArtifacts = join(root, "dist", "desktop", "artifacts");
+const desktopArtifacts = join(root, "apps", "web", "src-tauri", "target", "release", "bundle");
 out.desktopExe = await sumFilesInDir(desktopArtifacts, ".exe");
 out.desktopMsi = await sumFilesInDir(desktopArtifacts, ".msi");
-const nativeBundles = join(root, "dist", "native");
+const nativeBundles = join(root, "apps", "native", "dist");
 out.nativeBundle = await sumDirSizes(nativeBundles, ".js");
 console.log(JSON.stringify(out));

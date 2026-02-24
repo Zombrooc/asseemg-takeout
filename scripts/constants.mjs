@@ -6,22 +6,22 @@
 export const MANIFEST_SCHEMA_VERSION = "1.0";
 export const MANIFEST_FILENAME = "build-manifest.json";
 
-/** Paths relative to repo root (where package.json lives). */
+/** Paths relative to repo root (where package.json lives). Build outputs em cada app. */
 export const DIST_PATHS = {
-  web: "dist/web",
-  server: "dist/server",
-  desktopTarget: "dist/desktop/target",
-  desktopArtifacts: "dist/desktop/artifacts",
-  nativeAndroid: "dist/native/expo-export-android",
-  nativeIos: "dist/native/expo-export-ios",
-  nativeArtifacts: "dist/native/artifacts",
+  web: "apps/web/dist",
+  server: "apps/server/dist",
+  desktopTarget: "apps/web/src-tauri/target",
+  desktopArtifacts: "apps/web/src-tauri/target/release/bundle",
+  nativeAndroid: "apps/native/dist",
+  nativeIos: "apps/native/dist",
+  nativeArtifacts: "apps/native/dist",
 };
 
 export const ARTIFACT_PATTERNS = [
-  { key: "webJs", path: "dist/web/assets/*.js", label: "Web JS bundle" },
-  { key: "webCss", path: "dist/web/assets/*.css", label: "Web CSS" },
-  { key: "desktopExe", path: "dist/desktop/artifacts/*.exe", label: "Desktop .exe" },
-  { key: "desktopNsis", path: "dist/desktop/artifacts/*.nsis*.exe", label: "Desktop NSIS" },
-  { key: "desktopMsi", path: "dist/desktop/artifacts/*.msi", label: "Desktop MSI" },
-  { key: "nativeBundle", path: "dist/native/**/bundles/*.js", label: "Native JS bundle" },
+  { key: "webJs", path: "apps/web/dist/assets/*.js", label: "Web JS bundle" },
+  { key: "webCss", path: "apps/web/dist/assets/*.css", label: "Web CSS" },
+  { key: "desktopExe", path: "apps/web/src-tauri/target/release/bundle/**/*.exe", label: "Desktop .exe" },
+  { key: "desktopNsis", path: "apps/web/src-tauri/target/release/bundle/nsis/*.exe", label: "Desktop NSIS" },
+  { key: "desktopMsi", path: "apps/web/src-tauri/target/release/bundle/msi/*.msi", label: "Desktop MSI" },
+  { key: "nativeBundle", path: "apps/native/dist/**/bundles/*.js", label: "Native JS bundle" },
 ];
