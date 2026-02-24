@@ -6,6 +6,7 @@ import React, { useCallback, useState } from "react";
 
 import { Container } from "@/components/container";
 import { Text, View } from "@/lib/primitives";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function generateDeviceId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -29,6 +30,7 @@ function parsePairingUrl(urlString: string): { baseUrl: string; token: string } 
 }
 
 export default function PairScreen() {
+  const insets = useSafeAreaInsets();
   const { defaultBaseUrl, setConnection } = useTakeoutConnection();
   const router = useRouter();
   const [baseUrl, setBaseUrl] = useState(defaultBaseUrl);
@@ -128,7 +130,7 @@ export default function PairScreen() {
           }}
           onBarcodeScanned={handleBarcodeScanned}
         />
-        <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70">
+        <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70" style={{ paddingBottom: 16 + insets.bottom }}>
           <Text className="text-white text-center text-sm mb-2">
             Aponte para o QR code na tela do desktop
           </Text>
