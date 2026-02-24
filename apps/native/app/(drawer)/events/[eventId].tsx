@@ -340,7 +340,7 @@ export default function EventScreen() {
           onBarcodeScanned={onQrScanned}
         />
 
-        <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70">
+        <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70" style={{ paddingBottom: 16 + insets.bottom }}>
           <Text className="text-white text-center text-sm mb-2">Aponte para o QR code do ingresso</Text>
           <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
             Cancelar

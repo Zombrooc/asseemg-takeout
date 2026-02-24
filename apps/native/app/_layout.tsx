@@ -9,6 +9,7 @@ import { Stack } from "expo-router";
 import { HeroUINativeProvider } from "heroui-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { TakeoutConnectionProvider } from "@/contexts/takeout-connection-context";
@@ -33,16 +34,18 @@ export default function Layout() {
   return (
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <KeyboardProvider>
-          <AppThemeProvider>
-            <TakeoutConnectionProvider>
-              <TakeoutQueueProcessor />
-              <HeroUINativeProvider>
-                <StackLayout />
-              </HeroUINativeProvider>
-            </TakeoutConnectionProvider>
-          </AppThemeProvider>
-        </KeyboardProvider>
+        <SafeAreaProvider>
+          <KeyboardProvider>
+            <AppThemeProvider>
+              <TakeoutConnectionProvider>
+                <TakeoutQueueProcessor />
+                <HeroUINativeProvider>
+                  <StackLayout />
+                </HeroUINativeProvider>
+              </TakeoutConnectionProvider>
+            </AppThemeProvider>
+          </KeyboardProvider>
+        </SafeAreaProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>
   );

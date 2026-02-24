@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 
 import { Modal, Pressable, Text, View } from "@/lib/primitives";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const LOCK_RENEW_INTERVAL_MS = 15_000;
 
@@ -48,6 +49,7 @@ type Props = {
 };
 
 export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed, onQueuedOffline, onConflict }: Props) {
+  const insets = useSafeAreaInsets();
   const { api, deviceId } = useTakeoutConnection();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +153,16 @@ export function ConfirmTakeoutModal({ visible, participant, onClose, onConfirmed
 
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <Pressable className="flex-1 bg-black/50 justify-center items-center p-4" onPress={handleClose}>
+      <Pressable
+        className="flex-1 bg-black/50 justify-center items-center p-4"
+        style={{
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+          paddingLeft: insets.left,
+          paddingRight: insets.right,
+        }}
+        onPress={handleClose}
+      >
         <Pressable className="p-6 bg-background rounded-xl min-w-[280px]" onPress={(e) => e.stopPropagation()}>
         <Text className="text-lg font-semibold text-foreground mb-4">Confirmar check-in</Text>
         {lockState === "heldByMe" ? (
