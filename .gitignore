@@ -10,10 +10,13 @@ build
 
 # Tauri (Rust + bundle)
 apps/web/src-tauri/target/
+apps/web/src-tauri/target/release/bundle/
+apps/web/src-tauri/target/release/*.exe
 
 # React Native / Expo
 .expo/
 apps/native/android/app/build/
+apps/native/android/app/build/outputs/apk/
 apps/native/ios/build/
 *.apk
 *.aab
