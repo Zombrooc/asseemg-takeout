@@ -1,44 +1,44 @@
 {
-  "name": "pickup",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "type": "module",
-  "scripts": {
-    "dev": "turbo run dev --filter=./apps/*",
-    "build": "turbo run build",
-    "build:release": "turbo run build --filter=web --filter=native",
-    "build:manifest": "node scripts/generate-manifest.mjs",
-    "build:baseline": "node scripts/measure-build.mjs build -- pnpm run build && node scripts/generate-manifest.mjs",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "check-types": "pnpm run typecheck",
-    "test": "turbo run test",
-    "dev:native": "turbo run dev --filter=native",
-    "dev:web": "turbo run dev --filter=web",
-    "dev:server": "turbo run dev --filter=server",
-    "db:push": "turbo run db:push --filter=@pickup/db",
-    "db:studio": "turbo run db:studio --filter=@pickup/db",
-    "db:generate": "turbo run db:generate --filter=@pickup/db",
-    "db:migrate": "turbo run db:migrate --filter=@pickup/db",
-    "db:seed": "turbo run db:seed --filter=@pickup/db",
-    "db:local": "turbo run db:local --filter=@pickup/db",
-    "check": "biome check --write .",
-    "ruler:apply": "pnpm dlx @intellectronica/ruler@latest apply --local-only"
-  },
-  "dependencies": {
-    "@pickup/env": "workspace:*",
-    "dotenv": "catalog:",
-    "zod": "catalog:"
-  },
-  "devDependencies": {
-    "@biomejs/biome": "^2.2.0",
-    "@pickup/config": "workspace:*",
-    "@types/node": "^22.13.14",
-    "turbo": "^2.6.3",
-    "typescript": "catalog:"
-  },
-  "packageManager": "pnpm@10.28.2"
+    "name":  "pickup",
+    "private":  true,
+    "workspaces":  [
+                       "apps/*",
+                       "packages/*"
+                   ],
+    "type":  "module",
+    "scripts":  {
+                    "dev":  "turbo run dev --filter=./apps/*",
+                    "build":  "turbo run build",
+                    "build:release":  "pnpm --filter web run desktop:build && pnpm --filter native run android:build:release",
+                    "build:manifest":  "node scripts/generate-manifest.mjs",
+                    "build:baseline":  "node scripts/measure-build.mjs build -- pnpm run build \u0026\u0026 node scripts/generate-manifest.mjs",
+                    "lint":  "turbo run lint",
+                    "typecheck":  "turbo run typecheck",
+                    "check-types":  "pnpm run typecheck",
+                    "test":  "turbo run test",
+                    "dev:native":  "turbo run dev --filter=native",
+                    "dev:web":  "turbo run dev --filter=web",
+                    "dev:server":  "turbo run dev --filter=server",
+                    "db:push":  "turbo run db:push --filter=@pickup/db",
+                    "db:studio":  "turbo run db:studio --filter=@pickup/db",
+                    "db:generate":  "turbo run db:generate --filter=@pickup/db",
+                    "db:migrate":  "turbo run db:migrate --filter=@pickup/db",
+                    "db:seed":  "turbo run db:seed --filter=@pickup/db",
+                    "db:local":  "turbo run db:local --filter=@pickup/db",
+                    "check":  "biome check --write .",
+                    "ruler:apply":  "pnpm dlx @intellectronica/ruler@latest apply --local-only"
+                },
+    "dependencies":  {
+                         "@pickup/env":  "workspace:*",
+                         "dotenv":  "catalog:",
+                         "zod":  "catalog:"
+                     },
+    "devDependencies":  {
+                            "@biomejs/biome":  "^2.2.0",
+                            "@pickup/config":  "workspace:*",
+                            "@types/node":  "^22.13.14",
+                            "turbo":  "^2.6.3",
+                            "typescript":  "catalog:"
+                        },
+    "packageManager":  "pnpm@10.28.2"
 }

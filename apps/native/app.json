@@ -6,8 +6,8 @@
     "web": {
       "bundler": "metro"
     },
-    "name": "ASSEEMG Retira",
-    "slug": "pickup",
+    "name": "ASSEEMG Retira - Mobile",
+    "slug": "asseemg-takeout",
     "plugins": [
       "expo-font",
       [
@@ -19,8 +19,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash.png",
-          "backgroundColor": "#000000"
+          "image": "./assets/splash.png"
         }
       ]
     ],
@@ -31,7 +30,6 @@
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash.png",
-      "backgroundColor": "#000000",
       "resizeMode": "contain"
     },
     "android": {
@@ -39,10 +37,15 @@
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.anonymous.pickup"
+      "package": "com.asseemg.pickup"
     },
     "ios": {
-      "bundleIdentifier": "com.anonymous.pickup"
+      "bundleIdentifier": "com.asseemg.pickup"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d05d9a1f-6d8f-4b0a-b763-410253d890cd"
+      }
     }
   }
 }
