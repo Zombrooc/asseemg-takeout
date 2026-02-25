@@ -55,6 +55,38 @@ function DrawerLayout() {
         }}
       />
       <Drawer.Screen
+        name="audit"
+        options={{
+          headerTitle: "Auditoria",
+          drawerLabel: ({ color, focused }) => (
+            <Text style={{ color: focused ? color : fg }}>Auditoria</Text>
+          ),
+          drawerIcon: ({ size, color, focused }) => (
+            <Ionicons
+              name="document-text-outline"
+              size={size}
+              color={focused ? color : fg}
+            />
+          ),
+        }}
+      />
+      <Drawer.Screen
+        name="settings"
+        options={{
+          headerTitle: "Configurações",
+          drawerLabel: ({ color, focused }) => (
+            <Text style={{ color: focused ? color : fg }}>Configurações</Text>
+          ),
+          drawerIcon: ({ size, color, focused }) => (
+            <Ionicons
+              name="settings-outline"
+              size={size}
+              color={focused ? color : fg}
+            />
+          ),
+        }}
+      />
+      <Drawer.Screen
         name="(tabs)"
         options={{
           headerTitle: "Tabs",
