@@ -67,6 +67,13 @@ packages/
   - Bug fix com teste de regressao.
   - Feature nova com teste de unidade e/ou integracao.
 
+## UI Redesign (Desktop)
+
+A UI do desktop foi alinhada ao redesign em [v0-redesenho-ui-tauri](https://github.com/Zombrooc/v0-redesenho-ui-tauri): design tokens, Geist, componentes (Header, StatusCard, EventCard, PairingSection, ParticipantsTable, AuditFilters, etc.). O app continua com React + TanStack Router (sem Next.js).
+
+- **Plano e relatorio**: `apps/web/PLAN_UI_MIGRATION.md`, `apps/web/MIGRATION_REPORT.md`.
+- **Testes de regressao**: `cd apps/web && pnpm run test:unit`.
+
 ## Requisitos
 
 - Node.js 22+ (fixado em `.nvmrc`)

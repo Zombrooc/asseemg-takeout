@@ -1,107 +1,68 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { formatDateTimeBR } from "@/lib/format-date";
-import {
-  getAudit,
-  type AuditEvent,
-  type AuditParams,
-} from "@/lib/takeout-api";
-
-function StatusBadge({ status }: { status: AuditEvent["status"] }) {
-  const variant =
-    status === "CONFIRMED"
-      ? "default"
-      : status === "DUPLICATE"
-        ? "secondary"
-        : "destructive";
-  return <Badge variant={variant}>{status}</Badge>;
-}
+import { useState, useMemo } from "react";
+import { AuditFilters } from "@/components/audit-filters";
+import { AuditLogTable } from "@/components/audit-log-table";
+import { getAudit, type AuditParams } from "@/lib/takeout-api";
 
 export function AuditPage() {
   const [statusFilter, setStatusFilter] = useState<AuditParams["status"]>("");
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: events = [], isLoading } = useQuery({
+  const { data: logs = [], isLoading } = useQuery({
     queryKey: ["takeout", "audit", statusFilter],
     queryFn: () => getAudit(statusFilter ? { status: statusFilter } : undefined),
   });
 
+  const filteredLogs = useMemo(() => {
+    if (!searchQuery.trim()) return logs;
+    const q = searchQuery.trim().toLowerCase();
+    return logs.filter(
+      (log) =>
+        log.ticket_id.toLowerCase().includes(q) ||
+        log.device_id.toLowerCase().includes(q) ||
+        log.request_id.toLowerCase().includes(q),
+    );
+  }, [logs, searchQuery]);
+
+  const handleClearFilters = () => {
+    setStatusFilter("");
+    setSearchQuery("");
+  };
+
+  const handleExport = () => {
+    const header = "request_id,ticket_id,device_id,status,created_at\n";
+    const rows = filteredLogs
+      .map(
+        (l) =>
+          `${l.request_id},${l.ticket_id},${l.device_id},${l.status},${l.created_at}`,
+      )
+      .join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
-    <div className="container mx-auto max-w-5xl space-y-6 px-4 py-6">
-      <h1 className="text-xl font-semibold">Auditoria</h1>
+    <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+      <h1 className="text-2xl font-bold">Auditoria</h1>
 
-      <div className="flex flex-wrap items-center gap-4">
-        <label className="flex items-center gap-2 text-sm">
-          <span>Status:</span>
-          <select
-            className="rounded border bg-background px-2 py-1 text-sm"
-            value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(
-                e.target.value as AuditParams["status"] | "" || undefined,
-              )
-            }
-          >
-            <option value="">Todos</option>
-            <option value="CONFIRMED">CONFIRMED</option>
-            <option value="DUPLICATE">DUPLICATE</option>
-            <option value="FAILED">FAILED</option>
-          </select>
-        </label>
-      </div>
+      <AuditFilters
+        statusFilter={statusFilter ?? ""}
+        onStatusChange={(v) => setStatusFilter((v as AuditParams["status"]) || undefined)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onClear={handleClearFilters}
+      />
 
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>request_id</TableHead>
-              <TableHead>ticket_id</TableHead>
-              <TableHead>device_id</TableHead>
-              <TableHead>status</TableHead>
-              <TableHead>created_at</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Carregando...
-                </TableCell>
-              </TableRow>
-            ) : events.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
-                  Nenhum evento
-                </TableCell>
-              </TableRow>
-            ) : (
-              events.map((ev) => (
-                <TableRow key={ev.request_id}>
-                  <TableCell className="font-mono text-xs">
-                    {ev.request_id.slice(0, 8)}…
-                  </TableCell>
-                  <TableCell>{ev.ticket_id}</TableCell>
-                  <TableCell>{ev.device_id}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={ev.status} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {formatDateTimeBR(ev.created_at)}
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
+      <AuditLogTable
+        logs={filteredLogs}
+        isLoading={isLoading}
+        onExport={handleExport}
+      />
+    </main>
   );
 }
