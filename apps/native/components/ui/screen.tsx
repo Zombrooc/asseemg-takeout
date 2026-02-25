@@ -32,7 +32,9 @@ type StaticModeProps = {
 };
 
 type ScreenProps<T> = PropsWithChildren<
-  BaseProps & (ScrollModeProps | FlatListModeProps<T> | StaticModeProps) & ViewProps
+  BaseProps &
+    (ScrollModeProps | FlatListModeProps<T> | StaticModeProps) &
+    ViewProps
 >;
 
 export function Screen<T>(props: ScreenProps<T>): ReactElement {
@@ -82,27 +84,33 @@ export function Screen<T>(props: ScreenProps<T>): ReactElement {
     );
   })();
 
-  const sharedProps = {
-    className: cn("flex-1 bg-background", className),
-    style: {
-      paddingTop: insets.top,
-      paddingBottom: insets.bottom,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-    },
-    ...(rest as ViewProps),
+  const insetStyle = {
+    paddingTop: insets.top,
+    paddingBottom: insets.bottom,
+    paddingLeft: insets.left,
+    paddingRight: insets.right,
   };
 
+  const rootView = (
+    <View
+      className={cn("flex-1 bg-background", className)}
+      style={insetStyle}
+      {...(rest as ViewProps)}
+    >
+      {body}
+    </View>
+  );
+
   if (!keyboardAware) {
-    return <View {...sharedProps}>{body}</View>;
+    return rootView;
   }
 
   return (
     <KeyboardAvoidingView
-      {...sharedProps}
+      style={[{ flex: 1 }]}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      {body}
+      {rootView}
     </KeyboardAvoidingView>
   );
 }

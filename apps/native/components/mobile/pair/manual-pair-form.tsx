@@ -22,7 +22,9 @@ export function ManualPairForm({
 }: Props) {
   return (
     <>
-      <Text className="text-muted-foreground text-xs mb-2">Ou digite:</Text>
+      <Text className="text-foreground font-medium text-sm mb-1.5 leading-snug">
+        URL do servidor
+      </Text>
       <Input
         placeholder="http://192.168.0.5:5555"
         value={baseUrl}
@@ -30,18 +32,29 @@ export function ManualPairForm({
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType="url"
-        className="mb-4"
+        className="mb-4 rounded-xl min-h-[48px] border border-border bg-card w-full text-base"
       />
+      <Text className="text-foreground font-medium text-sm mb-1.5 leading-snug">
+        Token de acesso
+      </Text>
       <Input
-        placeholder="Token exibido no desktop"
+        placeholder="cole o token aqui..."
         value={pairingToken}
         onChangeText={onChangeToken}
         autoCapitalize="characters"
         autoCorrect={false}
-        className="mb-6"
+        className="mb-6 rounded-xl min-h-[48px] border border-border bg-card w-full text-base"
       />
-      {error ? <Text className="text-danger text-sm mb-4">{error}</Text> : null}
-      <Button testID="pair-submit-button" className="px-4 py-3" onPress={onSubmit} isLoading={loading} isDisabled={loading}>
+      {error ? (
+        <Text className="text-danger text-sm mb-4 leading-snug">{error}</Text>
+      ) : null}
+      <Button
+        testID="pair-submit-button"
+        className="px-4 py-3 rounded-xl min-h-[48px]"
+        onPress={onSubmit}
+        isLoading={loading}
+        isDisabled={loading}
+      >
         Conectar
       </Button>
     </>

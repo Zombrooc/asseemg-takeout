@@ -145,19 +145,28 @@ export default function PairScreen() {
   }
 
   return (
-    <Container className="px-4 py-6" contentClassName="flex-1">
-      <Text className="text-2xl font-semibold text-foreground mb-1">
+    <Container className="px-4 py-6 bg-background" contentClassName="flex-1">
+      <Text className="text-2xl font-semibold text-foreground mb-1 leading-tight">
         Parear com o Desktop
       </Text>
-      <Text className="text-muted-foreground text-sm mb-4">
+      <Text className="text-muted-foreground text-sm mb-4 leading-relaxed">
         Escaneie o QR no desktop ou informe URL e token manualmente.
       </Text>
 
       <PairingTipsCard />
+      <Text className="text-foreground font-semibold text-base mb-1 leading-snug">
+        Modo de pareamento
+      </Text>
+      <Text className="text-muted-foreground text-sm mb-3 leading-snug">
+        Escolha como deseja conectar
+      </Text>
       <PairingMethodTabs method={pairMethod} onChange={setPairMethod} />
 
       {pairMethod === "qr" ? (
-        <Button className="px-4 py-3 mb-6" onPress={() => setShowScanner(true)}>
+        <Button
+          className="px-4 py-3 mb-6 rounded-xl min-h-[48px]"
+          onPress={() => setShowScanner(true)}
+        >
           Escanear QR code
         </Button>
       ) : (

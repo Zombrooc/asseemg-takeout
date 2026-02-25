@@ -19,7 +19,7 @@ import { ConfirmTakeoutModal } from "@/components/mobile/audit/confirm-takeout-m
 import { ParticipantListItem } from "@/components/takeout/participant-list-item";
 import { Banner, Button, Container } from "@/components/ui";
 import { FlatList, Text, View } from "@/lib/primitives";
-import { formatDateBR } from "@/lib/format-date";
+import { formatDateBR, formatDateShort } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -372,7 +372,9 @@ export default function EventScreen() {
     if (!permission.granted) {
       return (
         <Container className="px-4 py-6">
-          <Text className="text-foreground font-medium mb-2">Acesso à câmera</Text>
+          <Text className="text-foreground font-medium mb-2">
+            Acesso à câmera
+          </Text>
           <Text className="text-muted-foreground text-sm mb-4">
             Necessário para escanear o QR do ingresso.
           </Text>
@@ -412,7 +414,10 @@ export default function EventScreen() {
         {event ? (
           <EventHeader
             title={event.name ?? eventId}
-            subtitle={event.startDate ? formatDateBR(event.startDate) : undefined}
+            subtitle={
+              event.startDate ? formatDateShort(event.startDate) : undefined
+            }
+            isLive={isReachable}
           />
         ) : null}
 
@@ -422,31 +427,46 @@ export default function EventScreen() {
               Desktop desconectado. Conecte-se para sincronizar dados.
             </Text>
             <View className="flex-row gap-2">
-              <Button size="sm" className="px-3 py-2" onPress={() => checkReachability()}>
+              <Button
+                size="sm"
+                className="px-3 py-2"
+                onPress={() => checkReachability()}
+              >
                 Tentar novamente
               </Button>
-              <Button size="sm" variant="bordered" className="px-3 py-2" onPress={() => router.push("/pair")}>
+              <Button
+                size="sm"
+                variant="bordered"
+                className="px-3 py-2"
+                onPress={() => router.push("/pair")}
+              >
                 Reconectar
               </Button>
             </View>
           </Banner>
         ) : null}
 
-        <View className="px-4 py-2 border-b border-border">
+        <View className="px-4 py-2 border-b border-border bg-background">
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
           <QuickActionsRow
             onScan={() => setShowQrScanner(true)}
             onReset={handleResetCheckins}
             resetLoading={resetLoading}
+            undoCount={confirmed}
           />
         </View>
 
         <OfflineQueueNotice visible={offlineNoticeVisible} />
 
-        <SummaryStats total={total} confirmed={confirmed} pending={pending} />
+        <SummaryStats
+          total={total}
+          confirmed={confirmed}
+          pending={pending}
+          pendingSync={pendingTicketIds.size}
+        />
 
         {participantsQuery.isLoading ? (
-          <View className="flex-1 justify-center items-center">
+          <View className="flex-1 justify-center items-center min-h-[200px] bg-background">
             <Spinner size="lg" />
           </View>
         ) : (
