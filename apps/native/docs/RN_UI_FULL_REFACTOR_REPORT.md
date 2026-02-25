@@ -1,7 +1,7 @@
 # RN UI Full Refactor Report
 
 ## Escopo
-Relatório consolidado das mudanças de UI em React Native/Expo Router, com foco em telas, componentes, bugs, decisões técnicas e validação manual.
+Relatório consolidado das mudanças de UI em React Native/Expo Router, com foco em telas, componentes, bugs, decisões técnicas e validação manual. Branch: **refactor/RN-UI-Full-refactor**. Alinhado ao plano em `RN_UI_FULL_REFACTOR_PLAN.md`.
 
 ---
 
@@ -12,15 +12,15 @@ Relatório consolidado das mudanças de UI em React Native/Expo Router, com foco
 | Tela/rota | Implementação RN | Mudança principal |
 |---|---|---|
 | Root layout | `app/_layout.tsx` | Base de navegação e providers globais centralizados |
-| Drawer layout | `app/(drawer)/_layout.tsx` | Organização do fluxo principal em navegação lateral |
-| Tabs layout | `app/(drawer)/(tabs)/_layout.tsx` | Separação das telas de acesso frequente |
-| Home tab | `app/(drawer)/(tabs)/index.tsx` | Primeira experiência pós-login/foco principal |
-| Tab secundária | `app/(drawer)/(tabs)/two.tsx` | Tela auxiliar migrada para padrão RN |
-| Drawer index | `app/(drawer)/index.tsx` | Entrypoint do grupo drawer |
-| Detalhe de evento | `app/(drawer)/events/[eventId].tsx` | Uso de rota dinâmica com param tipado |
-| Pair flow | `app/pair.tsx` | Fluxo isolado mantido fora de drawer/tabs |
-| Modal screen | `app/modal.tsx` | Tratamento de apresentação modal no roteador |
-| Not found | `app/+not-found.tsx` | Cobertura de fallback para rotas inválidas |
+| Drawer layout | `app/(drawer)/_layout.tsx` | Drawer com Home, Eventos, **Auditoria**, **Configurações**, Tabs |
+| Drawer index (Home) | `app/(drawer)/index.tsx` | Home principal: eventos, status LIVE/OFFLINE, desparear |
+| Detalhe de evento | `app/(drawer)/events/[eventId].tsx` | Participantes, busca, scan, reset, modal confirmar |
+| **Auditoria** | `app/(drawer)/audit.tsx` | **Nova rota** — GET /audit, filtros (ALL/CONFIRMED/DUPLICATE/FAILED), FlatList |
+| **Configurações** | `app/(drawer)/settings.tsx` | **Nova rota** — baseUrl, desparear |
+| Pair flow | `app/pair.tsx` | Fluxo isolado fora do drawer (QR + manual) |
+| Modal screen | `app/modal.tsx` | Tela de exemplo modal |
+| Not found | `app/+not-found.tsx` | Fallback para rotas inválidas |
+| Tabs | `app/(drawer)/(tabs)/` | Tab One / two (secundário) |
 
 ### Componentes
 
@@ -28,9 +28,14 @@ Relatório consolidado das mudanças de UI em React Native/Expo Router, com foco
 |---|---|---|
 | Container base | `components/container.tsx` | Padronização de espaçamento/layout base |
 | Theme toggle | `components/theme-toggle.tsx` | Alternância de tema consistente no app |
-| Participant item | `components/takeout/participant-list-item.tsx` | Render de item de lista com estados claros |
-| Confirm modal | `components/takeout/confirm-takeout-modal.tsx` | Confirmação crítica com foco em UX/acessibilidade |
-| Queue processor | `components/takeout/queue-processor.tsx` | Encapsulamento de processamento assíncrono |
+| Participant item | `components/takeout/participant-list-item.tsx` | Estados (Confirmado, Locked, Conflito, Pendente, Normal); truncamento; testID |
+| Confirm modal | `components/mobile/audit/confirm-takeout-modal.tsx` | Overlay + card; testID confirm/cancel |
+| Queue processor | `components/takeout/queue-processor.tsx` | Fila offline |
+| ConnectionStatusCard | `components/mobile/home/connection-status-card.tsx` | testID retry/reconnect |
+| EventCard / EventsList | `components/mobile/home/` | testID event-card-{eventId} |
+| AuditFilters | `components/mobile/audit/audit-filters.tsx` | Status ALL/CONFIRMED/DUPLICATE/FAILED (alinhado à API); testID por opção |
+| AuditListItem | `components/mobile/audit/audit-list-item.tsx` | Truncamento ticket_id |
+| theme-tokens | `utils/theme-tokens.ts` | Mapas estáticos STATUS_PILL_CLASS, CONNECTION_BG_CLASS, BADGE_STATUS_CLASS |
 
 ---
 
@@ -55,6 +60,10 @@ Relatório consolidado das mudanças de UI em React Native/Expo Router, com foco
    - **Sintoma:** lag no scroll e re-render excessivo.
    - **Causa raiz:** itens sem memoização e configuração padrão da lista.
    - **Correção:** otimizações de `FlatList` (`keyExtractor`, memo e janela ajustada).
+
+5. **AuditFilters com status PENDING (inexistente na API)**
+   - **Sintoma:** filtro não refletia GET /audit (status: CONFIRMED | DUPLICATE | FAILED).
+   - **Correção:** OPTIONS alterado para ALL, CONFIRMED, DUPLICATE, FAILED.
 
 ---
 
@@ -104,9 +113,14 @@ Relatório consolidado das mudanças de UI em React Native/Expo Router, com foco
 - [ ] Confirmar que seleção/ações em item não causam re-render global visível.
 
 ### Qualidade e observabilidade
-- [ ] Todas as ações críticas têm `testID`.
+- [ ] Todas as ações críticas têm `testID` (home-pair-cta, home-unpair, connection-status-retry/reconnect, pair-submit-button, events-scan-ticket, events-reset-checkins, takeout-confirm-modal-confirm/cancel, participant-confirm-*, audit-filters-*).
 - [ ] Fluxos principais sem erro em logs.
-- [ ] Regressão rápida dos cenários de takeout/events.
+- [ ] Regressão rápida dos cenários de takeout/events/audit.
+
+### Testes adicionados (refactor/RN-UI-Full-refactor)
+- `__tests__/utils/theme-tokens.test.ts`: mapas estáticos de classes.
+- `__tests__/components/audit-filters.invariants.test.ts`: OPTIONS alinhados à API.
+- `__tests__/lib/takeout-api.test.ts`: getAudit com e sem params.
 
 ---
 
