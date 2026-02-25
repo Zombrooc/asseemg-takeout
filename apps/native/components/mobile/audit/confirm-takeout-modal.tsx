@@ -223,10 +223,22 @@ export function ConfirmTakeoutModal({
             ) : null}
             {error ? <Text className="text-danger text-sm mb-3">{error}</Text> : null}
             <View className="flex-row gap-3">
-              <Button variant="bordered" className="px-4 py-3" onPress={handleClose} isDisabled={loading}>
+              <Button
+                testID="takeout-confirm-modal-cancel"
+                variant="bordered"
+                className="px-4 py-3"
+                onPress={handleClose}
+                isDisabled={loading}
+              >
                 Cancelar
               </Button>
-              <Button className="px-4 py-3" onPress={handleConfirm} isLoading={loading} isDisabled={loading || !canConfirm}>
+              <Button
+                testID="takeout-confirm-modal-confirm"
+                className="px-4 py-3"
+                onPress={handleConfirm}
+                isLoading={loading}
+                isDisabled={loading || !canConfirm}
+              >
                 Confirmar check-in
               </Button>
             </View>

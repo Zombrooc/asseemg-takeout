@@ -28,10 +28,10 @@ export function ConnectionStatusCard({ isReachable, onRetry }: Props) {
         Desktop desconectado. Conecte-se para sincronizar dados.
       </Text>
       <View className="flex-row gap-2">
-        <Button size="sm" className="px-3 py-2" onPress={onRetry}>
+        <Button testID="connection-status-retry" size="sm" className="px-3 py-2" onPress={onRetry}>
           Tentar novamente
         </Button>
-        <Button size="sm" variant="bordered" className="px-3 py-2" onPress={() => router.push("/pair")}>
+        <Button testID="connection-status-reconnect" size="sm" variant="bordered" className="px-3 py-2" onPress={() => router.push("/pair")}>
           Reconectar
         </Button>
       </View>

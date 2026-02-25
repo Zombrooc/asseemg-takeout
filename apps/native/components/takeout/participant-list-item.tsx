@@ -63,6 +63,7 @@ function ParticipantListItemComponent({
         </View>
         {state.showDismissConflict ? (
           <Button
+            testID={`participant-dismiss-${ticketId}`}
             size="sm"
             variant="outline"
             className="px-3 py-2"
@@ -72,6 +73,7 @@ function ParticipantListItemComponent({
           </Button>
         ) : (
           <Button
+            testID={`participant-confirm-${id}`}
             size="sm"
             className="px-3 py-2"
             onPress={() => onPrimaryAction(id)}

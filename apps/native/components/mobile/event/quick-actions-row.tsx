@@ -10,10 +10,11 @@ type Props = {
 export function QuickActionsRow({ onScan, onReset, resetLoading }: Props) {
   return (
     <View className="flex-row gap-2 flex-wrap">
-      <Button size="sm" variant="bordered" className="px-3 py-2" onPress={onScan}>
+      <Button testID="events-scan-ticket" size="sm" variant="bordered" className="px-3 py-2" onPress={onScan}>
         Escanear ingresso
       </Button>
       <Button
+        testID="events-reset-checkins"
         size="sm"
         variant="bordered"
         className="px-3 py-2"

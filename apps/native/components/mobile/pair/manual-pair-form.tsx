@@ -41,7 +41,7 @@ export function ManualPairForm({
         className="mb-6"
       />
       {error ? <Text className="text-danger text-sm mb-4">{error}</Text> : null}
-      <Button className="px-4 py-3" onPress={onSubmit} isLoading={loading} isDisabled={loading}>
+      <Button testID="pair-submit-button" className="px-4 py-3" onPress={onSubmit} isLoading={loading} isDisabled={loading}>
         Conectar
       </Button>
     </>
