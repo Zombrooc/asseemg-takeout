@@ -6,7 +6,7 @@ import { ScrollView, View } from "@/lib/primitives";
 import Animated, { type AnimatedProps } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/** Layout: use fixed px/numbers and SafeArea insets only. Avoid Dimensions, useWindowDimensions, and % for screen/container sizing. */
+/** Layout: SafeArea insets em style. Valores dinâmicos (padding, margin, tamanhos) vêm de useResponsiveScale() nos componentes filhos. */
 const AnimatedView = Animated.createAnimatedComponent(View);
 
 type Props = AnimatedProps<ViewProps> & {

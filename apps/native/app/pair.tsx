@@ -6,6 +6,7 @@ import React, { useCallback, useState } from "react";
 
 import { Container } from "@/components/container";
 import { Text, View } from "@/lib/primitives";
+import { useResponsiveScale } from "@/utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function generateDeviceId(): string {
@@ -17,7 +18,9 @@ function generateDeviceId(): string {
 }
 
 /** Parse pairing URL from desktop QR: http://192.168.0.5:5555?token=ABC123 */
-function parsePairingUrl(urlString: string): { baseUrl: string; token: string } | null {
+function parsePairingUrl(
+  urlString: string,
+): { baseUrl: string; token: string } | null {
   try {
     const u = new URL(urlString.trim());
     const token = u.searchParams.get("token");
@@ -31,6 +34,7 @@ function parsePairingUrl(urlString: string): { baseUrl: string; token: string } 
 
 export default function PairScreen() {
   const insets = useSafeAreaInsets();
+  const { scale } = useResponsiveScale();
   const { defaultBaseUrl, setConnection } = useTakeoutConnection();
   const router = useRouter();
   const [baseUrl, setBaseUrl] = useState(defaultBaseUrl);
@@ -60,7 +64,10 @@ export default function PairScreen() {
             pairing_token: t,
           }),
         });
-        const data = (await res.json()) as { access_token?: string; error?: string };
+        const data = (await res.json()) as {
+          access_token?: string;
+          error?: string;
+        };
         if (!res.ok) {
           setError(data.error ?? `Erro ${res.status}`);
           return;
@@ -77,7 +84,7 @@ export default function PairScreen() {
         setLoading(false);
       }
     },
-    [setConnection, router]
+    [setConnection, router],
   );
 
   const handlePair = () => doPair(baseUrl, pairingToken);
@@ -94,26 +101,36 @@ export default function PairScreen() {
         setError("QR inválido. Escaneie o QR exibido no desktop.");
       }
     },
-    [doPair]
+    [doPair],
   );
 
   if (showScanner) {
     if (!permission) {
       return (
         <Container className="px-4 py-6">
-          <Text className="text-muted-foreground">Verificando permissão da câmera...</Text>
+          <Text className="text-muted-foreground">
+            Verificando permissão da câmera...
+          </Text>
         </Container>
       );
     }
     if (!permission.granted) {
       return (
         <Container className="px-4 py-6">
-          <Text className="text-foreground font-medium mb-2">Acesso à câmera</Text>
+          <Text className="text-foreground font-medium mb-2">
+            Acesso à câmera
+          </Text>
           <Text className="text-muted-foreground text-sm mb-4">
             Necessário para escanear o QR code exibido no app desktop.
           </Text>
-          <Button onPress={requestPermission}>Permitir câmera</Button>
-          <Button variant="bordered" className="mt-3" onPress={() => setShowScanner(false)}>
+          <Button className="px-4 py-3" onPress={requestPermission}>
+            Permitir câmera
+          </Button>
+          <Button
+            variant="bordered"
+            className="px-4 py-3 mt-3"
+            onPress={() => setShowScanner(false)}
+          >
             Voltar
           </Button>
         </Container>
@@ -130,11 +147,21 @@ export default function PairScreen() {
           }}
           onBarcodeScanned={handleBarcodeScanned}
         />
-        <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70" style={{ paddingBottom: 16 + insets.bottom }}>
+        <View
+          className="absolute bottom-0 left-0 right-0 bg-black/70"
+          style={{
+            padding: scale(16),
+            paddingBottom: scale(16) + insets.bottom,
+          }}
+        >
           <Text className="text-white text-center text-sm mb-2">
             Aponte para o QR code na tela do desktop
           </Text>
-          <Button variant="bordered" onPress={() => setShowScanner(false)}>
+          <Button
+            variant="bordered"
+            className="px-4 py-3"
+            onPress={() => setShowScanner(false)}
+          >
             Cancelar
           </Button>
         </View>
@@ -144,12 +171,14 @@ export default function PairScreen() {
 
   return (
     <Container className="px-4 py-6">
-      <Text className="text-2xl font-semibold text-foreground mb-1">Parear com o Desktop</Text>
+      <Text className="text-2xl font-semibold text-foreground mb-1">
+        Parear com o Desktop
+      </Text>
       <Text className="text-muted-foreground text-sm mb-6">
         Escaneie o QR no desktop ou informe URL e token manualmente.
       </Text>
 
-      <Button className="mb-6" onPress={() => setShowScanner(true)}>
+      <Button className="px-4 py-3 mb-6" onPress={() => setShowScanner(true)}>
         Escanear QR code
       </Button>
 
@@ -174,7 +203,12 @@ export default function PairScreen() {
         className="mb-6"
       />
       {error ? <Text className="text-danger text-sm mb-4">{error}</Text> : null}
-      <Button onPress={handlePair} isLoading={loading} isDisabled={loading}>
+      <Button
+        className="px-4 py-3"
+        onPress={handlePair}
+        isLoading={loading}
+        isDisabled={loading}
+      >
         Conectar
       </Button>
     </Container>

@@ -3,6 +3,7 @@ import { Button, Surface } from "heroui-native";
 
 import { getParticipantListState } from "@/lib/participant-list-state";
 import { Text, View } from "@/lib/primitives";
+import { useResponsiveScale } from "@/utils/responsive";
 
 export type ParticipantListItemProps = {
   id: string;
@@ -29,6 +30,7 @@ function ParticipantListItemComponent({
   onPrimaryAction,
   onDismissConflict,
 }: ParticipantListItemProps) {
+  const { scale } = useResponsiveScale();
   const state = getParticipantListState({
     isConfirmed,
     lockedByOther,
@@ -46,19 +48,35 @@ function ParticipantListItemComponent({
           : "";
 
   return (
-    <Surface variant="secondary" className="p-4 rounded-xl mb-2 mx-4">
+    <Surface
+      variant="secondary"
+      className="rounded-2xl mb-2"
+      style={{ marginHorizontal: scale(16), padding: scale(16) }}
+    >
       <View className="flex-row justify-between items-center">
         <View className="flex-1">
           <Text className="text-foreground font-medium">{name ?? "—"}</Text>
           <Text className="text-muted-foreground text-sm">{ticketLabel}</Text>
-          {state.statusLabel ? <Text className={statusClassName}>{state.statusLabel}</Text> : null}
+          {state.statusLabel ? (
+            <Text className={statusClassName}>{state.statusLabel}</Text>
+          ) : null}
         </View>
         {state.showDismissConflict ? (
-          <Button size="sm" variant="outline" onPress={() => onDismissConflict(ticketId)}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="px-3 py-2"
+            onPress={() => onDismissConflict(ticketId)}
+          >
             Dispensar
           </Button>
         ) : (
-          <Button size="sm" onPress={() => onPrimaryAction(id)} isDisabled={state.primaryActionDisabled}>
+          <Button
+            size="sm"
+            className="px-3 py-2"
+            onPress={() => onPrimaryAction(id)}
+            isDisabled={state.primaryActionDisabled}
+          >
             {state.primaryActionLabel}
           </Button>
         )}

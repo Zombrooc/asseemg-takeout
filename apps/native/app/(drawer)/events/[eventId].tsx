@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, BackHandler, StyleSheet } from "react-native";
+import { Alert, BackHandler } from "react-native";
 
 import { FlatList, Pressable, Text, View } from "@/lib/primitives";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -19,8 +19,10 @@ import { ParticipantListItem } from "@/components/takeout/participant-list-item"
 import { formatDateBR } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
+import { useResponsiveScale } from "@/utils/responsive";
 
-const SYNC_LAST_SEQ_KEY = (eventId: string) => `takeout_sync_last_seq_${eventId}`;
+const SYNC_LAST_SEQ_KEY = (eventId: string) =>
+  `takeout_sync_last_seq_${eventId}`;
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
@@ -29,7 +31,8 @@ function normalize(s: string): string {
 function matchesSearch(participant: EventParticipant, q: string): boolean {
   const nq = normalize(q);
   if (!nq) return true;
-  const inStr = (val: string | null | undefined) => val != null && normalize(String(val)).includes(nq);
+  const inStr = (val: string | null | undefined) =>
+    val != null && normalize(String(val)).includes(nq);
   return (
     inStr(participant.name) ||
     inStr(participant.cpf) ||
@@ -42,14 +45,12 @@ function matchesSearch(participant: EventParticipant, q: string): boolean {
 
 const PENDING_QUEUE_KEY = ["takeout-pending-queue"] as const;
 
-const listStyles = StyleSheet.create({
-  contentContainer: {
-    paddingVertical: 8,
-  },
-});
-
 const EmptyList = memo(function EmptyList() {
-  return <Text className="text-muted-foreground text-center py-8">Nenhum participante.</Text>;
+  return (
+    <Text className="text-muted-foreground text-center py-8">
+      Nenhum participante.
+    </Text>
+  );
 });
 
 export default function EventScreen() {
@@ -57,8 +58,14 @@ export default function EventScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { api, isReachable, checkReachability, baseUrl, deviceId } = useTakeoutConnection();
-  const { lockMap } = useTakeoutRealtime(eventId ?? undefined, baseUrl, deviceId);
+  const { scale } = useResponsiveScale();
+  const { api, isReachable, checkReachability, baseUrl, deviceId } =
+    useTakeoutConnection();
+  const { lockMap } = useTakeoutRealtime(
+    eventId ?? undefined,
+    baseUrl,
+    deviceId,
+  );
 
   useEffect(() => {
     if (!api || !eventId || !isReachable) return;
@@ -67,13 +74,21 @@ export default function EventScreen() {
       try {
         const raw = await AsyncStorage.getItem(SYNC_LAST_SEQ_KEY(eventId));
         const sinceSeq = raw != null ? Number(raw) : 0;
-        const { events, latestSeq } = await api.getSyncEvents(eventId, sinceSeq);
+        const { events, latestSeq } = await api.getSyncEvents(
+          eventId,
+          sinceSeq,
+        );
         if (cancelled) return;
         if (events.length > 0) {
           queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
-          queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
+          queryClient.invalidateQueries({
+            queryKey: ["takeout-event-participants", eventId],
+          });
         }
-        await AsyncStorage.setItem(SYNC_LAST_SEQ_KEY(eventId), String(latestSeq));
+        await AsyncStorage.setItem(
+          SYNC_LAST_SEQ_KEY(eventId),
+          String(latestSeq),
+        );
       } catch {
         // ignore
       }
@@ -83,23 +98,30 @@ export default function EventScreen() {
     };
   }, [api, eventId, isReachable, queryClient]);
 
-  const [selectedParticipant, setSelectedParticipant] = useState<EventParticipant | null>(null);
+  const [selectedParticipant, setSelectedParticipant] =
+    useState<EventParticipant | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [offlineNoticeVisible, setOfflineNoticeVisible] = useState(false);
-  const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(new Set());
+  const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [permission, requestPermission] = useCameraPermissions();
 
   const eventQuery = useQuery({
     queryKey: ["takeout-events"],
-    queryFn: () => (api ? api.getEvents() : Promise.reject(new Error("No API"))),
+    queryFn: () =>
+      api ? api.getEvents() : Promise.reject(new Error("No API")),
     enabled: !!api && isReachable,
   });
 
   const participantsQuery = useQuery({
     queryKey: ["takeout-event-participants", eventId],
-    queryFn: () => (api && eventId ? api.getEventParticipants(eventId) : Promise.reject(new Error("No API"))),
+    queryFn: () =>
+      api && eventId
+        ? api.getEventParticipants(eventId)
+        : Promise.reject(new Error("No API")),
     enabled: !!api && !!eventId && isReachable,
   });
 
@@ -117,10 +139,13 @@ export default function EventScreen() {
 
   const pendingTicketIds = useMemo(
     () => new Set((pendingQueueQuery.data ?? []).map((i) => i.ticket_id)),
-    [pendingQueueQuery.data]
+    [pendingQueueQuery.data],
   );
 
-  const event = useMemo(() => eventQuery.data?.find((e) => e.eventId === eventId) ?? null, [eventQuery.data, eventId]);
+  const event = useMemo(
+    () => eventQuery.data?.find((e) => e.eventId === eventId) ?? null,
+    [eventQuery.data, eventId],
+  );
 
   useEffect(() => {
     if (event?.name) {
@@ -140,19 +165,23 @@ export default function EventScreen() {
   const insets = useSafeAreaInsets();
   const participants = participantsQuery.data ?? [];
   const participantsById = useMemo(
-    () => new Map(participants.map((participant) => [participant.id, participant])),
-    [participants]
+    () =>
+      new Map(participants.map((participant) => [participant.id, participant])),
+    [participants],
   );
-  const filteredParticipants = useMemo(() => participants.filter((p) => matchesSearch(p, searchQuery)), [participants, searchQuery]);
+  const filteredParticipants = useMemo(
+    () => participants.filter((p) => matchesSearch(p, searchQuery)),
+    [participants, searchQuery],
+  );
 
   const auditConfirmedTicketIds = useMemo(
     () =>
       new Set(
         (auditQuery.data ?? [])
           .filter((a) => a.status === "CONFIRMED" || a.status === "DUPLICATE")
-          .map((a) => a.ticket_id)
+          .map((a) => a.ticket_id),
       ),
-    [auditQuery.data]
+    [auditQuery.data],
   );
 
   useEffect(() => {
@@ -160,49 +189,69 @@ export default function EventScreen() {
     setConflictTicketIds((prev) => {
       const next = new Set(prev);
       auditQuery.data?.forEach((a) => {
-        if (a.status === "CONFIRMED" || a.status === "DUPLICATE") next.delete(a.ticket_id);
+        if (a.status === "CONFIRMED" || a.status === "DUPLICATE")
+          next.delete(a.ticket_id);
       });
       return next;
     });
   }, [auditQuery.data]);
 
   const total = participants.length;
-  const confirmed = participants.filter((p) => auditConfirmedTicketIds.has(p.ticketId)).length;
+  const confirmed = participants.filter((p) =>
+    auditConfirmedTicketIds.has(p.ticketId),
+  ).length;
   const pending = total - confirmed;
 
   const onQrScanned = useCallback(
     ({ data }: { data: string }) => {
       const code = data.trim();
       const participant = participants.find(
-        (p) => p.ticketId === code || p.qrCode === code || p.ticketId.trim() === code || p.qrCode.trim() === code
+        (p) =>
+          p.ticketId === code ||
+          p.qrCode === code ||
+          p.ticketId.trim() === code ||
+          p.qrCode.trim() === code,
       );
       setShowQrScanner(false);
       if (!participant) {
-        Alert.alert("Ingresso não encontrado", "Ingresso não encontrado neste evento.");
+        Alert.alert(
+          "Ingresso não encontrado",
+          "Ingresso não encontrado neste evento.",
+        );
         return;
       }
       if (auditConfirmedTicketIds.has(participant.ticketId)) {
-        Alert.alert("Check-in já realizado", "Este ingresso já teve check-in realizado.");
+        Alert.alert(
+          "Check-in já realizado",
+          "Este ingresso já teve check-in realizado.",
+        );
         return;
       }
-      if (deviceId != null && lockMap[participant.id] != null && lockMap[participant.id] !== deviceId) {
+      if (
+        deviceId != null &&
+        lockMap[participant.id] != null &&
+        lockMap[participant.id] !== deviceId
+      ) {
         Alert.alert(
           "Em atendimento",
-          "Este participante está sendo atendido por outro dispositivo. Aguarde para fazer o check-in."
+          "Este participante está sendo atendido por outro dispositivo. Aguarde para fazer o check-in.",
         );
         return;
       }
       setSelectedParticipant(participant);
     },
-    [participants, auditConfirmedTicketIds, lockMap, deviceId]
+    [participants, auditConfirmedTicketIds, lockMap, deviceId],
   );
 
-  const offlineNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const offlineNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const handleQueuedOffline = useCallback(() => {
     setOfflineNoticeVisible(true);
     queryClient.invalidateQueries({ queryKey: PENDING_QUEUE_KEY });
-    if (offlineNoticeTimeoutRef.current) clearTimeout(offlineNoticeTimeoutRef.current);
+    if (offlineNoticeTimeoutRef.current)
+      clearTimeout(offlineNoticeTimeoutRef.current);
     offlineNoticeTimeoutRef.current = setTimeout(() => {
       setOfflineNoticeVisible(false);
       offlineNoticeTimeoutRef.current = null;
@@ -211,7 +260,8 @@ export default function EventScreen() {
 
   useEffect(() => {
     return () => {
-      if (offlineNoticeTimeoutRef.current) clearTimeout(offlineNoticeTimeoutRef.current);
+      if (offlineNoticeTimeoutRef.current)
+        clearTimeout(offlineNoticeTimeoutRef.current);
     };
   }, []);
 
@@ -222,7 +272,10 @@ export default function EventScreen() {
       await api.postResetEventCheckins(eventId);
       await Promise.all([auditQuery.refetch(), participantsQuery.refetch()]);
     } catch (e) {
-      Alert.alert("Erro", e instanceof Error ? e.message : "Falha ao desfazer check-ins.");
+      Alert.alert(
+        "Erro",
+        e instanceof Error ? e.message : "Falha ao desfazer check-ins.",
+      );
     } finally {
       setResetLoading(false);
     }
@@ -234,7 +287,7 @@ export default function EventScreen() {
       if (!participant) return;
       setSelectedParticipant(participant);
     },
-    [participantsById]
+    [participantsById],
   );
 
   const handleDismissConflict = useCallback((ticketId: string) => {
@@ -256,7 +309,7 @@ export default function EventScreen() {
       setConflictTicketIds((prev) => new Set(prev).add(ticketId));
       auditQuery.refetch();
     },
-    [auditQuery]
+    [auditQuery],
   );
 
   const renderItem = useCallback(
@@ -264,7 +317,10 @@ export default function EventScreen() {
       const isConfirmed = auditConfirmedTicketIds.has(item.ticketId);
       const isPendingSync = pendingTicketIds.has(item.ticketId);
       const isConflict = conflictTicketIds.has(item.ticketId);
-      const lockedByOther = deviceId != null && lockMap[item.id] != null && lockMap[item.id] !== deviceId;
+      const lockedByOther =
+        deviceId != null &&
+        lockMap[item.id] != null &&
+        lockMap[item.id] !== deviceId;
 
       return (
         <ParticipantListItem
@@ -281,7 +337,15 @@ export default function EventScreen() {
         />
       );
     },
-    [auditConfirmedTicketIds, pendingTicketIds, conflictTicketIds, lockMap, deviceId, handlePrimaryAction, handleDismissConflict]
+    [
+      auditConfirmedTicketIds,
+      pendingTicketIds,
+      conflictTicketIds,
+      lockMap,
+      deviceId,
+      handlePrimaryAction,
+      handleDismissConflict,
+    ],
   );
 
   if (!eventId) {
@@ -296,7 +360,9 @@ export default function EventScreen() {
     if (!permission) {
       return (
         <Container className="px-4 py-6">
-          <Text className="text-muted-foreground">Verificando permissão da câmera...</Text>
+          <Text className="text-muted-foreground">
+            Verificando permissão da câmera...
+          </Text>
         </Container>
       );
     }
@@ -304,10 +370,18 @@ export default function EventScreen() {
     if (!permission.granted) {
       return (
         <Container className="px-4 py-6">
-          <Text className="text-foreground font-medium mb-2">Acesso à câmera</Text>
-          <Text className="text-muted-foreground text-sm mb-4">Necessário para escanear o QR do ingresso.</Text>
+          <Text className="text-foreground font-medium mb-2">
+            Acesso à câmera
+          </Text>
+          <Text className="text-muted-foreground text-sm mb-4">
+            Necessário para escanear o QR do ingresso.
+          </Text>
           <Button onPress={requestPermission}>Permitir câmera</Button>
-          <Button variant="bordered" className="mt-3" onPress={() => setShowQrScanner(false)}>
+          <Button
+            variant="bordered"
+            className="mt-3"
+            onPress={() => setShowQrScanner(false)}
+          >
             Voltar
           </Button>
         </Container>
@@ -318,19 +392,32 @@ export default function EventScreen() {
       <View className="flex-1 bg-black">
         <View
           className="absolute top-0 left-0 right-0 flex-row items-center bg-black/70"
-          style={{ paddingTop: insets.top, paddingBottom: 12, paddingHorizontal: 8 }}
+          style={{
+            paddingTop: insets.top,
+            paddingBottom: scale(12),
+            paddingHorizontal: scale(8),
+          }}
         >
           <Pressable
             onPress={() => setShowQrScanner(false)}
-            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
-            className="min-h-[44px] min-w-[44px] justify-center pr-2"
+            hitSlop={{
+              top: scale(16),
+              bottom: scale(16),
+              left: scale(16),
+              right: scale(16),
+            }}
+            className="justify-center pr-2"
+            style={{ minHeight: scale(44), minWidth: scale(44) }}
           >
             <Ionicons name="arrow-back" size={24} color="white" />
           </Pressable>
-          <Text className="flex-1 text-center text-white font-medium" numberOfLines={1}>
+          <Text
+            className="flex-1 text-center text-white font-medium"
+            numberOfLines={1}
+          >
             Escanear ingresso
           </Text>
-          <View className="min-w-[44px]" />
+          <View style={{ minWidth: scale(44) }} />
         </View>
 
         <CameraView
@@ -340,9 +427,21 @@ export default function EventScreen() {
           onBarcodeScanned={onQrScanned}
         />
 
-        <View className="absolute bottom-0 left-0 right-0 p-4 bg-black/70" style={{ paddingBottom: 16 + insets.bottom }}>
-          <Text className="text-white text-center text-sm mb-2">Aponte para o QR code do ingresso</Text>
-          <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
+        <View
+          className="absolute bottom-0 left-0 right-0 bg-black/70"
+          style={{
+            padding: scale(16),
+            paddingBottom: scale(16) + insets.bottom,
+          }}
+        >
+          <Text className="text-white text-center text-sm mb-2">
+            Aponte para o QR code do ingresso
+          </Text>
+          <Button
+            variant="bordered"
+            className="px-4 py-3"
+            onPress={() => setShowQrScanner(false)}
+          >
             Cancelar
           </Button>
         </View>
@@ -355,19 +454,36 @@ export default function EventScreen() {
       <Container isScrollable={false} className="flex-1">
         {event ? (
           <View className="px-4 pt-2 pb-3 border-b border-border">
-            <Text className="text-lg font-semibold text-foreground">{event.name ?? eventId}</Text>
-            {event.startDate ? <Text className="text-muted-foreground text-sm mt-0.5">{formatDateBR(event.startDate)}</Text> : null}
+            <Text className="text-lg font-semibold text-foreground">
+              {event.name ?? eventId}
+            </Text>
+            {event.startDate ? (
+              <Text className="text-muted-foreground text-sm mt-0.5">
+                {formatDateBR(event.startDate)}
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
         {!isReachable ? (
-          <Surface variant="tertiary" className="mx-4 mt-3 p-3 rounded-lg">
-            <Text className="text-foreground text-sm mb-3">Desktop desconectado. Conecte-se para sincronizar dados.</Text>
+          <Surface variant="tertiary" className="mx-4 mt-3 p-3 rounded-2xl">
+            <Text className="text-foreground text-sm mb-3">
+              Desktop desconectado. Conecte-se para sincronizar dados.
+            </Text>
             <View className="flex-row gap-2">
-              <Button size="sm" onPress={() => checkReachability()}>
+              <Button
+                size="sm"
+                className="px-3 py-2"
+                onPress={() => checkReachability()}
+              >
                 Tentar novamente
               </Button>
-              <Button size="sm" variant="bordered" onPress={() => router.push("/pair")}>
+              <Button
+                size="sm"
+                variant="bordered"
+                className="px-3 py-2"
+                onPress={() => router.push("/pair")}
+              >
                 Reconectar
               </Button>
             </View>
@@ -384,12 +500,18 @@ export default function EventScreen() {
             className="mb-2"
           />
           <View className="flex-row gap-2 flex-wrap">
-            <Button size="sm" variant="bordered" onPress={() => setShowQrScanner(true)}>
+            <Button
+              size="sm"
+              variant="bordered"
+              className="px-3 py-2"
+              onPress={() => setShowQrScanner(true)}
+            >
               Escanear ingresso
             </Button>
             <Button
               size="sm"
               variant="bordered"
+              className="px-3 py-2"
               onPress={handleResetCheckins}
               isLoading={resetLoading}
               isDisabled={resetLoading}
@@ -400,8 +522,13 @@ export default function EventScreen() {
         </View>
 
         {offlineNoticeVisible ? (
-          <Surface variant="tertiary" className="mx-4 mt-2 px-3 py-2 rounded-lg">
-            <Text className="text-muted-foreground text-xs">Sem conexão. Check-in será sincronizado quando houver rede.</Text>
+          <Surface
+            variant="tertiary"
+            className="mx-4 mt-2 px-3 py-2 rounded-2xl"
+          >
+            <Text className="text-muted-foreground text-xs">
+              Sem conexão. Check-in será sincronizado quando houver rede.
+            </Text>
           </Surface>
         ) : null}
 
@@ -429,7 +556,7 @@ export default function EventScreen() {
             data={filteredParticipants}
             keyExtractor={(participant) => participant.id}
             renderItem={renderItem}
-            contentContainerStyle={listStyles.contentContainer}
+            contentContainerStyle={{ paddingVertical: scale(8) }}
             ListEmptyComponent={EmptyList}
             initialNumToRender={12}
             maxToRenderPerBatch={10}

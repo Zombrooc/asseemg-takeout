@@ -10,3 +10,22 @@
 /* heroui-native: monorepo usa ../../node_modules; pnpm local usa ./node_modules */
 @source "../../node_modules/heroui-native/lib";
 @source "../../node_modules/heroui-native/src";
+
+/* Tema light: cores da marca (logo ASSEEMG) + border-radius grande */
+@layer theme {
+  @variant light {
+    --radius: 1.25rem;
+    --accent: oklch(0.55 0.22 25);
+    --accent-foreground: oklch(1 0 0);
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.15 0 0);
+  }
+
+  @variant dark {
+    --radius: 1.25rem;
+    --accent: oklch(0.55 0.22 25);
+    --accent-foreground: oklch(1 0 0);
+    --background: oklch(0.15 0 0);
+    --foreground: oklch(0.95 0 0);
+  }
+}
