@@ -6,31 +6,10 @@ import React, { useCallback, useState } from "react";
 
 import { Container } from "@/components/container";
 import { Text, View } from "@/lib/primitives";
+import { generateDeviceId } from "@/lib/device-id";
+import { getPairingErrorMessage, pairDevice, parsePairingUrl } from "@/lib/pairing";
 import { useResponsiveScale } from "@/utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-function generateDeviceId(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-/** Parse pairing URL from desktop QR: http://192.168.0.5:5555?token=ABC123 */
-function parsePairingUrl(
-  urlString: string,
-): { baseUrl: string; token: string } | null {
-  try {
-    const u = new URL(urlString.trim());
-    const token = u.searchParams.get("token");
-    if (!token) return null;
-    const baseUrl = `${u.protocol}//${u.host}`;
-    return { baseUrl, token };
-  } catch {
-    return null;
-  }
-}
 
 export default function PairScreen() {
   const insets = useSafeAreaInsets();
@@ -56,30 +35,11 @@ export default function PairScreen() {
       setLoading(true);
       const deviceId = generateDeviceId();
       try {
-        const res = await fetch(`${base}/pair`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            device_id: deviceId,
-            pairing_token: t,
-          }),
-        });
-        const data = (await res.json()) as {
-          access_token?: string;
-          error?: string;
-        };
-        if (!res.ok) {
-          setError(data.error ?? `Erro ${res.status}`);
-          return;
-        }
-        if (!data.access_token) {
-          setError("Resposta inválida do servidor.");
-          return;
-        }
-        await setConnection(base, data.access_token, deviceId);
+        const { accessToken } = await pairDevice(base, t, deviceId);
+        await setConnection(base, accessToken, deviceId);
         router.replace("/(drawer)");
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Falha ao conectar.");
+        setError(getPairingErrorMessage(e));
       } finally {
         setLoading(false);
       }
