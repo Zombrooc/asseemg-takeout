@@ -1,13 +1,17 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
-import { Button, Input } from "heroui-native";
 import React, { useCallback, useState } from "react";
 
-import { Container } from "@/components/container";
+import {
+  ManualPairForm,
+  PairingMethodTabs,
+  PairingTipsCard,
+  PermissionPrompt,
+  QrScannerOverlay,
+} from "@/components/mobile/pair";
+import { Button, Container } from "@/components/ui";
 import { Text, View } from "@/lib/primitives";
-import { useResponsiveScale } from "@/utils/responsive";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 function generateDeviceId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -17,7 +21,6 @@ function generateDeviceId(): string {
   });
 }
 
-/** Parse pairing URL from desktop QR: http://192.168.0.5:5555?token=ABC123 */
 function parsePairingUrl(
   urlString: string,
 ): { baseUrl: string; token: string } | null {
@@ -33,8 +36,6 @@ function parsePairingUrl(
 }
 
 export default function PairScreen() {
-  const insets = useSafeAreaInsets();
-  const { scale } = useResponsiveScale();
   const { defaultBaseUrl, setConnection } = useTakeoutConnection();
   const router = useRouter();
   const [baseUrl, setBaseUrl] = useState(defaultBaseUrl);
@@ -42,6 +43,7 @@ export default function PairScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
+  const [pairMethod, setPairMethod] = useState<"qr" | "manual">("qr");
   const [permission, requestPermission] = useCameraPermissions();
 
   const doPair = useCallback(
@@ -87,8 +89,6 @@ export default function PairScreen() {
     [setConnection, router],
   );
 
-  const handlePair = () => doPair(baseUrl, pairingToken);
-
   const handleBarcodeScanned = useCallback(
     ({ data }: { data: string }) => {
       const parsed = parsePairingUrl(data);
@@ -116,23 +116,13 @@ export default function PairScreen() {
     }
     if (!permission.granted) {
       return (
-        <Container className="px-4 py-6">
-          <Text className="text-foreground font-medium mb-2">
-            Acesso à câmera
-          </Text>
-          <Text className="text-muted-foreground text-sm mb-4">
-            Necessário para escanear o QR code exibido no app desktop.
-          </Text>
-          <Button className="px-4 py-3" onPress={requestPermission}>
-            Permitir câmera
-          </Button>
-          <Button
-            variant="bordered"
-            className="px-4 py-3 mt-3"
-            onPress={() => setShowScanner(false)}
-          >
-            Voltar
-          </Button>
+        <Container className="px-4 py-6" contentClassName="flex-1">
+          <PermissionPrompt
+            title="Acesso à câmera"
+            description="Necessário para escanear o QR code exibido no app desktop."
+            onConfirm={requestPermission}
+            onBack={() => setShowScanner(false)}
+          />
         </Container>
       );
     }
@@ -143,74 +133,44 @@ export default function PairScreen() {
           facing="back"
           barcodeScannerSettings={{
             barcodeTypes: ["qr"],
-            interval: 500,
           }}
           onBarcodeScanned={handleBarcodeScanned}
         />
-        <View
-          className="absolute bottom-0 left-0 right-0 bg-black/70"
-          style={{
-            padding: scale(16),
-            paddingBottom: scale(16) + insets.bottom,
-          }}
-        >
-          <Text className="text-white text-center text-sm mb-2">
-            Aponte para o QR code na tela do desktop
-          </Text>
-          <Button
-            variant="bordered"
-            className="px-4 py-3"
-            onPress={() => setShowScanner(false)}
-          >
-            Cancelar
-          </Button>
-        </View>
+        <QrScannerOverlay
+          description="Aponte para o QR code na tela do desktop"
+          onCancel={() => setShowScanner(false)}
+        />
       </View>
     );
   }
 
   return (
-    <Container className="px-4 py-6">
+    <Container className="px-4 py-6" contentClassName="flex-1">
       <Text className="text-2xl font-semibold text-foreground mb-1">
         Parear com o Desktop
       </Text>
-      <Text className="text-muted-foreground text-sm mb-6">
+      <Text className="text-muted-foreground text-sm mb-4">
         Escaneie o QR no desktop ou informe URL e token manualmente.
       </Text>
 
-      <Button className="px-4 py-3 mb-6" onPress={() => setShowScanner(true)}>
-        Escanear QR code
-      </Button>
+      <PairingTipsCard />
+      <PairingMethodTabs method={pairMethod} onChange={setPairMethod} />
 
-      <Text className="text-muted-foreground text-xs mb-2">Ou digite:</Text>
-      <Input
-        label="URL do Desktop"
-        placeholder="http://192.168.0.5:5555"
-        value={baseUrl}
-        onChangeText={setBaseUrl}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        className="mb-4"
-      />
-      <Input
-        label="Token (ex.: 6 caracteres)"
-        placeholder="Token exibido no desktop"
-        value={pairingToken}
-        onChangeText={setPairingToken}
-        autoCapitalize="characters"
-        autoCorrect={false}
-        className="mb-6"
-      />
-      {error ? <Text className="text-danger text-sm mb-4">{error}</Text> : null}
-      <Button
-        className="px-4 py-3"
-        onPress={handlePair}
-        isLoading={loading}
-        isDisabled={loading}
-      >
-        Conectar
-      </Button>
+      {pairMethod === "qr" ? (
+        <Button className="px-4 py-3 mb-6" onPress={() => setShowScanner(true)}>
+          Escanear QR code
+        </Button>
+      ) : (
+        <ManualPairForm
+          baseUrl={baseUrl}
+          pairingToken={pairingToken}
+          onChangeBaseUrl={setBaseUrl}
+          onChangeToken={setPairingToken}
+          onSubmit={() => doPair(baseUrl, pairingToken)}
+          loading={loading}
+          error={error}
+        />
+      )}
     </Container>
   );
 }

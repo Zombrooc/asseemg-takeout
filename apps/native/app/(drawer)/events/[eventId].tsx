@@ -7,19 +7,23 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, BackHandler } from "react-native";
 
-import { FlatList, Pressable, Text, View } from "@/lib/primitives";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button, Input, Surface, Spinner } from "heroui-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
-import Ionicons from "@expo/vector-icons/Ionicons";
-
-import { Container } from "@/components/container";
-import { ConfirmTakeoutModal } from "@/components/takeout/confirm-takeout-modal";
+import {
+  EventHeader,
+  OfflineQueueNotice,
+  QrTicketScannerOverlay,
+  QuickActionsRow,
+  SearchBar,
+  SummaryStats,
+} from "@/components/mobile/event";
+import { ConfirmTakeoutModal } from "@/components/mobile/audit/confirm-takeout-modal";
 import { ParticipantListItem } from "@/components/takeout/participant-list-item";
+import { Banner, Button, Container } from "@/components/ui";
+import { FlatList, Text, View } from "@/lib/primitives";
 import { formatDateBR } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
-import { useResponsiveScale } from "@/utils/responsive";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { Spinner } from "heroui-native";
 
 const SYNC_LAST_SEQ_KEY = (eventId: string) =>
   `takeout_sync_last_seq_${eventId}`;
@@ -58,7 +62,6 @@ export default function EventScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { scale } = useResponsiveScale();
   const { api, isReachable, checkReachability, baseUrl, deviceId } =
     useTakeoutConnection();
   const { lockMap } = useTakeoutRealtime(
@@ -162,7 +165,6 @@ export default function EventScreen() {
     return () => sub.remove();
   }, [showQrScanner]);
 
-  const insets = useSafeAreaInsets();
   const participants = participantsQuery.data ?? [];
   const participantsById = useMemo(
     () =>
@@ -350,7 +352,7 @@ export default function EventScreen() {
 
   if (!eventId) {
     return (
-      <Container>
+      <Container className="px-4" mode="static">
         <Text className="text-muted-foreground">Evento não encontrado.</Text>
       </Container>
     );
@@ -370,9 +372,7 @@ export default function EventScreen() {
     if (!permission.granted) {
       return (
         <Container className="px-4 py-6">
-          <Text className="text-foreground font-medium mb-2">
-            Acesso à câmera
-          </Text>
+          <Text className="text-foreground font-medium mb-2">Acesso à câmera</Text>
           <Text className="text-muted-foreground text-sm mb-4">
             Necessário para escanear o QR do ingresso.
           </Text>
@@ -390,58 +390,15 @@ export default function EventScreen() {
 
     return (
       <View className="flex-1 bg-black">
-        <View
-          className="absolute top-0 left-0 right-0 flex-row items-center bg-black/70"
-          style={{
-            paddingTop: insets.top,
-            paddingBottom: scale(12),
-            paddingHorizontal: scale(8),
-          }}
-        >
-          <Pressable
-            onPress={() => setShowQrScanner(false)}
-            hitSlop={{
-              top: scale(16),
-              bottom: scale(16),
-              left: scale(16),
-              right: scale(16),
-            }}
-            className="justify-center pr-2"
-            style={{ minHeight: scale(44), minWidth: scale(44) }}
-          >
-            <Ionicons name="arrow-back" size={24} color="white" />
-          </Pressable>
-          <Text
-            className="flex-1 text-center text-white font-medium"
-            numberOfLines={1}
-          >
-            Escanear ingresso
-          </Text>
-          <View style={{ minWidth: scale(44) }} />
-        </View>
-
         <CameraView
           style={{ flex: 1 }}
           facing="back"
-          barcodeScannerSettings={{ barcodeTypes: ["qr"], interval: 500 }}
+          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
           onBarcodeScanned={onQrScanned}
         />
-
-        <View
-          className="absolute bottom-0 left-0 right-0 bg-black/70"
-          style={{
-            padding: scale(16),
-            paddingBottom: scale(16) + insets.bottom,
-          }}
-        >
-          <Text className="text-white text-center text-sm mb-2">
-            Aponte para o QR code do ingresso
-          </Text>
-          <Button
-            variant="bordered"
-            className="px-4 py-3"
-            onPress={() => setShowQrScanner(false)}
-          >
+        <QrTicketScannerOverlay onBack={() => setShowQrScanner(false)} />
+        <View className="absolute bottom-0 left-0 right-0 px-4 pb-8">
+          <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
             Cancelar
           </Button>
         </View>
@@ -451,101 +408,42 @@ export default function EventScreen() {
 
   return (
     <>
-      <Container isScrollable={false} className="flex-1">
+      <Container className="flex-1" mode="static">
         {event ? (
-          <View className="px-4 pt-2 pb-3 border-b border-border">
-            <Text className="text-lg font-semibold text-foreground">
-              {event.name ?? eventId}
-            </Text>
-            {event.startDate ? (
-              <Text className="text-muted-foreground text-sm mt-0.5">
-                {formatDateBR(event.startDate)}
-              </Text>
-            ) : null}
-          </View>
+          <EventHeader
+            title={event.name ?? eventId}
+            subtitle={event.startDate ? formatDateBR(event.startDate) : undefined}
+          />
         ) : null}
 
         {!isReachable ? (
-          <Surface variant="tertiary" className="mx-4 mt-3 p-3 rounded-2xl">
+          <Banner className="mx-4 mt-3">
             <Text className="text-foreground text-sm mb-3">
               Desktop desconectado. Conecte-se para sincronizar dados.
             </Text>
             <View className="flex-row gap-2">
-              <Button
-                size="sm"
-                className="px-3 py-2"
-                onPress={() => checkReachability()}
-              >
+              <Button size="sm" className="px-3 py-2" onPress={() => checkReachability()}>
                 Tentar novamente
               </Button>
-              <Button
-                size="sm"
-                variant="bordered"
-                className="px-3 py-2"
-                onPress={() => router.push("/pair")}
-              >
+              <Button size="sm" variant="bordered" className="px-3 py-2" onPress={() => router.push("/pair")}>
                 Reconectar
               </Button>
             </View>
-          </Surface>
+          </Banner>
         ) : null}
 
         <View className="px-4 py-2 border-b border-border">
-          <Input
-            placeholder="Buscar por nome, CPF, data ou código do ticket"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-            className="mb-2"
+          <SearchBar value={searchQuery} onChange={setSearchQuery} />
+          <QuickActionsRow
+            onScan={() => setShowQrScanner(true)}
+            onReset={handleResetCheckins}
+            resetLoading={resetLoading}
           />
-          <View className="flex-row gap-2 flex-wrap">
-            <Button
-              size="sm"
-              variant="bordered"
-              className="px-3 py-2"
-              onPress={() => setShowQrScanner(true)}
-            >
-              Escanear ingresso
-            </Button>
-            <Button
-              size="sm"
-              variant="bordered"
-              className="px-3 py-2"
-              onPress={handleResetCheckins}
-              isLoading={resetLoading}
-              isDisabled={resetLoading}
-            >
-              Desfazer check-ins
-            </Button>
-          </View>
         </View>
 
-        {offlineNoticeVisible ? (
-          <Surface
-            variant="tertiary"
-            className="mx-4 mt-2 px-3 py-2 rounded-2xl"
-          >
-            <Text className="text-muted-foreground text-xs">
-              Sem conexão. Check-in será sincronizado quando houver rede.
-            </Text>
-          </Surface>
-        ) : null}
+        <OfflineQueueNotice visible={offlineNoticeVisible} />
 
-        <View className="px-4 py-3 flex-row gap-4 border-b border-border">
-          <View>
-            <Text className="text-2xl font-bold text-foreground">{total}</Text>
-            <Text className="text-muted-foreground text-xs">Total</Text>
-          </View>
-          <View>
-            <Text className="text-2xl font-bold text-success">{confirmed}</Text>
-            <Text className="text-muted-foreground text-xs">Confirmados</Text>
-          </View>
-          <View>
-            <Text className="text-2xl font-bold text-warning">{pending}</Text>
-            <Text className="text-muted-foreground text-xs">Aguardando</Text>
-          </View>
-        </View>
+        <SummaryStats total={total} confirmed={confirmed} pending={pending} />
 
         {participantsQuery.isLoading ? (
           <View className="flex-1 justify-center items-center">
@@ -556,7 +454,7 @@ export default function EventScreen() {
             data={filteredParticipants}
             keyExtractor={(participant) => participant.id}
             renderItem={renderItem}
-            contentContainerStyle={{ paddingVertical: scale(8) }}
+            contentContainerStyle={{ paddingVertical: 8 }}
             ListEmptyComponent={EmptyList}
             initialNumToRender={12}
             maxToRenderPerBatch={10}
