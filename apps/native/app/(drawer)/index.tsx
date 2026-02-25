@@ -1,19 +1,14 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { useQuery } from "@tanstack/react-query";
-import Ionicons from "@expo/vector-icons/Ionicons";
 import { Link, useRouter } from "expo-router";
-import {
-  Button,
-  Chip,
-  Separator,
-  Spinner,
-  Surface,
-  useThemeColor,
-} from "heroui-native";
 
-import { Container } from "@/components/container";
-import { ActivityIndicator, Pressable, Text, View } from "@/lib/primitives";
-import { formatDateBR } from "@/lib/format-date";
+import {
+  ConnectionStatusCard,
+  EventsList,
+  StatusPill,
+} from "@/components/mobile/home";
+import { Button, Container, Divider } from "@/components/ui";
+import { ActivityIndicator, Text, View } from "@/lib/primitives";
 
 export default function Home() {
   const router = useRouter();
@@ -33,12 +28,9 @@ export default function Home() {
     refetchInterval: 15_000,
   });
 
-  const successColor = useThemeColor("success");
-  const dangerColor = useThemeColor("danger");
-
   if (connectionLoading) {
     return (
-      <Container className="px-4 justify-center items-center">
+      <Container className="px-4 justify-center items-center" mode="static">
         <ActivityIndicator size="large" />
       </Container>
     );
@@ -46,7 +38,7 @@ export default function Home() {
 
   if (!isPaired) {
     return (
-      <Container className="px-4 py-6">
+      <Container className="px-4 py-6" contentClassName="flex-1">
         <Text className="text-2xl font-semibold text-foreground mb-2">
           ASSEEMG Retira - Mobile
         </Text>
@@ -64,88 +56,25 @@ export default function Home() {
   const events = eventsQuery.data ?? [];
 
   return (
-    <Container className="px-4 pb-4">
+    <Container className="px-4 pb-4" contentClassName="flex-1">
       <View className="py-4 mb-4">
         <View className="flex-row items-center justify-between mb-3">
-          <Text className="text-2xl font-semibold text-foreground">
-            Eventos
-          </Text>
-          <Chip
-            variant="secondary"
-            color={isReachable ? "success" : "danger"}
-            size="sm"
-          >
-            <Chip.Label>{isReachable ? "LIVE" : "OFFLINE"}</Chip.Label>
-          </Chip>
+          <Text className="text-2xl font-semibold text-foreground">Eventos</Text>
+          <StatusPill isReachable={isReachable} />
         </View>
-        {!isReachable ? (
-          <Surface variant="tertiary" className="p-3 rounded-2xl mb-3">
-            <Text className="text-foreground text-sm mb-3">
-              Desktop desconectado. Conecte-se para sincronizar dados.
-            </Text>
-            <View className="flex-row gap-2">
-              <Button
-                size="sm"
-                className="px-3 py-2"
-                onPress={() => checkReachability()}
-              >
-                Tentar novamente
-              </Button>
-              <Button
-                size="sm"
-                variant="bordered"
-                className="px-3 py-2"
-                onPress={() => router.push("/pair")}
-              >
-                Reconectar
-              </Button>
-            </View>
-          </Surface>
-        ) : (
-          <Surface variant="tertiary" className="p-3 rounded-2xl">
-            <View className="flex-row items-center">
-              <View className="w-2 h-2 rounded-full mr-3 bg-success" />
-              <Text className="text-muted-foreground text-sm">
-                Conectado ao desktop
-              </Text>
-            </View>
-          </Surface>
-        )}
+        <ConnectionStatusCard
+          isReachable={isReachable}
+          onRetry={() => checkReachability()}
+        />
       </View>
 
-      <Separator className="mb-4" />
+      <Divider className="mb-4" />
 
-      {eventsQuery.isLoading ? (
-        <View className="py-8 items-center">
-          <Spinner size="lg" />
-        </View>
-      ) : events.length === 0 ? (
-        <Text className="text-muted-foreground py-6">
-          Nenhum evento importado. Importe eventos no app desktop para listá-los
-          aqui.
-        </Text>
-      ) : (
-        <View className="gap-3">
-          {events.map((ev) => (
-            <Pressable
-              key={ev.eventId}
-              onPress={() => router.push(`/(drawer)/events/${ev.eventId}`)}
-              style={({ pressed }) => ({ opacity: pressed ? 0.8 : 1 })}
-            >
-              <Surface variant="secondary" className="p-4 rounded-2xl">
-                <Text className="text-foreground font-medium">
-                  {ev.name ?? ev.eventId}
-                </Text>
-                {ev.startDate ? (
-                  <Text className="text-muted-foreground text-sm mt-1">
-                    {formatDateBR(ev.startDate)}
-                  </Text>
-                ) : null}
-              </Surface>
-            </Pressable>
-          ))}
-        </View>
-      )}
+      <EventsList
+        isLoading={eventsQuery.isLoading}
+        events={events}
+        onOpenEvent={(eventId) => router.push(`/(drawer)/events/${eventId}`)}
+      />
 
       <View className="mt-8 pt-4">
         <Button
