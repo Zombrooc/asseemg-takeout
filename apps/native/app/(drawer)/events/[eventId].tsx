@@ -501,6 +501,7 @@ export default function EventScreen() {
           />
           <View className="flex-row gap-2 flex-wrap">
             <Button
+              testID="cta-escanear"
               size="sm"
               variant="bordered"
               className="px-3 py-2"
@@ -509,6 +510,7 @@ export default function EventScreen() {
               Escanear ingresso
             </Button>
             <Button
+              testID="cta-reset"
               size="sm"
               variant="bordered"
               className="px-3 py-2"

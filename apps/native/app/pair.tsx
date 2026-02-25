@@ -178,7 +178,11 @@ export default function PairScreen() {
         Escaneie o QR no desktop ou informe URL e token manualmente.
       </Text>
 
-      <Button className="px-4 py-3 mb-6" onPress={() => setShowScanner(true)}>
+      <Button
+        testID="cta-escanear"
+        className="px-4 py-3 mb-6"
+        onPress={() => setShowScanner(true)}
+      >
         Escanear QR code
       </Button>
 
@@ -204,6 +208,7 @@ export default function PairScreen() {
       />
       {error ? <Text className="text-danger text-sm mb-4">{error}</Text> : null}
       <Button
+        testID="cta-conectar"
         className="px-4 py-3"
         onPress={handlePair}
         isLoading={loading}

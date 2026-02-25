@@ -259,6 +259,7 @@ export function ConfirmTakeoutModal({
               Cancelar
             </Button>
             <Button
+              testID="cta-confirmar"
               className="px-4 py-3"
               onPress={handleConfirm}
               isLoading={loading}

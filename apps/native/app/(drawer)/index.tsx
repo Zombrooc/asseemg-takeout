@@ -55,7 +55,7 @@ export default function Home() {
           retiradas.
         </Text>
         <Link href="/pair" asChild>
-          <Button className="px-4 py-3">Parear com o Desktop</Button>
+          <Button testID="cta-parear" className="px-4 py-3">Parear com o Desktop</Button>
         </Link>
       </Container>
     );
@@ -149,6 +149,7 @@ export default function Home() {
 
       <View className="mt-8 pt-4">
         <Button
+          testID="cta-desparear"
           variant="bordered"
           className="px-4 py-3"
           onPress={async () => {
