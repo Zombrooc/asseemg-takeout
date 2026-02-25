@@ -29,6 +29,31 @@ const klass = `bg-${color}-600 text-${tone}`
 ### Motivação
 Uniwind depende de extração estática para gerar classes; padrões dinâmicos causam perda de estilo em runtime.
 
+### ✅ Padrão aceito (estado visual por objeto de classes)
+```ts
+const statusClassMap = {
+  success: 'text-success text-xs mt-1',
+  warning: 'text-warning text-xs mt-1',
+  danger: 'text-danger text-xs mt-1',
+  neutral: '',
+} as const
+
+const statusClassName =
+  statusTone === null ? statusClassMap.neutral : statusClassMap[statusTone]
+```
+
+### ❌ Antipadrão (condicional extensa ou concatenação imprevisível)
+```ts
+const statusClassName =
+  statusTone === 'success'
+    ? `text-${statusTone} text-xs mt-1`
+    : statusTone === 'warning'
+      ? 'text-warning text-xs mt-1'
+      : statusTone === 'danger'
+        ? 'text-danger text-xs mt-1'
+        : ''
+```
+
 ---
 
 ## 2) Tokens semânticos
@@ -41,9 +66,10 @@ Uniwind depende de extração estática para gerar classes; padrões dinâmicos 
 
 ### Convenções
 - **Background:** `surface`, `surface-muted`, `surface-elevated`.
-- **Texto:** `foreground`, `foreground-muted`, `foreground-inverse`.
+- **Texto:** `foreground`, `foreground-muted`, `foreground-inverse`, `card-foreground`.
 - **Ação:** `primary`, `primary-foreground`, `accent`.
 - **Borda/divisor:** `border`, `border-subtle`.
+- **Estado:** `success`, `success-foreground`, `warning`, `warning-foreground`, `danger`, `danger-foreground`.
 
 ### Motivação
 Semântica desacopla componente de paleta fixa e facilita dark mode/tematização.

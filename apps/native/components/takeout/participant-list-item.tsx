@@ -38,14 +38,17 @@ function ParticipantListItemComponent({
     isPendingSync,
   });
 
+  const statusClassMap = {
+    success: "text-success text-xs mt-1",
+    warning: "text-warning text-xs mt-1",
+    danger: "text-danger text-xs mt-1",
+    neutral: "",
+  } as const;
+
   const statusClassName =
-    state.statusTone === "success"
-      ? "text-success text-xs mt-1"
-      : state.statusTone === "warning"
-        ? "text-warning text-xs mt-1"
-        : state.statusTone === "danger"
-          ? "text-danger text-xs mt-1"
-          : "";
+    state.statusTone === null
+      ? statusClassMap.neutral
+      : statusClassMap[state.statusTone];
 
   return (
     <Surface
