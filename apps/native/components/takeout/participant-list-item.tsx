@@ -54,9 +54,9 @@ function ParticipantListItemComponent({
       style={{ marginHorizontal: scale(16), padding: scale(16) }}
     >
       <View className="flex-row justify-between items-center">
-        <View className="flex-1">
-          <Text className="text-foreground font-medium">{name ?? "—"}</Text>
-          <Text className="text-muted-foreground text-sm">{ticketLabel}</Text>
+        <View className="flex-1 min-w-0">
+          <Text className="text-foreground font-medium" numberOfLines={1} ellipsizeMode="tail">{name ?? "—"}</Text>
+          <Text className="text-muted-foreground text-sm" numberOfLines={1} ellipsizeMode="tail">{ticketLabel}</Text>
           {state.statusLabel ? (
             <Text className={statusClassName}>{state.statusLabel}</Text>
           ) : null}
