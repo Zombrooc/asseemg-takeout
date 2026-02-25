@@ -1,52 +1,43 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
-import { Button, Surface, useThemeColor } from "heroui-native";
+import { Text, View } from "react-native";
+import { Button, Card, ScreenContainer } from "@/components/ui-tamagui";
 
-import { Container } from "@/components/container";
-import { Text, View } from "@/lib/primitives";
-import { useResponsiveScale } from "@/utils/responsive";
-
-function Modal() {
-  const accentForegroundColor = useThemeColor("accent-foreground");
-  const { scale, width } = useResponsiveScale();
-
+export default function Modal() {
   function handleClose() {
     router.back();
   }
 
   return (
-    <Container>
-      <View
-        className="flex-1 justify-center items-center"
-        style={{ padding: scale(16) }}
-      >
-        <Surface
-          variant="secondary"
-          className="p-5 w-full rounded-3xl"
-          style={{ maxWidth: width * 0.9 }}
-        >
-          <View className="items-center">
-            <View className="w-12 h-12 bg-accent rounded-2xl items-center justify-center mb-3">
-              <Ionicons
-                name="checkmark"
-                size={24}
-                color={accentForegroundColor}
-              />
+    <ScreenContainer mode="static">
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16 }}>
+        <Card style={{ padding: 20, width: "100%", maxWidth: "90%", alignSelf: "center" }}>
+          <View style={{ alignItems: "center" }}>
+            <View
+              style={{
+                width: 48,
+                height: 48,
+                backgroundColor: "#2563eb",
+                borderRadius: 8,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 12,
+              }}
+            >
+              <Ionicons name="checkmark" size={24} color="white" />
             </View>
-            <Text className="text-foreground font-medium text-lg mb-1">
+            <Text style={{ color: "#111827", fontWeight: "500", fontSize: 18, marginBottom: 4 }}>
               Modal Screen
             </Text>
-            <Text className="text-muted-foreground text-sm text-center mb-4">
+            <Text style={{ color: "#6b7280", fontSize: 14, textAlign: "center", marginBottom: 16 }}>
               This is an example modal screen for dialogs and confirmations.
             </Text>
           </View>
-          <Button onPress={handleClose} className="px-4 py-3 w-full" size="sm">
-            <Button.Label>Close</Button.Label>
+          <Button onPress={handleClose} width="100%">
+            Close
           </Button>
-        </Surface>
+        </Card>
       </View>
-    </Container>
+    </ScreenContainer>
   );
 }
-
-export default Modal;

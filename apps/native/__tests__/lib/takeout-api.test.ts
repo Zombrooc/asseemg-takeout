@@ -141,6 +141,38 @@ describe("createTakeoutClient", () => {
     expect(call.headers).not.toHaveProperty("Authorization");
   });
 
+  it("GET /audit with status filter builds query string", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve("[]"),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "token",
+    });
+    await client.getAudit({ status: "CONFIRMED" });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/audit?status=CONFIRMED",
+      expect.any(Object)
+    );
+  });
+
+  it("GET /audit without params calls /audit with no query", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve("[]"),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "token",
+    });
+    await client.getAudit();
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/audit",
+      expect.any(Object)
+    );
+  });
+
   it("GET /events/:eventId/participants/search sends q and mode", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,

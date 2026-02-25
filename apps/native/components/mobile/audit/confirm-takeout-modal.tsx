@@ -7,12 +7,12 @@ import type {
 } from "@/lib/takeout-api-types";
 import { addToQueue } from "@/lib/takeout-queue";
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, type GestureResponderEvent } from "react-native";
+import { Alert, type GestureResponderEvent, Modal, Pressable } from "react-native";
 
-import { Button, Card } from "@/components/ui";
-import { Modal, Pressable, Text, View } from "@/lib/primitives";
+import { Button, Card } from "@/components/ui-tamagui";
 import { useResponsiveScale } from "@/utils/responsive";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Text, XStack, YStack } from "tamagui";
 
 const LOCK_RENEW_INTERVAL_MS = 15_000;
 
@@ -175,8 +175,11 @@ export function ConfirmTakeoutModal({
   return (
     <Modal visible={visible} transparent animationType="fade">
       <Pressable
-        className="flex-1 bg-black/50 justify-center items-center"
         style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.5)",
+          justifyContent: "center",
+          alignItems: "center",
           paddingTop: insets.top,
           paddingBottom: insets.bottom,
           paddingLeft: insets.left,
@@ -189,20 +192,20 @@ export function ConfirmTakeoutModal({
           style={{ width: "90%", maxWidth: width * 0.9 }}
           onPress={(e: GestureResponderEvent) => e.stopPropagation()}
         >
-          <Card className="p-6">
-            <Text className="text-lg font-semibold text-foreground mb-4">
+          <Card padding="$6">
+            <Text fontSize={18} fontWeight="600" color="$foreground" marginBottom="$4">
               Confirmar check-in
             </Text>
             {lockState === "heldByMe" ? (
-              <Text className="text-muted-foreground text-sm mb-2">
+              <Text color="$textSecondary" fontSize={14} marginBottom="$2">
                 Em atendimento por você
               </Text>
             ) : isLockedByOther ? (
-              <Text className="text-warning text-sm mb-2">
+              <Text color="$warning" fontSize={14} marginBottom="$2">
                 Em atendimento por outro dispositivo
               </Text>
             ) : null}
-            <View className="gap-2 mb-4">
+            <YStack gap="$2" marginBottom="$4">
               <Row label="Nome" value={participant.name ?? "—"} />
               <Row label="CPF" value={participant.cpf ?? "—"} />
               <Row label="Data de nascimento" value={formatBirthDate(participant.birthDate)} />
@@ -210,26 +213,36 @@ export function ConfirmTakeoutModal({
               <Row label="Ingresso" value={participant.sourceTicketId ?? participant.ticketId} />
               <Row label="Tipo de ingresso" value={participant.ticketName ?? "—"} />
               <Row label="Valor pago" value="—" />
-            </View>
+            </YStack>
             {participant.customFormResponses && participant.customFormResponses.length > 0 ? (
-              <View className="mb-4">
-                <Text className="text-muted-foreground text-xs font-medium mb-2">Dados adicionais</Text>
-                <View className="gap-2">
+              <YStack marginBottom="$4">
+                <Text color="$textSecondary" fontSize={12} fontWeight="500" marginBottom="$2">Dados adicionais</Text>
+                <YStack gap="$2">
                   {participant.customFormResponses.map((r: CustomFormResponseItem, i: number) => (
                     <Row key={i} label={r.label || r.name} value={formatResponseValue(r.response)} />
                   ))}
-                </View>
-              </View>
+                </YStack>
+              </YStack>
             ) : null}
-            {error ? <Text className="text-danger text-sm mb-3">{error}</Text> : null}
-            <View className="flex-row gap-3">
-              <Button variant="bordered" className="px-4 py-3" onPress={handleClose} isDisabled={loading}>
+            {error ? <Text color="$danger" fontSize={14} marginBottom="$3">{error}</Text> : null}
+            <XStack gap="$3">
+              <Button
+                testID="takeout-confirm-modal-cancel"
+                variant="bordered"
+                onPress={handleClose}
+                isDisabled={loading}
+              >
                 Cancelar
               </Button>
-              <Button className="px-4 py-3" onPress={handleConfirm} isLoading={loading} isDisabled={loading || !canConfirm}>
+              <Button
+                testID="takeout-confirm-modal-confirm"
+                onPress={handleConfirm}
+                isLoading={loading}
+                isDisabled={loading || !canConfirm}
+              >
                 Confirmar check-in
               </Button>
-            </View>
+            </XStack>
           </Card>
         </Pressable>
       </Pressable>
@@ -239,9 +252,9 @@ export function ConfirmTakeoutModal({
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <View className="flex-row justify-between">
-      <Text className="text-muted-foreground text-sm">{label}</Text>
-      <Text className="text-foreground text-sm">{value}</Text>
-    </View>
+    <XStack justifyContent="space-between">
+      <Text color="$textSecondary" fontSize={14}>{label}</Text>
+      <Text color="$foreground" fontSize={14}>{value}</Text>
+    </XStack>
   );
 }

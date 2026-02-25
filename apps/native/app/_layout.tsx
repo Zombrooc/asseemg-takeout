@@ -15,6 +15,8 @@ import { AppThemeProvider } from "@/contexts/app-theme-context";
 import { TakeoutConnectionProvider } from "@/contexts/takeout-connection-context";
 import { TakeoutQueueProcessor } from "@/components/takeout/queue-processor";
 import { queryClient } from "@/utils/trpc";
+import { TamaguiProvider } from "tamagui";
+import { config as tamaguiConfig } from "../tamagui.config";
 
 export const unstable_settings = {
   initialRouteName: "(drawer)",
@@ -40,7 +42,9 @@ export default function Layout() {
               <TakeoutConnectionProvider>
                 <TakeoutQueueProcessor />
                 <HeroUINativeProvider>
-                  <StackLayout />
+                  <TamaguiProvider config={tamaguiConfig} defaultTheme="light">
+                    <StackLayout />
+                  </TamaguiProvider>
                 </HeroUINativeProvider>
               </TakeoutConnectionProvider>
             </AppThemeProvider>

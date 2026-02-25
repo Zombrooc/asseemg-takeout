@@ -26,6 +26,9 @@ const klass = buttonVariants[variant] ?? buttonVariants.primary
 const klass = `bg-${color}-600 text-${tone}`
 ```
 
+### Uso de mapas centralizados
+- Para variantes de status (online/offline, reachable, badge), usar `utils/theme-tokens.ts`: `STATUS_PILL_CLASS`, `CONNECTION_BG_CLASS`, `BADGE_STATUS_CLASS`. Evita repetição e garante classes estáticas.
+
 ### Motivação
 Uniwind depende de extração estática para gerar classes; padrões dinâmicos causam perda de estilo em runtime.
 
@@ -58,8 +61,11 @@ Semântica desacopla componente de paleta fixa e facilita dark mode/tematizaçã
 - Grupos de organização em `(group)` sem expor no path final.
 
 ### Exemplos
-- `app/(drawer)/(tabs)/index.tsx`
+- `app/(drawer)/index.tsx` (Home)
 - `app/(drawer)/events/[eventId].tsx`
+- `app/(drawer)/audit.tsx` (Auditoria)
+- `app/(drawer)/settings.tsx` (Configurações)
+- `app/(drawer)/(tabs)/index.tsx`
 - `app/+not-found.tsx`
 
 ### Padrões adicionais

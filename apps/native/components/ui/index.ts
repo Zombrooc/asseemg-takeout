@@ -7,3 +7,4 @@ export * from "@/components/ui/icon-button";
 export * from "@/components/ui/input";
 export * from "@/components/ui/screen";
 export * from "@/components/ui/top-bar";
+export * from "@/components/ui/empty-state";

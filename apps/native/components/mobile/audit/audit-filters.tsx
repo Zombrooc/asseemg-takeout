@@ -1,7 +1,8 @@
 import { Chip } from "@/components/ui";
 import { View } from "@/lib/primitives";
 
-const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "PENDING"] as const;
+/** Alinhado a GET /audit (status: CONFIRMED | DUPLICATE | FAILED) */
+const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED"] as const;
 
 type StatusFilter = (typeof OPTIONS)[number];
 
@@ -17,6 +18,7 @@ export function AuditFilters({
       {OPTIONS.map((option) => (
         <Chip
           key={option}
+          testID={`audit-filters-${option.toLowerCase()}`}
           color={value === option ? "primary" : "secondary"}
           onPress={() => onChange(option)}
         >
