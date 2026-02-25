@@ -11,7 +11,7 @@
 @source "../../node_modules/heroui-native/lib";
 @source "../../node_modules/heroui-native/src";
 
-/* Tema light: cores da marca (logo ASSEEMG) + border-radius grande */
+/* Tema light: cores da marca (logo ASSEEMG) + tokens semânticos v0 */
 @layer theme {
   @variant light {
     --radius: 1.25rem;
@@ -19,6 +19,17 @@
     --accent-foreground: oklch(1 0 0);
     --background: oklch(1 0 0);
     --foreground: oklch(0.15 0 0);
+    /* Semânticos alinhados a v0 tokens (brand, success, warning, danger, surface, muted) */
+    --success: oklch(0.55 0.15 160);
+    --success-foreground: oklch(1 0 0);
+    --warning: oklch(0.72 0.19 75);
+    --warning-foreground: oklch(0.15 0 0);
+    --danger: oklch(0.55 0.22 25);
+    --danger-foreground: oklch(1 0 0);
+    --muted: oklch(0.55 0 0);
+    --muted-foreground: oklch(0.45 0 0);
+    --border: oklch(0.9 0 0);
+    --card: oklch(1 0 0);
   }
 
   @variant dark {
@@ -27,5 +38,15 @@
     --accent-foreground: oklch(1 0 0);
     --background: oklch(0.15 0 0);
     --foreground: oklch(0.95 0 0);
+    --success: oklch(0.6 0.15 160);
+    --success-foreground: oklch(1 0 0);
+    --warning: oklch(0.75 0.19 75);
+    --warning-foreground: oklch(0.15 0 0);
+    --danger: oklch(0.6 0.22 25);
+    --danger-foreground: oklch(1 0 0);
+    --muted: oklch(0.35 0 0);
+    --muted-foreground: oklch(0.65 0 0);
+    --border: oklch(0.3 0 0);
+    --card: oklch(0.2 0 0);
   }
 }
