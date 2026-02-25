@@ -14,16 +14,15 @@ import {
   QuickActionsRow,
   SearchBar,
   SummaryStats,
-} from "@/components/mobile/event";
+} from "@/components/mobile-tamagui/event";
 import { ConfirmTakeoutModal } from "@/components/mobile/audit/confirm-takeout-modal";
-import { ParticipantListItem } from "@/components/takeout/participant-list-item";
-import { Banner, Button, Container } from "@/components/ui";
-import { FlatList, Text, View } from "@/lib/primitives";
-import { formatDateBR, formatDateShort } from "@/lib/format-date";
+import { ParticipantListItem } from "@/components/mobile-tamagui/participant-list-item";
+import { Banner, Button, ScreenContainer, Spinner } from "@/components/ui-tamagui";
+import { formatDateShort } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { Spinner } from "heroui-native";
+import { FlatList, Text, View } from "react-native";
 
 const SYNC_LAST_SEQ_KEY = (eventId: string) =>
   `takeout_sync_last_seq_${eventId}`;
@@ -51,7 +50,7 @@ const PENDING_QUEUE_KEY = ["takeout-pending-queue"] as const;
 
 const EmptyList = memo(function EmptyList() {
   return (
-    <Text className="text-muted-foreground text-center py-8">
+    <Text style={{ color: "#6b7280", textAlign: "center", paddingVertical: 32 }}>
       Nenhum participante.
     </Text>
   );
@@ -352,46 +351,46 @@ export default function EventScreen() {
 
   if (!eventId) {
     return (
-      <Container className="px-4" mode="static">
-        <Text className="text-muted-foreground">Evento não encontrado.</Text>
-      </Container>
+      <ScreenContainer mode="static">
+        <View style={{ padding: 16 }}>
+          <Text style={{ color: "#6b7280" }}>Evento não encontrado.</Text>
+        </View>
+      </ScreenContainer>
     );
   }
 
   if (showQrScanner) {
     if (!permission) {
       return (
-        <Container className="px-4 py-6">
-          <Text className="text-muted-foreground">
-            Verificando permissão da câmera...
-          </Text>
-        </Container>
+        <ScreenContainer mode="static">
+          <View style={{ padding: 16, paddingTop: 24 }}>
+            <Text style={{ color: "#6b7280" }}>Verificando permissão da câmera...</Text>
+          </View>
+        </ScreenContainer>
       );
     }
 
     if (!permission.granted) {
       return (
-        <Container className="px-4 py-6">
-          <Text className="text-foreground font-medium mb-2">
-            Acesso à câmera
-          </Text>
-          <Text className="text-muted-foreground text-sm mb-4">
-            Necessário para escanear o QR do ingresso.
-          </Text>
-          <Button onPress={requestPermission}>Permitir câmera</Button>
-          <Button
-            variant="bordered"
-            className="mt-3"
-            onPress={() => setShowQrScanner(false)}
-          >
-            Voltar
-          </Button>
-        </Container>
+        <ScreenContainer mode="static">
+          <View style={{ padding: 16, paddingTop: 24 }}>
+            <Text style={{ color: "#111827", fontWeight: "500", marginBottom: 8 }}>Acesso à câmera</Text>
+            <Text style={{ color: "#6b7280", fontSize: 14, marginBottom: 16 }}>
+              Necessário para escanear o QR do ingresso.
+            </Text>
+            <Button onPress={requestPermission}>Permitir câmera</Button>
+            <View style={{ marginTop: 12 }}>
+              <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
+                Voltar
+              </Button>
+            </View>
+          </View>
+        </ScreenContainer>
       );
     }
 
     return (
-      <View className="flex-1 bg-black">
+      <View style={{ flex: 1, backgroundColor: "black" }}>
         <CameraView
           style={{ flex: 1 }}
           facing="back"
@@ -399,7 +398,7 @@ export default function EventScreen() {
           onBarcodeScanned={onQrScanned}
         />
         <QrTicketScannerOverlay onBack={() => setShowQrScanner(false)} />
-        <View className="absolute bottom-0 left-0 right-0 px-4 pb-8">
+        <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 32 }}>
           <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
             Cancelar
           </Button>
@@ -410,7 +409,7 @@ export default function EventScreen() {
 
   return (
     <>
-      <Container className="flex-1" mode="static">
+      <ScreenContainer mode="static">
         {event ? (
           <EventHeader
             title={event.name ?? eventId}
@@ -422,31 +421,28 @@ export default function EventScreen() {
         ) : null}
 
         {!isReachable ? (
-          <Banner className="mx-4 mt-3">
-            <Text className="text-foreground text-sm mb-3">
+          <Banner variant="warn" style={{ marginHorizontal: 16, marginTop: 12 }}>
+            <Text style={{ color: "#111827", fontSize: 14, marginBottom: 12 }}>
               Desktop desconectado. Conecte-se para sincronizar dados.
             </Text>
-            <View className="flex-row gap-2">
-              <Button
-                size="sm"
-                className="px-3 py-2"
-                onPress={() => checkReachability()}
-              >
-                Tentar novamente
-              </Button>
-              <Button
-                size="sm"
-                variant="bordered"
-                className="px-3 py-2"
-                onPress={() => router.push("/pair")}
-              >
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Button onPress={() => checkReachability()}>Tentar novamente</Button>
+              <Button variant="bordered" onPress={() => router.push("/pair")}>
                 Reconectar
               </Button>
             </View>
           </Banner>
         ) : null}
 
-        <View className="px-4 py-2 border-b border-border bg-background">
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderBottomWidth: 1,
+            borderColor: "#e5e7eb",
+            backgroundColor: "#ffffff",
+          }}
+        >
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
           <QuickActionsRow
             onScan={() => setShowQrScanner(true)}
@@ -466,8 +462,16 @@ export default function EventScreen() {
         />
 
         {participantsQuery.isLoading ? (
-          <View className="flex-1 justify-center items-center min-h-[200px] bg-background">
-            <Spinner size="lg" />
+          <View
+            style={{
+              flex: 1,
+              justifyContent: "center",
+              alignItems: "center",
+              minHeight: 200,
+              backgroundColor: "#ffffff",
+            }}
+          >
+            <Spinner size="large" />
           </View>
         ) : (
           <FlatList
@@ -484,7 +488,7 @@ export default function EventScreen() {
             keyboardShouldPersistTaps="handled"
           />
         )}
-      </Container>
+      </ScreenContainer>
 
       <ConfirmTakeoutModal
         visible={!!selectedParticipant}

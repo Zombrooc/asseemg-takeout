@@ -1,16 +1,16 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useRouter } from "expo-router";
+import { Pressable } from "react-native";
 
 import {
   ConnectionStatusCard,
   EventsList,
   StatusPill,
-} from "@/components/mobile/home";
-import { Button, Container, TopBar } from "@/components/ui";
-import { ActivityIndicator, Text, View } from "@/lib/primitives";
+} from "@/components/mobile-tamagui/home";
+import { Button, ScreenContainer, Spinner, TopBar } from "@/components/ui-tamagui";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Pressable } from "@/lib/primitives";
+import { Pressable as RNPressable, Text, View } from "react-native";
 
 export default function Home() {
   const router = useRouter();
@@ -33,40 +33,47 @@ export default function Home() {
 
   if (connectionLoading && !isPaired) {
     return (
-      <Container
-        className="flex-1 bg-background justify-center items-center"
-        mode="static"
-      >
-        <ActivityIndicator size="large" />
-        <Text className="text-muted-foreground mt-3">Conectando...</Text>
-      </Container>
+      <ScreenContainer mode="static">
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <Spinner size="large" />
+          <Text style={{ color: "#6b7280", marginTop: 12 }}>Conectando...</Text>
+        </View>
+      </ScreenContainer>
     );
   }
 
   if (!isPaired) {
     return (
-      <Container className="flex-1 bg-background" mode="static">
+      <ScreenContainer mode="static">
         <TopBar title="ASSEEMG Retira - Mobile" />
-        <View className="flex-1 px-4 pt-4">
-          <View className="border border-border rounded-2xl p-6 bg-card mb-6">
-            <Text className="text-foreground font-semibold text-lg mb-2">
+        <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 16 }}>
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: "#e5e7eb",
+              borderRadius: 16,
+              padding: 24,
+              backgroundColor: "#f9fafb",
+              marginBottom: 24,
+            }}
+          >
+            <Text style={{ color: "#111827", fontWeight: "600", fontSize: 18, marginBottom: 8 }}>
               Sem conexão com o desktop
             </Text>
-            <Text className="text-muted-foreground text-sm mb-6">
+            <Text style={{ color: "#6b7280", fontSize: 14, marginBottom: 24 }}>
               Conecte ao app Takeout Desktop na mesma rede local para iniciar.
             </Text>
             <Link href="/pair" asChild>
-              <Button testID="home-pair-cta" className="w-full py-3">
+              <Button testID="home-pair-cta" width="100%">
                 Parear com o Desktop
               </Button>
             </Link>
           </View>
-          <Text className="text-muted-foreground text-sm">
-            Escaneie o QR Code exibido no app desktop ou insira a URL
-            manualmente.
+          <Text style={{ color: "#6b7280", fontSize: 14 }}>
+            Escaneie o QR Code exibido no app desktop ou insira a URL manualmente.
           </Text>
         </View>
-      </Container>
+      </ScreenContainer>
     );
   }
 
@@ -74,22 +81,22 @@ export default function Home() {
   const showEventsLoading = connectionLoading || eventsQuery.isLoading;
 
   return (
-    <Container className="flex-1 bg-background" mode="static">
+    <ScreenContainer mode="static">
       <TopBar
         title="ASSEEMG Retira - Mobile"
         subtitle="Eventos disponíveis"
         actionSlot={
-          <Pressable
+          <RNPressable
             onPress={() => router.push("/audit")}
-            className="p-1.5 rounded-lg active:opacity-70"
+            style={({ pressed }) => ({ padding: 6, borderRadius: 8, opacity: pressed ? 0.7 : 1 })}
             accessibilityLabel="Abrir auditoria"
           >
             <Ionicons name="document-text-outline" size={22} color="#64748b" />
-          </Pressable>
+          </RNPressable>
         }
         rightSlot={<StatusPill isReachable={isReachable} />}
       />
-      <View className="flex-1 px-4 pt-2 pb-4 bg-background">
+      <View style={{ flex: 1, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, backgroundColor: "#ffffff" }}>
         <ConnectionStatusCard
           isReachable={isReachable}
           isConnecting={connectionLoading}
@@ -101,11 +108,11 @@ export default function Home() {
           }}
         />
 
-        <View className="flex-row items-baseline justify-between mt-2 mb-3 gap-2">
-          <Text className="text-foreground font-semibold text-base leading-snug shrink">
+        <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", marginTop: 8, marginBottom: 12, gap: 8 }}>
+          <Text style={{ color: "#111827", fontWeight: "600", fontSize: 16, flexShrink: 1 }}>
             Eventos disponíveis
           </Text>
-          <Text className="text-muted-foreground text-sm leading-snug shrink-0">
+          <Text style={{ color: "#6b7280", fontSize: 14, flexShrink: 0 }}>
             {events.length} {events.length === 1 ? "evento" : "eventos"}
           </Text>
         </View>
@@ -117,6 +124,6 @@ export default function Home() {
           onPair={() => router.push("/pair")}
         />
       </View>
-    </Container>
+    </ScreenContainer>
   );
 }

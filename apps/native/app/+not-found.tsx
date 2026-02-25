@@ -1,40 +1,27 @@
 import { Link, Stack } from "expo-router";
-import { Button, Surface } from "heroui-native";
-
-import { Container } from "@/components/container";
-import { Text, View } from "@/lib/primitives";
-import { useResponsiveScale } from "@/utils/responsive";
+import { Text, View } from "react-native";
+import { Button, Card, ScreenContainer } from "@/components/ui-tamagui";
 
 export default function NotFoundScreen() {
-  const { scale, width } = useResponsiveScale();
   return (
     <>
       <Stack.Screen options={{ title: "Not Found" }} />
-      <Container>
-        <View
-          className="flex-1 justify-center items-center"
-          style={{ padding: scale(16) }}
-        >
-          <Surface
-            variant="secondary"
-            className="items-center p-6 rounded-3xl"
-            style={{ width: "90%", maxWidth: width * 0.9 }}
-          >
-            <Text className="text-4xl mb-3">🤔</Text>
-            <Text className="text-foreground font-medium text-lg mb-1">
+      <ScreenContainer mode="static">
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 16 }}>
+          <Card style={{ alignItems: "center", padding: 24, width: "90%", maxWidth: 400, alignSelf: "center" }}>
+            <Text style={{ fontSize: 36, marginBottom: 12 }}>🤔</Text>
+            <Text style={{ color: "#111827", fontWeight: "500", fontSize: 18, marginBottom: 4 }}>
               Page Not Found
             </Text>
-            <Text className="text-muted-foreground text-sm text-center mb-4">
+            <Text style={{ color: "#6b7280", fontSize: 14, textAlign: "center", marginBottom: 16 }}>
               The page you're looking for doesn't exist.
             </Text>
             <Link href="/" asChild>
-              <Button size="sm" className="px-3 py-2">
-                Go Home
-              </Button>
+              <Button>Go Home</Button>
             </Link>
-          </Surface>
+          </Card>
         </View>
-      </Container>
+      </ScreenContainer>
     </>
   );
 }

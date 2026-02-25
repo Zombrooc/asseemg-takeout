@@ -2,6 +2,7 @@ import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
+import { Text, View } from "react-native";
 
 import {
   ManualPairForm,
@@ -9,9 +10,8 @@ import {
   PairingTipsCard,
   PermissionPrompt,
   QrScannerOverlay,
-} from "@/components/mobile/pair";
-import { Button, Container } from "@/components/ui";
-import { Text, View } from "@/lib/primitives";
+} from "@/components/mobile-tamagui/pair";
+import { Button, ScreenContainer } from "@/components/ui-tamagui";
 
 function generateDeviceId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -107,27 +107,29 @@ export default function PairScreen() {
   if (showScanner) {
     if (!permission) {
       return (
-        <Container className="px-4 py-6">
-          <Text className="text-muted-foreground">
-            Verificando permissão da câmera...
-          </Text>
-        </Container>
+        <ScreenContainer mode="static">
+          <View style={{ padding: 16, paddingTop: 24 }}>
+            <Text style={{ color: "#6b7280" }}>Verificando permissão da câmera...</Text>
+          </View>
+        </ScreenContainer>
       );
     }
     if (!permission.granted) {
       return (
-        <Container className="px-4 py-6" contentClassName="flex-1">
-          <PermissionPrompt
-            title="Acesso à câmera"
-            description="Necessário para escanear o QR code exibido no app desktop."
-            onConfirm={requestPermission}
-            onBack={() => setShowScanner(false)}
-          />
-        </Container>
+        <ScreenContainer mode="static">
+          <View style={{ padding: 16, paddingTop: 24, flex: 1 }}>
+            <PermissionPrompt
+              title="Acesso à câmera"
+              description="Necessário para escanear o QR code exibido no app desktop."
+              onConfirm={requestPermission}
+              onBack={() => setShowScanner(false)}
+            />
+          </View>
+        </ScreenContainer>
       );
     }
     return (
-      <View className="flex-1 bg-black">
+      <View style={{ flex: 1, backgroundColor: "black" }}>
         <CameraView
           style={{ flex: 1 }}
           facing="back"
@@ -145,41 +147,45 @@ export default function PairScreen() {
   }
 
   return (
-    <Container className="px-4 py-6 bg-background" contentClassName="flex-1">
-      <Text className="text-2xl font-semibold text-foreground mb-1 leading-tight">
-        Parear com o Desktop
-      </Text>
-      <Text className="text-muted-foreground text-sm mb-4 leading-relaxed">
-        Escaneie o QR no desktop ou informe URL e token manualmente.
-      </Text>
+    <ScreenContainer mode="scroll">
+      <View style={{ padding: 16, paddingTop: 24, flex: 1, backgroundColor: "#ffffff" }}>
+        <Text style={{ fontSize: 24, fontWeight: "600", color: "#111827", marginBottom: 4 }}>
+          Parear com o Desktop
+        </Text>
+        <Text style={{ color: "#6b7280", fontSize: 14, marginBottom: 16 }}>
+          Escaneie o QR no desktop ou informe URL e token manualmente.
+        </Text>
 
-      <PairingTipsCard />
-      <Text className="text-foreground font-semibold text-base mb-1 leading-snug">
-        Modo de pareamento
-      </Text>
-      <Text className="text-muted-foreground text-sm mb-3 leading-snug">
-        Escolha como deseja conectar
-      </Text>
-      <PairingMethodTabs method={pairMethod} onChange={setPairMethod} />
+        <PairingTipsCard />
+        <Text style={{ color: "#111827", fontWeight: "600", fontSize: 16, marginBottom: 4 }}>
+          Modo de pareamento
+        </Text>
+        <Text style={{ color: "#6b7280", fontSize: 14, marginBottom: 12 }}>
+          Escolha como deseja conectar
+        </Text>
+        <PairingMethodTabs method={pairMethod} onChange={setPairMethod} />
 
-      {pairMethod === "qr" ? (
-        <Button
-          className="px-4 py-3 mb-6 rounded-xl min-h-[48px]"
-          onPress={() => setShowScanner(true)}
-        >
-          Escanear QR code
-        </Button>
-      ) : (
-        <ManualPairForm
-          baseUrl={baseUrl}
-          pairingToken={pairingToken}
-          onChangeBaseUrl={setBaseUrl}
-          onChangeToken={setPairingToken}
-          onSubmit={() => doPair(baseUrl, pairingToken)}
-          loading={loading}
-          error={error}
-        />
-      )}
-    </Container>
+        {pairMethod === "qr" ? (
+          <View style={{ marginBottom: 24 }}>
+            <Button
+              minHeight={48}
+              onPress={() => setShowScanner(true)}
+            >
+              Escanear QR code
+            </Button>
+          </View>
+        ) : (
+          <ManualPairForm
+            baseUrl={baseUrl}
+            pairingToken={pairingToken}
+            onChangeBaseUrl={setBaseUrl}
+            onChangeToken={setPairingToken}
+            onSubmit={() => doPair(baseUrl, pairingToken)}
+            loading={loading}
+            error={error}
+          />
+        )}
+      </View>
+    </ScreenContainer>
   );
 }
