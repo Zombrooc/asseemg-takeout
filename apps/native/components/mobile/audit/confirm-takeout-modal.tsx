@@ -1,4 +1,4 @@
-import { Button, Card } from "@/components/ui-tamagui";
+import { Button, Card, Input } from "@/components/ui-tamagui";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { formatDateBR } from "@/lib/format-date";
 import { TakeoutApiError } from "@/lib/takeout-api";
@@ -7,6 +7,10 @@ import type {
   EventParticipant,
   LegacyEventParticipant,
 } from "@/lib/takeout-api-types";
+import {
+  buildTakeoutRetirantePayload,
+  buildTakeoutRetirantePayloadJson,
+} from "@/lib/takeout-retirante-payload";
 import { addToQueue } from "@/lib/takeout-queue";
 import { useResponsiveScale } from "@/utils/responsive";
 import React, { useEffect, useRef, useState } from "react";
@@ -35,25 +39,25 @@ function formatBirthDate(s: string | null | undefined): string {
 }
 
 function ageFromBirthDate(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "-";
   const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
   if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) {
     age--;
   }
-  return age >= 0 ? String(age) : "—";
+  return age >= 0 ? String(age) : "-";
 }
 
 function formatResponseValue(value: unknown): string {
-  if (value == null) return "—";
+  if (value == null) return "-";
   if (typeof value === "string" || typeof value === "number") return String(value);
-  if (typeof value === "boolean") return value ? "Sim" : "Não";
+  if (typeof value === "boolean") return value ? "Sim" : "Nao";
   try {
     return JSON.stringify(value);
   } catch {
-    return "—";
+    return "-";
   }
 }
 
@@ -77,8 +81,19 @@ export function ConfirmTakeoutModal({
   const { api, deviceId } = useTakeoutConnection();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isProxyTakeout, setIsProxyTakeout] = useState(false);
+  const [retiranteNome, setRetiranteNome] = useState("");
+  const [retiranteCpf, setRetiranteCpf] = useState("");
   const [lockState, setLockState] = useState<"heldByMe" | "heldByOther" | null>(null);
   const renewIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    setError(null);
+    setIsProxyTakeout(false);
+    setRetiranteNome("");
+    setRetiranteCpf("");
+  }, [visible, participant?.id]);
 
   useEffect(() => {
     if (!visible || !participant || !api || !deviceId) {
@@ -126,9 +141,26 @@ export function ConfirmTakeoutModal({
   const handleConfirm = async () => {
     if (!participant || !api || !deviceId) return;
     if (sourceType === "legacy_csv" && !eventId) {
-      setError("Event ID ausente para confirmação legado.");
+      setError("Event ID ausente para confirmacao legado.");
       return;
     }
+
+    const proxyPayload = buildTakeoutRetirantePayload({
+      isProxyTakeout,
+      retiranteNome,
+      retiranteCpf,
+    });
+    if (isProxyTakeout && !proxyPayload) {
+      setError("Informe o nome do retirante.");
+      return;
+    }
+
+    const proxyPayloadJson = buildTakeoutRetirantePayloadJson({
+      isProxyTakeout,
+      retiranteNome,
+      retiranteCpf,
+    });
+
     setError(null);
     setLoading(true);
     const requestId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -136,6 +168,7 @@ export function ConfirmTakeoutModal({
       const v = c === "x" ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
+
     try {
       const res =
         sourceType === "legacy_csv"
@@ -144,12 +177,15 @@ export function ConfirmTakeoutModal({
               event_id: eventId!,
               participant_id: participant.id,
               device_id: deviceId,
+              payload_json: proxyPayloadJson,
             })
           : await api.postTakeoutConfirm({
               request_id: requestId,
               ticket_id: (participant as EventParticipant).ticketId,
               device_id: deviceId,
+              payload_json: proxyPayloadJson,
             });
+
       if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
         api.deleteLocksRelease(participant.id, deviceId).catch(() => {});
         onConfirmed();
@@ -161,7 +197,7 @@ export function ConfirmTakeoutModal({
       if (e instanceof TakeoutApiError && e.status === 409) {
         onClose();
         onConflict?.(buildTicketConflictKey(participant, sourceType));
-        Alert.alert("Conflito", "Check-in já realizado por outro dispositivo.");
+        Alert.alert("Conflito", "Check-in ja realizado por outro dispositivo.");
         return;
       }
       if (sourceType === "legacy_csv") {
@@ -173,6 +209,7 @@ export function ConfirmTakeoutModal({
           request_id: requestId,
           ticket_id: (participant as EventParticipant).ticketId,
           device_id: deviceId,
+          payload_json: proxyPayloadJson,
         });
         onQueuedOffline?.();
       } catch {
@@ -189,7 +226,14 @@ export function ConfirmTakeoutModal({
   const legacy = sourceType === "legacy_csv" ? (participant as LegacyEventParticipant) : null;
   const current = sourceType === "json_sync" ? (participant as EventParticipant) : null;
   const isLockedByOther = lockState === "heldByOther";
-  const canConfirm = !isLockedByOther;
+  const isRetiranteNomeValid =
+    !isProxyTakeout ||
+    buildTakeoutRetirantePayload({
+      isProxyTakeout,
+      retiranteNome,
+      retiranteCpf,
+    }) != null;
+  const canConfirm = !isLockedByOther && isRetiranteNomeValid;
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -214,7 +258,7 @@ export function ConfirmTakeoutModal({
             </Text>
             {lockState === "heldByMe" ? (
               <Text color="$textSecondary" fontSize={14} marginBottom="$2">
-                Em atendimento por você
+                Em atendimento por voce
               </Text>
             ) : isLockedByOther ? (
               <Text color="$warning" fontSize={14} marginBottom="$2">
@@ -222,19 +266,19 @@ export function ConfirmTakeoutModal({
               </Text>
             ) : null}
             <YStack gap="$2" marginBottom="$4">
-              <Row label="Nome" value={(legacy?.name ?? current?.name) ?? "—"} />
-              <Row label="CPF" value={(legacy?.cpf ?? current?.cpf) ?? "—"} />
+              <Row label="Nome" value={(legacy?.name ?? current?.name) ?? "-"} />
+              <Row label="CPF" value={(legacy?.cpf ?? current?.cpf) ?? "-"} />
               <Row label="Data de nascimento" value={formatBirthDate(legacy?.birthDate ?? current?.birthDate)} />
               <Row label="Idade" value={ageFromBirthDate(legacy?.birthDate ?? current?.birthDate)} />
               <Row
                 label="Ingresso"
                 value={
-                  legacy != null ? `#${legacy.bibNumber}` : ((current?.sourceTicketId ?? current?.ticketId) ?? "—")
+                  legacy != null ? `#${legacy.bibNumber}` : ((current?.sourceTicketId ?? current?.ticketId) ?? "-")
                 }
               />
-              <Row label="Tipo de ingresso" value={(legacy?.modality ?? current?.ticketName) ?? "—"} />
-              <Row label="Tamanho da camisa" value={legacy?.shirtSize ?? "—"} />
-              <Row label="Equipe" value={legacy?.team ?? "—"} />
+              <Row label="Tipo de ingresso" value={(legacy?.modality ?? current?.ticketName) ?? "-"} />
+              <Row label="Tamanho da camisa" value={legacy?.shirtSize ?? "-"} />
+              <Row label="Equipe" value={legacy?.team ?? "-"} />
             </YStack>
             {current?.customFormResponses && current.customFormResponses.length > 0 ? (
               <YStack marginBottom="$4">
@@ -248,6 +292,44 @@ export function ConfirmTakeoutModal({
                 </YStack>
               </YStack>
             ) : null}
+            <YStack marginBottom="$4" gap="$2">
+              <Text color="$textSecondary" fontSize={12} fontWeight="500">
+                Retirante
+              </Text>
+              <Button
+                testID="takeout-confirm-modal-proxy-toggle"
+                variant={isProxyTakeout ? "secondary" : "bordered"}
+                onPress={() => setIsProxyTakeout((prev) => !prev)}
+                isDisabled={loading}
+              >
+                {isProxyTakeout ? "Retirada por terceiro: Sim" : "Retirada por terceiro: Nao"}
+              </Button>
+              {isProxyTakeout ? (
+                <YStack gap="$2">
+                  <Input
+                    testID="takeout-confirm-modal-retirante-nome"
+                    value={retiranteNome}
+                    onChangeText={setRetiranteNome}
+                    placeholder="Nome do retirante"
+                    autoCapitalize="words"
+                    editable={!loading}
+                  />
+                  <Input
+                    testID="takeout-confirm-modal-retirante-cpf"
+                    value={retiranteCpf}
+                    onChangeText={setRetiranteCpf}
+                    placeholder="CPF do retirante (opcional)"
+                    keyboardType="number-pad"
+                    editable={!loading}
+                  />
+                  {!isRetiranteNomeValid ? (
+                    <Text color="$danger" fontSize={12}>
+                      Nome do retirante e obrigatorio.
+                    </Text>
+                  ) : null}
+                </YStack>
+              ) : null}
+            </YStack>
             {error ? (
               <Text color="$danger" fontSize={14} marginBottom="$3">
                 {error}

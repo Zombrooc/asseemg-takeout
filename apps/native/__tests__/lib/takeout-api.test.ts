@@ -194,6 +194,37 @@ describe("createTakeoutClient", () => {
     );
   });
 
+  it("POST /takeout/confirm sends payload_json when provided", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ status: "CONFIRMED" })),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "dev-1",
+    });
+    await client.postTakeoutConfirm({
+      request_id: "req-uuid",
+      ticket_id: "T1",
+      device_id: "dev-1",
+      payload_json:
+        '{"retirada_por_terceiro":true,"retirante_nome":"Joao","retirante_cpf":"123"}',
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/takeout/confirm",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          request_id: "req-uuid",
+          ticket_id: "T1",
+          device_id: "dev-1",
+          payload_json:
+            '{"retirada_por_terceiro":true,"retirante_nome":"Joao","retirante_cpf":"123"}',
+        }),
+      })
+    );
+  });
+
   it("GET /events/:eventId/legacy-participants uses auth and path", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
@@ -238,6 +269,37 @@ describe("createTakeoutClient", () => {
           event_id: "ev-legacy",
           participant_id: "lp-1",
           device_id: "dev-1",
+        }),
+      })
+    );
+  });
+
+  it("POST /takeout/confirm/legacy sends payload_json when provided", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ status: "CONFIRMED" })),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "legacy-token",
+    });
+    await client.postLegacyTakeoutConfirm({
+      request_id: "req-legacy-2",
+      event_id: "ev-legacy",
+      participant_id: "lp-1",
+      device_id: "dev-1",
+      payload_json: '{"retirada_por_terceiro":true,"retirante_nome":"Maria"}',
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/takeout/confirm/legacy",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          request_id: "req-legacy-2",
+          event_id: "ev-legacy",
+          participant_id: "lp-1",
+          device_id: "dev-1",
+          payload_json: '{"retirada_por_terceiro":true,"retirante_nome":"Maria"}',
         }),
       })
     );

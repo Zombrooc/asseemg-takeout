@@ -65,6 +65,12 @@ export type TakeoutConfirmPayload = {
   payload_json?: string;
 };
 
+export type TakeoutRetirantePayload = {
+  retirada_por_terceiro: true;
+  retirante_nome: string;
+  retirante_cpf?: string;
+};
+
 export type TakeoutConfirmResponse = { status: string };
 
 export type LegacyImportResponse = {

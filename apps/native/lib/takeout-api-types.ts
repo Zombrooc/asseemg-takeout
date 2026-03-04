@@ -15,6 +15,7 @@ export type {
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  TakeoutRetirantePayload,
   WsTakeoutMessage,
 } from "@pickup/api/takeout-contracts";
 
