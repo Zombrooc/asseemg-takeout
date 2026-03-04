@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import type { ButtonHTMLAttributes } from "react";
 import { ParticipantsTable } from "../participants-table";
 import type { EventParticipant } from "@/lib/takeout-api";
+
+vi.mock("@/components/ui/button", () => ({
+  Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+}));
 
 const mockParticipants: EventParticipant[] = [
   {
@@ -56,5 +61,22 @@ describe("ParticipantsTable", () => {
     fireEvent.click(confirmBtn);
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onConfirm).toHaveBeenCalledWith(mockParticipants[0]);
+  });
+
+  it("shows Edit button only for pending participants and calls onEdit", () => {
+    const onEdit = vi.fn();
+    render(
+      <ParticipantsTable eventName="Evento" participants={mockParticipants} onEdit={onEdit} />,
+    );
+    const editBtn = screen.getByRole("button", { name: /editar/i });
+    fireEvent.click(editBtn);
+    expect(onEdit).toHaveBeenCalledTimes(1);
+    expect(onEdit).toHaveBeenCalledWith(mockParticipants[0]);
+    expect(screen.getAllByRole("button", { name: /editar/i })).toHaveLength(1);
+  });
+
+  it("renders empty state when no participants are available", () => {
+    render(<ParticipantsTable eventName="Evento" participants={[]} />);
+    expect(screen.getByText(/nenhum participante encontrado/i)).toBeInTheDocument();
   });
 });

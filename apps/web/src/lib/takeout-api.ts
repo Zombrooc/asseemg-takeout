@@ -12,6 +12,8 @@ import type {
   ParticipantSearchMode,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  UpdateEventParticipantPayload,
+  UpdateLegacyParticipantPayload,
 } from "@pickup/api/takeout-contracts";
 
 const BASE_URL =
@@ -32,6 +34,8 @@ export type {
   ParticipantSearchMode,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  UpdateEventParticipantPayload,
+  UpdateLegacyParticipantPayload,
 };
 export type AuditParams = { status?: string; from?: string; to?: string };
 
@@ -176,6 +180,23 @@ export async function postTakeoutConfirm(payload: TakeoutConfirmPayload): Promis
   return res.json() as Promise<TakeoutConfirmResponse>;
 }
 
+export async function putEventParticipant(
+  eventId: string,
+  participantId: string,
+  payload: UpdateEventParticipantPayload
+): Promise<EventParticipant> {
+  const res = await fetch(
+    `${BASE_URL}/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(participantId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<EventParticipant>;
+}
+
 export async function getLegacyEventParticipants(eventId: string): Promise<LegacyEventParticipant[]> {
   return request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`);
 }
@@ -203,6 +224,23 @@ export async function postLegacyTakeoutConfirm(
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<LegacyTakeoutConfirmResponse>;
+}
+
+export async function putLegacyEventParticipant(
+  eventId: string,
+  participantId: string,
+  payload: UpdateLegacyParticipantPayload
+): Promise<LegacyEventParticipant> {
+  const res = await fetch(
+    `${BASE_URL}/events/${encodeURIComponent(eventId)}/legacy-participants/${encodeURIComponent(participantId)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<LegacyEventParticipant>;
 }
 
 export function getTakeoutBaseUrl(): string {

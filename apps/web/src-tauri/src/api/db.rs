@@ -107,35 +107,35 @@ CREATE INDEX IF NOT EXISTS idx_legacy_checkins_participant_id ON legacy_checkins
 ";
 
 pub struct DbPool {
-  pub conn: Mutex<Connection>,
+    pub conn: Mutex<Connection>,
 }
 
 impl DbPool {
-  pub fn open(path: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {
-    let conn = Connection::open(path)?;
-    conn.execute_batch(SCHEMA_SQL)?;
-    let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
-    let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
-    let _ = conn.execute(
-      "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
-      [],
-    );
-    Ok(Self {
-      conn: Mutex::new(conn),
-    })
-  }
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {
+        let conn = Connection::open(path)?;
+        conn.execute_batch(SCHEMA_SQL)?;
+        let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
+            [],
+        );
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
 
-  pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
-    let conn = Connection::open_in_memory()?;
-    conn.execute_batch(SCHEMA_SQL)?;
-    let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
-    let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
-    let _ = conn.execute(
-      "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
-      [],
-    );
-    Ok(Self {
-      conn: Mutex::new(conn),
-    })
-  }
+    pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(SCHEMA_SQL)?;
+        let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
+            [],
+        );
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
 }

@@ -52,6 +52,12 @@ export type EventParticipant = {
 
 export type ParticipantSearchMode = "qr" | "ticket_id" | "cpf" | "nome" | "birth_date";
 
+export type UpdateEventParticipantPayload = {
+  name: string;
+  birthDate: string;
+  ticketType: string;
+};
+
 export type TakeoutConfirmPayload = {
   request_id: string;
   ticket_id: string;
@@ -90,6 +96,8 @@ export type LegacyTakeoutConfirmPayload = {
 export type LegacyTakeoutConfirmResponse = {
   status: "CONFIRMED" | "DUPLICATE";
 };
+
+export type UpdateLegacyParticipantPayload = UpdateEventParticipantPayload;
 
 export type TakeoutConfirmConflictResponse = {
   status: string;
