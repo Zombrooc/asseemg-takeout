@@ -13,11 +13,77 @@ function wsUrl(baseUrl: string, eventId: string, deviceId: string, lastSeq?: str
   return `${base}/ws?${params.toString()}`;
 }
 
-/** participantId -> deviceId que está atendendo */
+/** participantId -> deviceId being handled */
 export type LockMap = Record<string, string>;
 
 export function nextReconnectDelay(current: number): number {
   return Math.min(Math.round(current * 1.7), MAX_RECONNECT_DELAY_MS);
+}
+
+export type RealtimeInvalidation = {
+  invalidateParticipants: boolean;
+  invalidateAudit: boolean;
+  invalidateEvents: boolean;
+};
+
+export function getRealtimeInvalidation(message: WsTakeoutMessage): RealtimeInvalidation {
+  if (message.type === "participant_checked_in") {
+    return {
+      invalidateParticipants: true,
+      invalidateAudit: true,
+      invalidateEvents: false,
+    };
+  }
+
+  if (message.type === "participant_updated") {
+    return {
+      invalidateParticipants: true,
+      invalidateAudit: false,
+      invalidateEvents: false,
+    };
+  }
+
+  if (message.type === "events_list_changed") {
+    return {
+      invalidateParticipants: false,
+      invalidateAudit: false,
+      invalidateEvents: true,
+    };
+  }
+
+  return {
+    invalidateParticipants: false,
+    invalidateAudit: false,
+    invalidateEvents: false,
+  };
+}
+
+export function parseRealtimeMessageData(raw: unknown): WsTakeoutMessage | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw) as WsTakeoutMessage;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === "object") {
+    const maybe = raw as { type?: unknown };
+    if (typeof maybe.type === "string") return raw as WsTakeoutMessage;
+  }
+  return null;
+}
+
+function getMessageSeq(message: WsTakeoutMessage): number | null {
+  const raw = (message as { seq?: unknown }).seq;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    return Math.trunc(raw);
+  }
+  if (typeof raw === "string") {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed)) return Math.trunc(parsed);
+  }
+  return null;
 }
 
 export function useTakeoutRealtime(
@@ -31,6 +97,7 @@ export function useTakeoutRealtime(
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSeqRef = useRef<number | null>(null);
 
   const setLockMapRef = useRef(setLockMap);
   setLockMapRef.current = setLockMap;
@@ -41,6 +108,7 @@ export function useTakeoutRealtime(
 
   useEffect(() => {
     if (!eventId || !baseUrl || !deviceId) return;
+    lastSeqRef.current = null;
 
     let isActive = true;
     let ws: WebSocket | null = null;
@@ -78,42 +146,72 @@ export function useTakeoutRealtime(
     };
 
     const connect = () => {
-      ws = new WebSocket(wsUrl(baseUrl, eventId, deviceId));
+      const lastSeq = lastSeqRef.current != null ? String(lastSeqRef.current) : undefined;
+      ws = new WebSocket(wsUrl(baseUrl, eventId, deviceId, lastSeq));
+      if (__DEV__) {
+        console.log("[ws.mobile] connect", { eventId, baseUrl, lastSeq });
+      }
       resetHeartbeatTimer();
 
       ws.onopen = () => {
+        if (__DEV__) {
+          console.log("[ws.mobile] open", { eventId, baseUrl });
+        }
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
         resetHeartbeatTimer();
       };
 
       ws.onmessage = (event) => {
         resetHeartbeatTimer();
-        try {
-          const data = JSON.parse(event.data as string) as WsTakeoutMessage;
-          if (data.type === "heartbeat") return;
-          if (data.type === "participant_checked_in") {
-            queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
-            queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
-            return;
+        const data = parseRealtimeMessageData(event.data);
+        if (data == null) return;
+        if (data.type === "heartbeat") return;
+        const seq = getMessageSeq(data);
+        if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
+          lastSeqRef.current = seq;
+        }
+
+        if (__DEV__) {
+          console.log("[ws.mobile] message", {
+            eventId,
+            type: data.type,
+            seq,
+          });
+        }
+
+        const invalidation = getRealtimeInvalidation(data);
+        if (invalidation.invalidateAudit) {
+          queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
+        }
+        if (invalidation.invalidateParticipants) {
+          queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
+          void queryClient.refetchQueries({
+            queryKey: ["takeout-event-participants", eventId],
+            type: "active",
+          });
+          if (__DEV__) {
+            console.log("[ws.mobile] invalidated participants", { eventId, type: data.type });
           }
-          if (data.type === "lock_acquired" && data.participant_id != null && data.device_id != null) {
-            updateLockMap((prev) => ({ ...prev, [data.participant_id]: data.device_id }));
-            return;
-          }
-          if (data.type === "lock_released" && data.participant_id != null) {
-            updateLockMap((prev) => {
-              const next = { ...prev };
-              delete next[data.participant_id];
-              return next;
-            });
-          }
-        } catch {
-          // ignore parse errors
+          return;
+        }
+        if (data.type === "lock_acquired" && data.participant_id != null && data.device_id != null) {
+          updateLockMap((prev) => ({ ...prev, [data.participant_id]: data.device_id }));
+          return;
+        }
+        if (data.type === "lock_released" && data.participant_id != null) {
+          updateLockMap((prev) => {
+            const next = { ...prev };
+            delete next[data.participant_id];
+            return next;
+          });
         }
       };
 
       ws.onerror = () => {};
       ws.onclose = () => {
+        if (__DEV__) {
+          console.log("[ws.mobile] close", { eventId, baseUrl });
+        }
         if (!isActive) return;
         scheduleReconnect();
       };
@@ -131,7 +229,7 @@ export function useTakeoutRealtime(
   return { lockMap };
 }
 
-/** Canal WS para notificação de mudança na lista de eventos (arquivar/apagar/desarquivar no desktop). */
+/** WS channel for desktop event list changes (archive/delete/unarchive). */
 export const EVENTS_LIST_CHANNEL = "_events";
 
 /**
@@ -143,6 +241,7 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!baseUrl || !deviceId) return;
@@ -181,29 +280,44 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
     };
 
     const connect = () => {
-      ws = new WebSocket(wsUrl(baseUrl, EVENTS_LIST_CHANNEL, deviceId));
+      const lastSeq = lastSeqRef.current != null ? String(lastSeqRef.current) : undefined;
+      ws = new WebSocket(wsUrl(baseUrl, EVENTS_LIST_CHANNEL, deviceId, lastSeq));
+      if (__DEV__) {
+        console.log("[ws.mobile.events] connect", { baseUrl, lastSeq });
+      }
       resetHeartbeatTimer();
 
       ws.onopen = () => {
+        if (__DEV__) {
+          console.log("[ws.mobile.events] open", { baseUrl });
+        }
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
         resetHeartbeatTimer();
       };
 
       ws.onmessage = (event) => {
         resetHeartbeatTimer();
-        try {
-          const data = JSON.parse(event.data as string) as WsTakeoutMessage;
-          if (data.type === "heartbeat") return;
-          if (data.type === "events_list_changed") {
-            queryClient.invalidateQueries({ queryKey: ["takeout-events"] });
-          }
-        } catch {
-          // ignore
+        const data = parseRealtimeMessageData(event.data);
+        if (data == null) return;
+        if (data.type === "heartbeat") return;
+        const seq = getMessageSeq(data);
+        if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
+          lastSeqRef.current = seq;
+        }
+        if (__DEV__) {
+          console.log("[ws.mobile.events] message", { type: data.type, seq });
+        }
+        const invalidation = getRealtimeInvalidation(data);
+        if (invalidation.invalidateEvents) {
+          queryClient.invalidateQueries({ queryKey: ["takeout-events"] });
         }
       };
 
       ws.onerror = () => {};
       ws.onclose = () => {
+        if (__DEV__) {
+          console.log("[ws.mobile.events] close", { baseUrl });
+        }
         if (!isActive) return;
         scheduleReconnect();
       };

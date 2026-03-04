@@ -271,6 +271,67 @@ async fn events_list(
 
 const EVENTS_LIST_CHANNEL: &str = "_events";
 
+fn broadcast_events_list_changed(state: &AppState) {
+    let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
+    state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+}
+
+fn broadcast_participant_updated(
+    state: &AppState,
+    event_id: &str,
+    participant_id: &str,
+    ticket_id: Option<&str>,
+    source_type: &str,
+) {
+    println!(
+        "[ws.broadcast] type=participant_updated event_id={} participant_id={} ticket_id={} source_type={} ws_channel={} broadcast_ok=true",
+        event_id,
+        participant_id,
+        ticket_id.unwrap_or_default(),
+        source_type,
+        event_id
+    );
+    let msg = serde_json::json!({
+      "type": "participant_updated",
+      "event_id": event_id,
+      "participant_id": participant_id,
+      "ticket_id": ticket_id,
+      "source_type": source_type
+    })
+    .to_string();
+    state.ws_registry.broadcast(event_id, &msg);
+}
+
+fn broadcast_participant_checked_in(
+    state: &AppState,
+    event_id: &str,
+    ticket_id: Option<&str>,
+    request_id: Option<&str>,
+    participant_id: Option<&str>,
+    device_id: Option<&str>,
+    source_type: &str,
+) {
+    println!(
+        "[ws.broadcast] type=participant_checked_in event_id={} participant_id={} ticket_id={} source_type={} ws_channel={} broadcast_ok=true",
+        event_id,
+        participant_id.unwrap_or_default(),
+        ticket_id.unwrap_or_default(),
+        source_type,
+        event_id
+    );
+    let msg = serde_json::json!({
+      "type": "participant_checked_in",
+      "event_id": event_id,
+      "ticket_id": ticket_id,
+      "request_id": request_id,
+      "participant_id": participant_id,
+      "device_id": device_id,
+      "source_type": source_type
+    })
+    .to_string();
+    state.ws_registry.broadcast(event_id, &msg);
+}
+
 async fn events_archive(
     State(state): State<AppState>,
     Path(event_id): Path<String>,
@@ -278,8 +339,7 @@ async fn events_archive(
     match EventsRepository::archive_event(&state.pool, &event_id) {
         Ok(n) => {
             if n > 0 {
-                let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
-                state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+                broadcast_events_list_changed(&state);
             }
             (
                 StatusCode::OK,
@@ -302,8 +362,7 @@ async fn events_unarchive(
     match EventsRepository::unarchive_event(&state.pool, &event_id) {
         Ok(n) => {
             if n > 0 {
-                let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
-                state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+                broadcast_events_list_changed(&state);
             }
             (
                 StatusCode::OK,
@@ -325,8 +384,7 @@ async fn events_delete(
 ) -> impl IntoResponse {
     match EventsRepository::delete_event(&state.pool, &event_id) {
         Ok(()) => {
-            let msg = serde_json::json!({ "type": "events_list_changed" }).to_string();
-            state.ws_registry.broadcast(EVENTS_LIST_CHANNEL, &msg);
+            broadcast_events_list_changed(&state);
             (StatusCode::OK, Json(serde_json::json!({ "deleted": true }))).into_response()
         }
         Err(e) => (
@@ -400,7 +458,35 @@ async fn events_participants_update(
         payload.birth_date.trim(),
         payload.ticket_type.trim(),
     ) {
-        Ok(updated) => (StatusCode::OK, Json(updated)).into_response(),
+        Ok(updated) => {
+            println!(
+                "[participant.update] source_type=json_sync event_id={} participant_id={} ticket_id={} ws_channel={}",
+                event_id,
+                updated.id,
+                updated.ticket_id,
+                event_id
+            );
+            let payload_json = serde_json::json!({
+              "participant_id": updated.id.clone(),
+              "ticket_id": updated.ticket_id.clone(),
+              "source_type": "json_sync"
+            })
+            .to_string();
+            let _ = EventLogRepository::insert(
+                &state.pool,
+                &event_id,
+                "participant_updated",
+                Some(&payload_json),
+            );
+            broadcast_participant_updated(
+                &state,
+                &event_id,
+                &updated.id,
+                Some(&updated.ticket_id),
+                "json_sync",
+            );
+            (StatusCode::OK, Json(updated)).into_response()
+        },
         Err(UpdateParticipantError::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": "participant not found" })),
@@ -497,12 +583,58 @@ async fn ws_handler(
 ) -> impl IntoResponse {
     let event_id = q.event_id.clone();
     let registry = state.ws_registry.clone();
-    ws.on_upgrade(move |socket| handle_ws_socket(socket, event_id, registry))
+    let pool = state.pool.clone();
+    let last_seq = q.last_seq.as_deref().and_then(|s| s.parse::<i64>().ok());
+    ws.on_upgrade(move |socket| handle_ws_socket(socket, event_id, registry, pool, last_seq))
 }
 
-async fn handle_ws_socket(socket: WebSocket, event_id: String, registry: Arc<WsRegistry>) {
+fn load_replay_messages(pool: &DbPool, event_id: &str, last_seq: i64) -> Vec<String> {
+    match EventLogRepository::list_since(pool, event_id, last_seq) {
+        Ok(events) => events
+            .into_iter()
+            .map(|ev| {
+                let mut payload = serde_json::json!({
+                    "type": ev.kind,
+                    "event_id": ev.event_id,
+                    "seq": ev.seq,
+                    "created_at": ev.created_at,
+                });
+                if let Some(raw) = ev.payload_json.as_deref() {
+                    if let Ok(extra) = serde_json::from_str::<serde_json::Value>(raw) {
+                        if let (Some(obj), Some(extra_obj)) =
+                            (payload.as_object_mut(), extra.as_object())
+                        {
+                            for (k, v) in extra_obj {
+                                obj.insert(k.clone(), v.clone());
+                            }
+                        }
+                    }
+                }
+                payload.to_string()
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+async fn handle_ws_socket(
+    socket: WebSocket,
+    event_id: String,
+    registry: Arc<WsRegistry>,
+    pool: Arc<DbPool>,
+    last_seq: Option<i64>,
+) {
     let (id, mut rx) = registry.register(event_id.clone());
     let mut socket = socket;
+    if let Some(since) = last_seq {
+        let replay_messages = load_replay_messages(&pool, &event_id, since);
+        for msg in replay_messages {
+            if socket.send(axum::extract::ws::Message::Text(msg.into())).await.is_err() {
+                registry.unregister(&event_id, id);
+                return;
+            }
+        }
+    }
     let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(30));
     loop {
         tokio::select! {
@@ -688,8 +820,10 @@ async fn takeout_confirm(
                     &payload.ticket_id,
                 ) {
                     let payload_json = serde_json::json!({
-                      "ticket_id": payload.ticket_id,
-                      "request_id": payload.request_id
+                      "ticket_id": payload.ticket_id.clone(),
+                      "request_id": payload.request_id.clone(),
+                      "event_id": ev_id,
+                      "source_type": "json_sync"
                     })
                     .to_string();
                     let _ = EventLogRepository::insert(
@@ -698,12 +832,15 @@ async fn takeout_confirm(
                         "participant_checked_in",
                         Some(&payload_json),
                     );
-                    let msg = serde_json::json!({
-                      "type": "participant_checked_in",
-                      "ticket_id": payload.ticket_id,
-                      "request_id": payload.request_id
-                    });
-                    state.ws_registry.broadcast(&ev_id, &msg.to_string());
+                    broadcast_participant_checked_in(
+                        &state,
+                        &ev_id,
+                        Some(&payload.ticket_id),
+                        Some(&payload.request_id),
+                        None,
+                        None,
+                        "json_sync",
+                    );
                 }
             }
             (StatusCode::OK, Json(r)).into_response()
@@ -841,7 +978,12 @@ async fn admin_import_legacy_csv(
         &event_start_date,
         &csv_content,
     ) {
-        Ok(result) => (StatusCode::OK, Json(result)).into_response(),
+        Ok(result) => {
+            if result.imported > 0 {
+                broadcast_events_list_changed(&state);
+            }
+            (StatusCode::OK, Json(result)).into_response()
+        },
         Err(e) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             Json(serde_json::json!({ "error": e })),
@@ -885,7 +1027,35 @@ async fn events_legacy_participants_update(
         payload.birth_date.trim(),
         payload.ticket_type.trim(),
     ) {
-        Ok(updated) => (StatusCode::OK, Json(updated)).into_response(),
+        Ok(updated) => {
+            println!(
+                "[participant.update] source_type=legacy_csv event_id={} participant_id={} ticket_id={} ws_channel={}",
+                event_id,
+                updated.id,
+                updated.id,
+                event_id
+            );
+            let payload_json = serde_json::json!({
+              "participant_id": updated.id.clone(),
+              "ticket_id": updated.id.clone(),
+              "source_type": "legacy_csv"
+            })
+            .to_string();
+            let _ = EventLogRepository::insert(
+                &state.pool,
+                &event_id,
+                "participant_updated",
+                Some(&payload_json),
+            );
+            broadcast_participant_updated(
+                &state,
+                &event_id,
+                &updated.id,
+                Some(&updated.id),
+                "legacy_csv",
+            );
+            (StatusCode::OK, Json(updated)).into_response()
+        },
         Err(UpdateLegacyParticipantError::NotFound) => (
             StatusCode::NOT_FOUND,
             Json(serde_json::json!({ "error": "participant not found" })),
@@ -979,11 +1149,43 @@ async fn takeout_confirm_legacy(
         &payload.device_id,
         payload.payload_json.as_deref(),
     ) {
-        Ok(crate::api::repository::ConfirmAtomicResult::Confirmed) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "status": "CONFIRMED" })),
-        )
-            .into_response(),
+        Ok(crate::api::repository::ConfirmAtomicResult::Confirmed) => {
+            println!(
+                "[participant.confirm] source_type=legacy_csv event_id={} participant_id={} ticket_id={} ws_channel={}",
+                payload.event_id,
+                payload.participant_id,
+                payload.participant_id,
+                payload.event_id
+            );
+            let payload_json = serde_json::json!({
+              "participant_id": payload.participant_id.clone(),
+              "request_id": payload.request_id.clone(),
+              "event_id": payload.event_id.clone(),
+              "device_id": payload.device_id.clone(),
+              "source_type": "legacy_csv"
+            })
+            .to_string();
+            let _ = EventLogRepository::insert(
+                &state.pool,
+                &payload.event_id,
+                "participant_checked_in",
+                Some(&payload_json),
+            );
+            broadcast_participant_checked_in(
+                &state,
+                &payload.event_id,
+                Some(&payload.participant_id),
+                Some(&payload.request_id),
+                Some(&payload.participant_id),
+                Some(&payload.device_id),
+                "legacy_csv",
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "status": "CONFIRMED" })),
+            )
+                .into_response()
+        },
         Ok(crate::api::repository::ConfirmAtomicResult::Duplicate) => (
             StatusCode::OK,
             Json(serde_json::json!({ "status": "DUPLICATE" })),
@@ -1005,6 +1207,45 @@ async fn takeout_confirm_legacy(
             Json(serde_json::json!({ "error": e.to_string() })),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod ws_replay_tests {
+    use super::load_replay_messages;
+    use crate::api::db::DbPool;
+    use crate::api::repository::EventLogRepository;
+
+    #[test]
+    fn replay_loads_participant_updated_after_since_seq() {
+        let pool = DbPool::open_in_memory().unwrap();
+        let event_id = "ev-replay";
+        let first_seq = EventLogRepository::insert(
+            &pool,
+            event_id,
+            "participant_updated",
+            Some(r#"{"participant_id":"p1","ticket_id":"t1","source_type":"json_sync"}"#),
+        )
+        .unwrap();
+        let _second_seq = EventLogRepository::insert(
+            &pool,
+            event_id,
+            "participant_updated",
+            Some(r#"{"participant_id":"p2","ticket_id":"t2","source_type":"json_sync"}"#),
+        )
+        .unwrap();
+
+        let replay = load_replay_messages(&pool, event_id, first_seq);
+        assert_eq!(replay.len(), 1);
+        let json: serde_json::Value = serde_json::from_str(&replay[0]).unwrap();
+        assert_eq!(
+            json.get("type").and_then(|v| v.as_str()),
+            Some("participant_updated")
+        );
+        assert_eq!(
+            json.get("participant_id").and_then(|v| v.as_str()),
+            Some("p2")
+        );
     }
 }
 
@@ -1111,6 +1352,7 @@ async fn sync_pull(
                 )
                     .into_response();
             }
+            broadcast_events_list_changed(&state);
             (StatusCode::OK, Json(pull_response)).into_response()
         }
         Err(e) => (
@@ -1133,7 +1375,10 @@ async fn sync_import(
             .into_response();
     }
     match crate::api::repository::import_pull_to_db(&state.pool, &body) {
-        Ok(()) => (StatusCode::OK, Json(body)).into_response(),
+        Ok(()) => {
+            broadcast_events_list_changed(&state);
+            (StatusCode::OK, Json(body)).into_response()
+        },
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "success": false, "reason": e })),

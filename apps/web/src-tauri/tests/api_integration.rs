@@ -21,6 +21,35 @@ fn app() -> axum::Router {
     router(state)
 }
 
+fn app_with_registry() -> (axum::Router, Arc<WsRegistry>) {
+    let pool = Arc::new(DbPool::open_in_memory().expect("mem db"));
+    let ws_registry = Arc::new(WsRegistry::new());
+    let state = AppState {
+        pool,
+        base_url: "http://127.0.0.1:5555".to_string(),
+        ws_registry: ws_registry.clone(),
+    };
+    (router(state), ws_registry)
+}
+
+fn app_with_seeded_pool_and_registry() -> (axum::Router, Arc<DbPool>, Arc<WsRegistry>) {
+    let pool = Arc::new(DbPool::open_in_memory().expect("mem db"));
+    {
+        let conn = pool.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO events (event_id, name, imported_at) VALUES ('ev1', 'Event 1', '2024-01-01')",
+            [],
+        )
+        .unwrap();
+    }
+    let ws_registry = Arc::new(WsRegistry::new());
+    let state = AppState {
+        pool: pool.clone(),
+        base_url: "http://127.0.0.1:5555".to_string(),
+        ws_registry: ws_registry.clone(),
+    };
+    (router(state), pool, ws_registry)
+}
 fn app_with_seeded_pool() -> (axum::Router, Arc<DbPool>) {
     let pool = Arc::new(DbPool::open_in_memory().expect("mem db"));
     {
@@ -151,7 +180,7 @@ async fn participants_search_by_event_supports_modes_and_validation() {
               "ticketId": "cat-5k",
               "ticketName": "5K",
               "qrCode": "QR-JOAO",
-              "participantName": "JoÃ£o Silva",
+              "participantName": "Joao Silva",
               "cpf": "123.456.789-00",
               "birthDate": "1990-01-01",
               "age": 35,
@@ -456,7 +485,7 @@ async fn participants_update_json_sync_returns_400_404_and_409() {
 async fn participants_update_legacy_updates_fields_and_blocks_confirmed() {
     let app = app();
     let boundary = "----takeout-legacy-boundary-edit";
-    let csv = "Número,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araújo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araujo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
     let body = format!(
     "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-edit\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado Edit\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
     b = boundary
@@ -890,7 +919,7 @@ async fn sync_import_with_repeated_ticket_id_keeps_all_participants_and_allows_t
 async fn legacy_csv_import_endpoint_accepts_valid_file_and_returns_summary() {
     let app = app();
     let boundary = "----takeout-legacy-boundary";
-    let csv = "NÃºmero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima AraÃºjo,Masculino,17979086937,08/03/2000,5KM,EXG,\n2,DÃ©bora GonÃ§alves Barbosa,Feminino,16212872627,05/05/2002,5KM,P,PoÃ§os Running Club\n";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araujo,Masculino,17979086937,08/03/2000,5KM,EXG,\n2,Debora Goncalves Barbosa,Feminino,16212872627,05/05/2002,5KM,P,Pocos Running Club\n";
     let body = format!(
     "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
     b = boundary
@@ -914,12 +943,11 @@ async fn legacy_csv_import_endpoint_accepts_valid_file_and_returns_summary() {
         0
     );
 }
-
 #[tokio::test]
 async fn legacy_participants_endpoints_list_search_and_confirm_are_available() {
     let app = app();
     let boundary = "----takeout-legacy-boundary";
-    let csv = "NÃºmero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima AraÃºjo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araujo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
     let body = format!(
     "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-2\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado 2\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-16\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
     b = boundary
@@ -982,7 +1010,6 @@ async fn legacy_participants_endpoints_list_search_and_confirm_are_available() {
         Some("CONFIRMED")
     );
 }
-
 #[tokio::test]
 async fn legacy_csv_import_rejects_invalid_header() {
     let app = app();
@@ -1003,4 +1030,352 @@ async fn legacy_csv_import_rejects_invalid_header() {
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn participants_update_json_sync_emits_ws_participant_updated() {
+    let (app, ws_registry) = app_with_registry();
+
+    import_event(
+        &app,
+        serde_json::json!({
+          "eventId": "ev-edit-json-ws",
+          "event": {
+            "id": "ev-edit-json-ws",
+            "name": "Edit JSON WS",
+            "startDate": "2026-02-23T09:00:00.000Z",
+            "endDate": null,
+            "startTime": "09:00"
+          },
+          "exportedAt": "2026-02-23T12:00:00.000Z",
+          "customForm": [],
+          "participants": [
+            {
+              "seatId": "seat-edit-ws",
+              "ticketId": "cat-5k",
+              "ticketName": "5K",
+              "qrCode": "QR-EDIT-WS",
+              "participantName": "Nome Antigo",
+              "cpf": "123.456.789-00",
+              "birthDate": "1990-01-01",
+              "age": 35,
+              "customFormResponses": [],
+              "checkinDone": false,
+              "checkedInAt": null
+            }
+          ],
+          "checkins": []
+        }),
+    )
+    .await;
+
+    let (_id, mut rx) = ws_registry.register("ev-edit-json-ws".to_string());
+
+    let update_req = Request::builder()
+        .uri("/events/ev-edit-json-ws/participants/seat-edit-ws")
+        .method("PUT")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "name": "Nome Novo",
+              "birthDate": "1991-02-03",
+              "ticketType": "10K"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let update_res = app.clone().oneshot(update_req).await.unwrap();
+    assert_eq!(update_res.status(), StatusCode::OK);
+
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json.get("type").and_then(|v| v.as_str()), Some("participant_updated"));
+    assert_eq!(
+        json.get("participant_id").and_then(|v| v.as_str()),
+        Some("seat-edit-ws")
+    );
+    assert_eq!(json.get("ticket_id").and_then(|v| v.as_str()), Some("seat-edit-ws"));
+    assert_eq!(json.get("source_type").and_then(|v| v.as_str()), Some("json_sync"));
+}
+
+#[tokio::test]
+async fn participants_update_legacy_emits_ws_participant_updated() {
+    let (app, ws_registry) = app_with_registry();
+
+    let boundary = "----takeout-legacy-boundary-edit-ws";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araujo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+    let body = format!(
+      "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-ws\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado WS\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+      b = boundary
+    );
+    let import_req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let import_res = app.clone().oneshot(import_req).await.unwrap();
+    assert_eq!(import_res.status(), StatusCode::OK);
+
+    let list_req = Request::builder()
+        .uri("/events/ev-legacy-ws/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_body = body_bytes(list_res.into_body()).await;
+    let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+    let participant_id = list_json
+        .as_array()
+        .unwrap()
+        .first()
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    let (_id, mut rx) = ws_registry.register("ev-legacy-ws".to_string());
+
+    let update_req = Request::builder()
+        .uri(format!(
+            "/events/ev-legacy-ws/legacy-participants/{}",
+            participant_id
+        ))
+        .method("PUT")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "name": "Nome Legado Novo",
+              "birthDate": "2001-04-09",
+              "ticketType": "10KM"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let update_res = app.clone().oneshot(update_req).await.unwrap();
+    assert_eq!(update_res.status(), StatusCode::OK);
+
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json.get("type").and_then(|v| v.as_str()), Some("participant_updated"));
+    assert_eq!(
+        json.get("participant_id").and_then(|v| v.as_str()),
+        Some(participant_id.as_str())
+    );
+    assert_eq!(json.get("source_type").and_then(|v| v.as_str()), Some("legacy_csv"));
+}
+
+#[tokio::test]
+async fn takeout_confirm_legacy_confirmed_emits_ws_participant_checked_in() {
+    let (app, ws_registry) = app_with_registry();
+
+    let boundary = "----takeout-legacy-boundary-confirm-ws";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araujo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+    let body = format!(
+      "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-confirm-ws\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado Confirm WS\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+      b = boundary
+    );
+    let import_req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let import_res = app.clone().oneshot(import_req).await.unwrap();
+    assert_eq!(import_res.status(), StatusCode::OK);
+
+    let list_req = Request::builder()
+        .uri("/events/ev-legacy-confirm-ws/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_body = body_bytes(list_res.into_body()).await;
+    let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+    let participant_id = list_json
+        .as_array()
+        .unwrap()
+        .first()
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    let (_id, mut rx) = ws_registry.register("ev-legacy-confirm-ws".to_string());
+
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let confirm_req = Request::builder()
+        .uri("/takeout/confirm/legacy")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": request_id,
+              "event_id": "ev-legacy-confirm-ws",
+              "participant_id": participant_id,
+              "device_id": "mobile-legacy"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let confirm_res = app.clone().oneshot(confirm_req).await.unwrap();
+    assert_eq!(confirm_res.status(), StatusCode::OK);
+
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(
+        json.get("type").and_then(|v| v.as_str()),
+        Some("participant_checked_in")
+    );
+    assert_eq!(
+        json.get("event_id").and_then(|v| v.as_str()),
+        Some("ev-legacy-confirm-ws")
+    );
+    assert_eq!(json.get("source_type").and_then(|v| v.as_str()), Some("legacy_csv"));
+}
+
+#[tokio::test]
+async fn sync_import_emits_ws_events_list_changed() {
+    let (app, ws_registry) = app_with_registry();
+    let (_id, mut rx) = ws_registry.register("_events".to_string());
+
+    let import_body = serde_json::json!({
+      "eventId": "ev-sync-ws",
+      "event": {
+        "id": "ev-sync-ws",
+        "name": "Sync WS Event",
+        "startDate": "2026-02-23T09:00:00.000Z",
+        "endDate": null,
+        "startTime": "09:00"
+      },
+      "exportedAt": "2026-02-23T12:00:00.000Z",
+      "customForm": [],
+      "participants": [],
+      "checkins": []
+    });
+
+    let req = Request::builder()
+        .uri("/sync/import")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(serde_json::to_vec(&import_body).unwrap()))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json.get("type").and_then(|v| v.as_str()), Some("events_list_changed"));
+}
+
+#[tokio::test]
+async fn legacy_csv_import_emits_ws_events_list_changed() {
+    let (app, ws_registry) = app_with_registry();
+    let (_id, mut rx) = ws_registry.register("_events".to_string());
+
+    let boundary = "----takeout-legacy-boundary-events-ws";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araujo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+    let body = format!(
+      "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-events-ws\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado WS\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+      b = boundary
+    );
+    let req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+
+    let msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let json: serde_json::Value = serde_json::from_str(&msg).unwrap();
+    assert_eq!(json.get("type").and_then(|v| v.as_str()), Some("events_list_changed"));
+}
+
+#[tokio::test]
+async fn events_archive_unarchive_delete_emit_ws_events_list_changed() {
+    let (app, _pool, ws_registry) = app_with_seeded_pool_and_registry();
+    let (_id, mut rx) = ws_registry.register("_events".to_string());
+
+    let archive_req = Request::builder()
+        .uri("/events/ev1/archive")
+        .method("POST")
+        .body(Body::empty())
+        .unwrap();
+    let archive_res = app.clone().oneshot(archive_req).await.unwrap();
+    assert_eq!(archive_res.status(), StatusCode::OK);
+    let archive_msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&archive_msg)
+            .unwrap()
+            .get("type")
+            .and_then(|v| v.as_str()),
+        Some("events_list_changed")
+    );
+
+    let unarchive_req = Request::builder()
+        .uri("/events/ev1/unarchive")
+        .method("POST")
+        .body(Body::empty())
+        .unwrap();
+    let unarchive_res = app.clone().oneshot(unarchive_req).await.unwrap();
+    assert_eq!(unarchive_res.status(), StatusCode::OK);
+    let unarchive_msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&unarchive_msg)
+            .unwrap()
+            .get("type")
+            .and_then(|v| v.as_str()),
+        Some("events_list_changed")
+    );
+
+    let delete_req = Request::builder()
+        .uri("/events/ev1")
+        .method("DELETE")
+        .body(Body::empty())
+        .unwrap();
+    let delete_res = app.clone().oneshot(delete_req).await.unwrap();
+    assert_eq!(delete_res.status(), StatusCode::OK);
+    let delete_msg = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&delete_msg)
+            .unwrap()
+            .get("type")
+            .and_then(|v| v.as_str()),
+        Some("events_list_changed")
+    );
 }

@@ -129,6 +129,15 @@ export type WsTakeoutMessage =
       request_id?: string;
       participant_id?: string;
       device_id?: string;
+      event_id?: string;
+      source_type?: "json_sync" | "legacy_csv";
+    }
+  | {
+      type: "participant_updated";
+      event_id?: string;
+      participant_id: string;
+      ticket_id?: string;
+      source_type?: "json_sync" | "legacy_csv";
     }
   | {
       type: "lock_acquired";

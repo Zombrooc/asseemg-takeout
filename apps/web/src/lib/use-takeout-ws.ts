@@ -83,7 +83,7 @@ export function useTakeoutWs(eventId: string | undefined): void {
         try {
           const data = JSON.parse(event.data as string) as WsTakeoutMessage;
           if (data.type === "heartbeat") return;
-          if (data.type === "participant_checked_in") {
+          if (data.type === "participant_checked_in" || data.type === "participant_updated") {
             const id = eventIdRef.current;
             if (id) {
               queryClient.invalidateQueries({ queryKey: ["takeout", "events", id, "participants"] });
