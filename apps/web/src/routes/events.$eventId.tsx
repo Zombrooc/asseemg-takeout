@@ -1,4 +1,4 @@
-﻿import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -57,6 +57,58 @@ export function participantMatchesSearch(participant: EventParticipant, query: s
   });
 }
 
+export function getTicketTypeOptions(participants: EventParticipant[]): string[] {
+  const options = new Set<string>();
+  for (const participant of participants) {
+    const value = participant.ticketName?.trim();
+    if (value) options.add(value);
+  }
+  return Array.from(options).sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
+
+export function resolveInitialTicketType(
+  participant: EventParticipant,
+  ticketTypeOptions: string[]
+): string {
+  const currentTicketType = participant.ticketName?.trim();
+  if (currentTicketType && ticketTypeOptions.includes(currentTicketType)) {
+    return currentTicketType;
+  }
+  return ticketTypeOptions[0] ?? "";
+}
+
+export function getTodayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function isBirthDateInAllowedRange(
+  value: string,
+  minDate = "1900-01-01",
+  maxDate = getTodayIsoDate()
+): boolean {
+  const normalized = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return false;
+  if (normalized < minDate || normalized > maxDate) return false;
+
+  const parsed = new Date(`${normalized}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().slice(0, 10) === normalized;
+}
+
+export function getParticipantStats(participants: EventParticipant[]): {
+  total: number;
+  confirmed: number;
+  pending: number;
+} {
+  const total = participants.length;
+  const confirmed = participants.filter((p) => p.checkinDone).length;
+  return {
+    total,
+    confirmed,
+    pending: Math.max(total - confirmed, 0),
+  };
+}
+
 function EventDetailPage() {
   const { eventId } = Route.useParams();
   const queryClient = useQueryClient();
@@ -65,6 +117,8 @@ function EventDetailPage() {
   const [editName, setEditName] = useState("");
   const [editBirthDate, setEditBirthDate] = useState("");
   const [editTicketType, setEditTicketType] = useState("");
+  const minBirthDate = "1900-01-01";
+  const maxBirthDate = useMemo(() => getTodayIsoDate(), []);
 
   useTakeoutWs(eventId);
 
@@ -141,23 +195,36 @@ function EventDetailPage() {
     },
   });
 
+  const ticketTypeOptions = useMemo(() => getTicketTypeOptions(participants), [participants]);
+
   useEffect(() => {
     if (!editingParticipant) return;
     setEditName(editingParticipant.name ?? "");
     setEditBirthDate(editingParticipant.birthDate ?? "");
-    setEditTicketType(editingParticipant.ticketName ?? "");
-  }, [editingParticipant]);
+    setEditTicketType(resolveInitialTicketType(editingParticipant, ticketTypeOptions));
+  }, [editingParticipant, ticketTypeOptions]);
 
   const filteredParticipants = useMemo(
     () => participants.filter((participant) => participantMatchesSearch(participant, searchQuery)),
     [participants, searchQuery]
   );
 
-  const confirmedCount = filteredParticipants.filter((p) => p.checkinDone).length;
-  const pendingCount = filteredParticipants.length - confirmedCount;
+  const realStats = useMemo(() => getParticipantStats(participants), [participants]);
 
   const handleSaveEdit = () => {
     if (!editingParticipant) return;
+    if (!isBirthDateInAllowedRange(editBirthDate, minBirthDate, maxBirthDate)) {
+      toast.error(`Data de nascimento invalida. Use uma data entre ${minBirthDate} e ${maxBirthDate}.`);
+      return;
+    }
+    if (ticketTypeOptions.length === 0) {
+      toast.error("Nao ha tipos de ingresso disponiveis para este evento.");
+      return;
+    }
+    if (!ticketTypeOptions.includes(editTicketType.trim())) {
+      toast.error("Selecione um tipo de ingresso valido.");
+      return;
+    }
     editMutation.mutate(editingParticipant);
   };
 
@@ -221,8 +288,9 @@ function EventDetailPage() {
         <>
           <EventSummary
             totalParticipants={filteredParticipants.length}
-            confirmedCount={confirmedCount}
-            pendingCount={pendingCount}
+            confirmedCount={realStats.confirmed}
+            pendingCount={realStats.pending}
+            rateBaseTotal={realStats.total}
           />
           <ParticipantsTable
             eventName={eventName}
@@ -253,26 +321,43 @@ function EventDetailPage() {
               <Label htmlFor="edit-birth-date">Data de nascimento</Label>
               <Input
                 id="edit-birth-date"
+                type="date"
                 value={editBirthDate}
                 onChange={(e) => setEditBirthDate(e.target.value)}
-                placeholder="YYYY-MM-DD"
+                min={minBirthDate}
+                max={maxBirthDate}
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-ticket-type">Tipo de ingresso</Label>
-              <Input
+              <select
                 id="edit-ticket-type"
+                aria-label="Tipo de ingresso"
+                className="h-10 w-full rounded-md border bg-background px-3"
                 value={editTicketType}
                 onChange={(e) => setEditTicketType(e.target.value)}
-                placeholder="Ex.: 5KM, 10KM"
-              />
+              >
+                {ticketTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+              {ticketTypeOptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhum tipo de ingresso disponivel para este evento.
+                </p>
+              ) : null}
             </div>
 
             <div className="flex items-center justify-end gap-2">
               <Button variant="ghost" onClick={() => setEditingParticipant(null)} disabled={editMutation.isPending}>
                 Cancelar
               </Button>
-              <Button onClick={handleSaveEdit} disabled={editMutation.isPending}>
+              <Button
+                onClick={handleSaveEdit}
+                disabled={editMutation.isPending || ticketTypeOptions.length === 0}
+              >
                 {editMutation.isPending ? "Salvando..." : "Salvar"}
               </Button>
             </div>
@@ -301,4 +386,3 @@ export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): Eve
     ],
   };
 }
-

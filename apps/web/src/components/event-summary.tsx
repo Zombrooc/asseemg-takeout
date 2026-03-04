@@ -5,16 +5,19 @@ export interface EventSummaryProps {
   totalParticipants: number;
   confirmedCount: number;
   pendingCount: number;
+  rateBaseTotal?: number;
 }
 
 export function EventSummary({
   totalParticipants,
   confirmedCount,
   pendingCount,
+  rateBaseTotal,
 }: EventSummaryProps) {
+  const rateTotal = rateBaseTotal ?? totalParticipants;
   const rate =
-    totalParticipants > 0
-      ? Math.round((confirmedCount / totalParticipants) * 100)
+    rateTotal > 0
+      ? Math.round((confirmedCount / rateTotal) * 100)
       : 0;
 
   return (
@@ -53,7 +56,7 @@ export function EventSummary({
       <Card>
         <CardContent className="flex flex-col justify-center pt-4">
           <p className="text-2xl font-bold">{rate}%</p>
-          <p className="text-sm text-muted-foreground">Taxa de confirmação</p>
+          <p className="text-sm text-muted-foreground">Taxa de confirmacao</p>
           <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-muted">
             <div
               className="h-full rounded-full bg-primary transition-all"
