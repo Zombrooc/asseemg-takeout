@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { AuditFilters } from "@/components/audit-filters";
 import { AuditLogTable } from "@/components/audit-log-table";
+import { buildAuditCsv, parseAuditRetirantePayload } from "@/lib/audit-utils";
 import { getAudit, type AuditParams } from "@/lib/takeout-api";
 
 export function AuditPage() {
@@ -16,12 +17,17 @@ export function AuditPage() {
   const filteredLogs = useMemo(() => {
     if (!searchQuery.trim()) return logs;
     const q = searchQuery.trim().toLowerCase();
-    return logs.filter(
-      (log) =>
+    return logs.filter((log) => {
+      const retirada = parseAuditRetirantePayload(log.payload_json);
+      return (
         log.ticket_id.toLowerCase().includes(q) ||
         log.device_id.toLowerCase().includes(q) ||
-        log.request_id.toLowerCase().includes(q),
-    );
+        log.request_id.toLowerCase().includes(q) ||
+        log.status.toLowerCase().includes(q) ||
+        (retirada.retiranteNome?.toLowerCase().includes(q) ?? false) ||
+        (retirada.retiranteCpf?.toLowerCase().includes(q) ?? false)
+      );
+    });
   }, [logs, searchQuery]);
 
   const handleClearFilters = () => {
@@ -30,14 +36,7 @@ export function AuditPage() {
   };
 
   const handleExport = () => {
-    const header = "request_id,ticket_id,device_id,status,created_at\n";
-    const rows = filteredLogs
-      .map(
-        (l) =>
-          `${l.request_id},${l.ticket_id},${l.device_id},${l.status},${l.created_at}`,
-      )
-      .join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8" });
+    const blob = new Blob([buildAuditCsv(filteredLogs)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
