@@ -13,8 +13,8 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::api::db::DbPool;
 use crate::api::repository::{
-  EventLogRepository, EventsRepository, LocksRepository, ParticipantSearchMode, ParticipantsRepository,
-  TakeoutRepository,
+  EventLogRepository, EventsRepository, LegacyParticipantSearchMode, LegacyRepository, LocksRepository,
+  ParticipantSearchMode, ParticipantsRepository, TakeoutRepository,
 };
 use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
 use crate::api::services::PairingService;
@@ -56,10 +56,18 @@ pub fn router(state: AppState) -> Router {
     .route("/locks/:participant_id", get(locks_status).delete(locks_release))
     .route("/audit", get(audit))
     .route("/admin/import", post(admin_import))
+    .route("/admin/import/legacy-csv", post(admin_import_legacy_csv))
     .route("/sync/pull", get(sync_pull))
     .route("/sync/events", get(sync_events))
     .route("/sync/import", post(sync_import))
     .route("/sync/push", post(sync_push))
+    .route("/events/:event_id/legacy-participants", get(events_legacy_participants))
+    .route(
+      "/events/:event_id/legacy-participants/search",
+      get(events_legacy_participants_search),
+    )
+    .route("/takeout/confirm/legacy", post(takeout_confirm_legacy))
+    .route("/audit/legacy", get(audit_legacy))
     .layer(cors)
     .with_state(state)
 }
@@ -628,6 +636,219 @@ async fn admin_import(
     Json(serde_json::json!({ "imported": imported, "errors": errors })),
   )
     .into_response()
+}
+
+async fn admin_import_legacy_csv(
+  State(state): State<AppState>,
+  mut multipart: Multipart,
+) -> impl IntoResponse {
+  let mut event_id: Option<String> = None;
+  let mut event_name: Option<String> = None;
+  let mut event_start_date: Option<String> = None;
+  let mut csv_content: Option<String> = None;
+  while let Ok(Some(field)) = multipart.next_field().await {
+    match field.name() {
+      Some("eventId") => {
+        event_id = field.text().await.ok().map(|v| v.trim().to_string());
+      }
+      Some("eventName") => {
+        event_name = field.text().await.ok().map(|v| v.trim().to_string());
+      }
+      Some("eventStartDate") => {
+        event_start_date = field.text().await.ok().map(|v| v.trim().to_string());
+      }
+      Some("file") => {
+        csv_content = field
+          .bytes()
+          .await
+          .ok()
+          .and_then(|v| String::from_utf8(v.to_vec()).ok());
+      }
+      _ => {}
+    }
+  }
+  let Some(event_id) = event_id.filter(|v| !v.is_empty()) else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "eventId is required" })),
+    )
+      .into_response();
+  };
+  let Some(event_name) = event_name.filter(|v| !v.is_empty()) else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "eventName is required" })),
+    )
+      .into_response();
+  };
+  let Some(event_start_date) = event_start_date.filter(|v| !v.is_empty()) else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "eventStartDate is required" })),
+    )
+      .into_response();
+  };
+  let Some(csv_content) = csv_content else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "file is required" })),
+    )
+      .into_response();
+  };
+  match LegacyRepository::import_csv(
+    &state.pool,
+    &event_id,
+    &event_name,
+    &event_start_date,
+    &csv_content,
+  ) {
+    Ok(result) => (StatusCode::OK, Json(result)).into_response(),
+    Err(e) => (
+      StatusCode::UNPROCESSABLE_ENTITY,
+      Json(serde_json::json!({ "error": e })),
+    )
+      .into_response(),
+  }
+}
+
+async fn events_legacy_participants(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+) -> impl IntoResponse {
+  match LegacyRepository::list_participants_by_event(&state.pool, &event_id) {
+    Ok(participants) => (StatusCode::OK, Json(participants)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyParticipantsSearchQuery {
+  q: Option<String>,
+  mode: Option<String>,
+}
+
+async fn events_legacy_participants_search(
+  State(state): State<AppState>,
+  Path(event_id): Path<String>,
+  Query(q): Query<LegacyParticipantsSearchQuery>,
+) -> impl IntoResponse {
+  let query = q.q.unwrap_or_default();
+  let query_trimmed = query.trim().to_string();
+  if query_trimmed.is_empty() {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "q is required" })),
+    )
+      .into_response();
+  }
+  let mode = q.mode.unwrap_or_default();
+  let Some(search_mode) = LegacyParticipantSearchMode::from_str(mode.trim()) else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "invalid mode" })),
+    )
+      .into_response();
+  };
+  match LegacyRepository::search_participants_by_event(&state.pool, &event_id, &query_trimmed, search_mode) {
+    Ok(participants) => (StatusCode::OK, Json(participants)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+#[derive(Clone, serde::Deserialize)]
+struct LegacyConfirmPayload {
+  request_id: String,
+  event_id: String,
+  participant_id: String,
+  device_id: String,
+  #[serde(default)]
+  payload_json: Option<String>,
+}
+
+async fn takeout_confirm_legacy(
+  State(state): State<AppState>,
+  Json(payload): Json<LegacyConfirmPayload>,
+) -> impl IntoResponse {
+  if payload.request_id.trim().is_empty()
+    || payload.event_id.trim().is_empty()
+    || payload.participant_id.trim().is_empty()
+  {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "request_id, event_id and participant_id are required" })),
+    )
+      .into_response();
+  }
+  match LegacyRepository::confirm_atomic(
+    &state.pool,
+    &payload.request_id,
+    &payload.event_id,
+    &payload.participant_id,
+    &payload.device_id,
+    payload.payload_json.as_deref(),
+  ) {
+    Ok(crate::api::repository::ConfirmAtomicResult::Confirmed) => (
+      StatusCode::OK,
+      Json(serde_json::json!({ "status": "CONFIRMED" })),
+    )
+      .into_response(),
+    Ok(crate::api::repository::ConfirmAtomicResult::Duplicate) => (
+      StatusCode::OK,
+      Json(serde_json::json!({ "status": "DUPLICATE" })),
+    )
+      .into_response(),
+    Ok(crate::api::repository::ConfirmAtomicResult::Conflict {
+      existing_request_id,
+    }) => (
+      StatusCode::CONFLICT,
+      Json(serde_json::json!({
+        "status": "CONFLICT",
+        "existing_request_id": existing_request_id,
+        "participant_id": payload.participant_id
+      })),
+    )
+      .into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyAuditQuery {
+  #[serde(rename = "eventId")]
+  event_id: Option<String>,
+}
+
+async fn audit_legacy(
+  State(state): State<AppState>,
+  Query(q): Query<LegacyAuditQuery>,
+) -> impl IntoResponse {
+  let Some(event_id) = q.event_id.filter(|v| !v.is_empty()) else {
+    return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "eventId required" })),
+    )
+      .into_response();
+  };
+  match LegacyRepository::list_audit(&state.pool, &event_id) {
+    Ok(events) => (StatusCode::OK, Json(events)).into_response(),
+    Err(e) => (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      Json(serde_json::json!({ "error": e.to_string() })),
+    )
+      .into_response(),
+  }
 }
 
 #[derive(serde::Deserialize)]

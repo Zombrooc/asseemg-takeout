@@ -5,7 +5,15 @@ import { EventSummary } from "@/components/event-summary";
 import { ParticipantsTable } from "@/components/participants-table";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { cn } from "@/lib/utils";
-import { getEventParticipants, getEvents, postTakeoutConfirm, type EventParticipant } from "@/lib/takeout-api";
+import {
+  getEventParticipants,
+  getEvents,
+  getLegacyEventParticipants,
+  postLegacyTakeoutConfirm,
+  postTakeoutConfirm,
+  type EventParticipant,
+  type LegacyEventParticipant,
+} from "@/lib/takeout-api";
 import { useTakeoutWs } from "@/lib/use-takeout-ws";
 import { toast } from "sonner";
 import { ArrowLeft, RefreshCw } from "lucide-react";
@@ -31,17 +39,30 @@ function EventDetailPage() {
 
   const { data: participants = [], isLoading, refetch } = useQuery({
     queryKey: ["takeout", "events", eventId, "participants"],
-    queryFn: () => getEventParticipants(eventId),
+    queryFn: async () => {
+      if (eventSummary?.sourceType === "legacy_csv") {
+        const rows = await getLegacyEventParticipants(eventId);
+        return rows.map(mapLegacyToEventParticipant);
+      }
+      return getEventParticipants(eventId);
+    },
     refetchInterval: 10_000,
   });
 
   const confirmMutation = useMutation({
     mutationFn: (p: EventParticipant) =>
-      postTakeoutConfirm({
-        request_id: crypto.randomUUID(),
-        ticket_id: p.ticketId,
-        device_id: "web-dashboard",
-      }),
+      eventSummary?.sourceType === "legacy_csv"
+        ? postLegacyTakeoutConfirm({
+            request_id: crypto.randomUUID(),
+            event_id: eventId,
+            participant_id: p.id,
+            device_id: "web-dashboard",
+          })
+        : postTakeoutConfirm({
+            request_id: crypto.randomUUID(),
+            ticket_id: p.ticketId,
+            device_id: "web-dashboard",
+          }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["takeout", "events", eventId, "participants"] });
       toast.success("Check-in confirmado");
@@ -105,4 +126,23 @@ function EventDetailPage() {
       )}
     </main>
   );
+}
+
+export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): EventParticipant {
+  return {
+    id: legacy.id,
+    name: legacy.name,
+    cpf: legacy.cpf,
+    birthDate: legacy.birthDate,
+    ticketId: legacy.id,
+    sourceTicketId: undefined,
+    ticketName: legacy.modality ?? "Legado CSV",
+    qrCode: legacy.id,
+    checkinDone: legacy.checkinDone,
+    customFormResponses: [
+      { name: "sexo", label: "Sexo", type: "text", response: legacy.sex ?? "-" },
+      { name: "camisa", label: "Tamanho da Camisa", type: "text", response: legacy.shirtSize ?? "-" },
+      { name: "equipe", label: "Equipe", type: "text", response: legacy.team ?? "-" },
+    ],
+  };
 }

@@ -18,7 +18,8 @@ CREATE TABLE IF NOT EXISTS events (
   start_date TEXT,
   end_date TEXT,
   start_time TEXT,
-  imported_at TEXT NOT NULL
+  imported_at TEXT NOT NULL,
+  source_type TEXT NOT NULL DEFAULT 'json_sync'
 );
 CREATE TABLE IF NOT EXISTS takeout_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,6 +67,32 @@ CREATE TABLE IF NOT EXISTS locks (
   device_id TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS legacy_participants (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  bib_number INTEGER NOT NULL,
+  full_name TEXT NOT NULL,
+  sex TEXT,
+  cpf_digits TEXT NOT NULL,
+  birth_date_iso TEXT NOT NULL,
+  modality TEXT,
+  shirt_size TEXT,
+  team TEXT,
+  raw_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(event_id, cpf_digits, birth_date_iso)
+);
+CREATE TABLE IF NOT EXISTS legacy_checkins (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id TEXT NOT NULL UNIQUE,
+  event_id TEXT NOT NULL,
+  participant_id TEXT NOT NULL,
+  device_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  payload_json TEXT,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_request_id ON takeout_events(request_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_created_at ON takeout_events(created_at);
@@ -73,6 +100,10 @@ CREATE INDEX IF NOT EXISTS idx_participants_event_id ON participants(event_id);
 CREATE INDEX IF NOT EXISTS idx_participants_cpf ON participants(cpf);
 CREATE INDEX IF NOT EXISTS idx_tickets_code ON tickets(code);
 CREATE INDEX IF NOT EXISTS idx_tickets_participant_id ON tickets(participant_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_participants_event_id ON legacy_participants(event_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_participants_cpf ON legacy_participants(cpf_digits);
+CREATE INDEX IF NOT EXISTS idx_legacy_checkins_event_id ON legacy_checkins(event_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_checkins_participant_id ON legacy_checkins(participant_id);
 ";
 
 pub struct DbPool {
@@ -85,6 +116,10 @@ impl DbPool {
     conn.execute_batch(SCHEMA_SQL)?;
     let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
     let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
+    let _ = conn.execute(
+      "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
+      [],
+    );
     Ok(Self {
       conn: Mutex::new(conn),
     })
@@ -95,6 +130,10 @@ impl DbPool {
     conn.execute_batch(SCHEMA_SQL)?;
     let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
     let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
+    let _ = conn.execute(
+      "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
+      [],
+    );
     Ok(Self {
       conn: Mutex::new(conn),
     })

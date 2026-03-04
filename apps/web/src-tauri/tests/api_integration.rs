@@ -516,3 +516,112 @@ async fn sync_import_with_repeated_ticket_id_keeps_all_participants_and_allows_t
     assert_eq!(confirm_json.get("status").and_then(|v| v.as_str()), Some("CONFIRMED"));
   }
 }
+
+#[tokio::test]
+async fn legacy_csv_import_endpoint_accepts_valid_file_and_returns_summary() {
+  let app = app();
+  let boundary = "----takeout-legacy-boundary";
+  let csv = "Número,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araújo,Masculino,17979086937,08/03/2000,5KM,EXG,\n2,Débora Gonçalves Barbosa,Feminino,16212872627,05/05/2002,5KM,P,Poços Running Club\n";
+  let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+  let req = Request::builder()
+    .uri("/admin/import/legacy-csv")
+    .method("POST")
+    .header(
+      "content-type",
+      format!("multipart/form-data; boundary={}", boundary),
+    )
+    .body(Body::from(body))
+    .unwrap();
+  let res = app.clone().oneshot(req).await.unwrap();
+  assert_eq!(res.status(), StatusCode::OK);
+  let payload = body_bytes(res.into_body()).await;
+  let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+  assert_eq!(json.get("imported").and_then(|v| v.as_i64()), Some(2));
+  assert_eq!(json.get("errors").and_then(|v| v.as_array()).unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn legacy_participants_endpoints_list_search_and_confirm_are_available() {
+  let app = app();
+  let boundary = "----takeout-legacy-boundary";
+  let csv = "Número,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Araújo,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+  let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-2\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado 2\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-16\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+  let import_req = Request::builder()
+    .uri("/admin/import/legacy-csv")
+    .method("POST")
+    .header(
+      "content-type",
+      format!("multipart/form-data; boundary={}", boundary),
+    )
+    .body(Body::from(body))
+    .unwrap();
+  let import_res = app.clone().oneshot(import_req).await.unwrap();
+  assert_eq!(import_res.status(), StatusCode::OK);
+
+  let list_req = Request::builder()
+    .uri("/events/ev-legacy-2/legacy-participants")
+    .body(Body::empty())
+    .unwrap();
+  let list_res = app.clone().oneshot(list_req).await.unwrap();
+  assert_eq!(list_res.status(), StatusCode::OK);
+  let list_body = body_bytes(list_res.into_body()).await;
+  let list_json: serde_json::Value = serde_json::from_slice(&list_body).unwrap();
+  let first = list_json.as_array().unwrap().first().unwrap();
+  let participant_id = first.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+
+  let search_req = Request::builder()
+    .uri("/events/ev-legacy-2/legacy-participants/search?q=thiago&mode=nome")
+    .body(Body::empty())
+    .unwrap();
+  let search_res = app.clone().oneshot(search_req).await.unwrap();
+  assert_eq!(search_res.status(), StatusCode::OK);
+  let search_body = body_bytes(search_res.into_body()).await;
+  let search_json: serde_json::Value = serde_json::from_slice(&search_body).unwrap();
+  assert_eq!(search_json.as_array().unwrap().len(), 1);
+
+  let confirm_body = serde_json::json!({
+    "request_id": uuid::Uuid::new_v4().to_string(),
+    "event_id": "ev-legacy-2",
+    "participant_id": participant_id,
+    "device_id": "mobile-legacy"
+  });
+  let confirm_req = Request::builder()
+    .uri("/takeout/confirm/legacy")
+    .method("POST")
+    .header("content-type", "application/json")
+    .body(Body::from(serde_json::to_vec(&confirm_body).unwrap()))
+    .unwrap();
+  let confirm_res = app.clone().oneshot(confirm_req).await.unwrap();
+  assert_eq!(confirm_res.status(), StatusCode::OK);
+  let confirm_payload = body_bytes(confirm_res.into_body()).await;
+  let confirm_json: serde_json::Value = serde_json::from_slice(&confirm_payload).unwrap();
+  assert_eq!(confirm_json.get("status").and_then(|v| v.as_str()), Some("CONFIRMED"));
+}
+
+#[tokio::test]
+async fn legacy_csv_import_rejects_invalid_header() {
+  let app = app();
+  let boundary = "----takeout-legacy-boundary";
+  let csv = "Numero,Nome,Sexo,CPF,Data de Nascimento,Modalidade,Tamanho da Camisa,Equipe\n1,Ana,Feminino,17979086937,08/03/2000,5KM,P,\n";
+  let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-invalid\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Invalido\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-16\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+  let req = Request::builder()
+    .uri("/admin/import/legacy-csv")
+    .method("POST")
+    .header(
+      "content-type",
+      format!("multipart/form-data; boundary={}", boundary),
+    )
+    .body(Body::from(body))
+    .unwrap();
+  let res = app.oneshot(req).await.unwrap();
+  assert_eq!(res.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}

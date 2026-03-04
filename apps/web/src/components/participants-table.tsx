@@ -31,6 +31,18 @@ export interface ParticipantsTableProps {
   showQrColumn?: boolean;
 }
 
+export function resolveDisplayTicket(participant: EventParticipant): string {
+  const ticketName = participant.ticketName?.trim();
+  const sourceTicketId = participant.sourceTicketId?.trim();
+  if (ticketName) {
+    if (sourceTicketId && !sourceTicketId.startsWith("#")) {
+      return `${sourceTicketId} - ${ticketName}`;
+    }
+    return ticketName;
+  }
+  return sourceTicketId || participant.ticketId || "—";
+}
+
 export function ParticipantsTable({
   eventName,
   participants,
@@ -74,7 +86,7 @@ export function ParticipantsTable({
                 <TableCell className="font-mono text-xs">
                   {formatCpf(p.cpf)}
                 </TableCell>
-                <TableCell>{p.sourceTicketId ?? p.ticketId}</TableCell>
+                <TableCell>{resolveDisplayTicket(p)}</TableCell>
                 {showQrColumn && (
                   <TableCell>
                     {p.qrCode ? (

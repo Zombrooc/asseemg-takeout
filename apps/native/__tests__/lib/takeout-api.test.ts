@@ -193,4 +193,53 @@ describe("createTakeoutClient", () => {
       })
     );
   });
+
+  it("GET /events/:eventId/legacy-participants uses auth and path", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve("[]"),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "legacy-token",
+    });
+    await client.getLegacyEventParticipants("ev-legacy");
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/events/ev-legacy/legacy-participants",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer legacy-token",
+        }),
+      })
+    );
+  });
+
+  it("POST /takeout/confirm/legacy sends participant and event ids", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ status: "CONFIRMED" })),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "legacy-token",
+    });
+    await client.postLegacyTakeoutConfirm({
+      request_id: "req-legacy-1",
+      event_id: "ev-legacy",
+      participant_id: "lp-1",
+      device_id: "dev-1",
+    });
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/takeout/confirm/legacy",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          request_id: "req-legacy-1",
+          event_id: "ev-legacy",
+          participant_id: "lp-1",
+          device_id: "dev-1",
+        }),
+      })
+    );
+  });
 });

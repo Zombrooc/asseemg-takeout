@@ -4,6 +4,10 @@ import type {
   EventParticipant,
   EventSummary,
   HealthResponse,
+  LegacyEventParticipant,
+  LegacyImportResponse,
+  LegacyTakeoutConfirmPayload,
+  LegacyTakeoutConfirmResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   TakeoutConfirmPayload,
@@ -20,6 +24,10 @@ export type {
   EventParticipant,
   EventSummary,
   HealthResponse,
+  LegacyEventParticipant,
+  LegacyImportResponse,
+  LegacyTakeoutConfirmPayload,
+  LegacyTakeoutConfirmResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   TakeoutConfirmPayload,
@@ -101,6 +109,15 @@ export async function postImportJson(data: PullResponse): Promise<PullResponse> 
   return res.json() as Promise<PullResponse>;
 }
 
+export async function postImportLegacyCsv(formData: FormData): Promise<LegacyImportResponse> {
+  const res = await fetch(`${BASE_URL}/admin/import/legacy-csv`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<LegacyImportResponse>;
+}
+
 export async function getEvents(includeArchived?: boolean): Promise<EventSummary[]> {
   const q = includeArchived ? "?includeArchived=true" : "";
   return request<EventSummary[]>(`/events${q}`);
@@ -157,6 +174,35 @@ export async function postTakeoutConfirm(payload: TakeoutConfirmPayload): Promis
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<TakeoutConfirmResponse>;
+}
+
+export async function getLegacyEventParticipants(eventId: string): Promise<LegacyEventParticipant[]> {
+  return request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`);
+}
+
+export async function searchLegacyEventParticipants(
+  eventId: string,
+  params: { q: string; mode: "numero" | "nome" | "cpf" | "birth_date" | "modality" }
+): Promise<LegacyEventParticipant[]> {
+  const query = new URLSearchParams({
+    q: params.q,
+    mode: params.mode,
+  });
+  return request<LegacyEventParticipant[]>(
+    `/events/${encodeURIComponent(eventId)}/legacy-participants/search?${query.toString()}`
+  );
+}
+
+export async function postLegacyTakeoutConfirm(
+  payload: LegacyTakeoutConfirmPayload
+): Promise<LegacyTakeoutConfirmResponse> {
+  const res = await fetch(`${BASE_URL}/takeout/confirm/legacy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<LegacyTakeoutConfirmResponse>;
 }
 
 export function getTakeoutBaseUrl(): string {

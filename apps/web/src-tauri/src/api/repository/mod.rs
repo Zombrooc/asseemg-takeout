@@ -1,5 +1,6 @@
 mod event_log;
 mod events;
+mod legacy;
 mod locks;
 mod pairing;
 mod participants;
@@ -8,6 +9,10 @@ mod takeout;
 
 pub use event_log::{EventLogRow, EventLogRepository};
 pub use events::{EventParticipantRow, EventRow, EventsRepository};
+pub use legacy::{
+  LegacyCheckinRow, LegacyImportResult, LegacyParticipantRow, LegacyParticipantSearchMode,
+  LegacyRepository,
+};
 pub use locks::{AcquireResult, LocksRepository};
 pub use pairing::PairingRepository;
 pub use participants::{ParticipantRow, ParticipantSearchMode, ParticipantsRepository};

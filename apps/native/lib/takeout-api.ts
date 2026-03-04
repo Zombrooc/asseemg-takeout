@@ -4,6 +4,9 @@ import type {
   EventParticipant,
   EventSummary,
   HealthResponse,
+  LegacyEventParticipant,
+  LegacyTakeoutConfirmPayload,
+  LegacyTakeoutConfirmResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   SyncEvent,
@@ -16,11 +19,14 @@ export type {
   ConnectionInfo,
   EventParticipant,
   EventSummary,
+  LegacyEventParticipant,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  LegacyTakeoutConfirmPayload,
+  LegacyTakeoutConfirmResponse,
 };
 
 function ensureSlash(url: string): string {
@@ -61,14 +67,31 @@ export function createTakeoutClient(config: {
     getEvents: () => request<EventSummary[]>("/events"),
     getEventParticipants: (eventId: string) =>
       request<EventParticipant[]>(`/events/${encodeURIComponent(eventId)}/participants`),
+    getLegacyEventParticipants: (eventId: string) =>
+      request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`),
     searchEventParticipants: (eventId: string, q: string, mode: ParticipantSearchMode) => {
       const params = new URLSearchParams({ q, mode });
       return request<EventParticipant[]>(
         `/events/${encodeURIComponent(eventId)}/participants/search?${params.toString()}`
       );
     },
+    searchLegacyEventParticipants: (
+      eventId: string,
+      q: string,
+      mode: "numero" | "nome" | "cpf" | "birth_date" | "modality"
+    ) => {
+      const params = new URLSearchParams({ q, mode });
+      return request<LegacyEventParticipant[]>(
+        `/events/${encodeURIComponent(eventId)}/legacy-participants/search?${params.toString()}`
+      );
+    },
     postTakeoutConfirm: (payload: TakeoutConfirmPayload) =>
       request<TakeoutConfirmResponse>("/takeout/confirm", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    postLegacyTakeoutConfirm: (payload: LegacyTakeoutConfirmPayload) =>
+      request<LegacyTakeoutConfirmResponse>("/takeout/confirm/legacy", {
         method: "POST",
         body: JSON.stringify(payload),
       }),

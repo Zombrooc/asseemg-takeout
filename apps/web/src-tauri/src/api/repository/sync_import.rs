@@ -19,7 +19,7 @@ pub fn import_pull_to_db(pool: &DbPool, pull: &PullResponse) -> Result<(), Strin
   };
   conn
     .execute(
-      "INSERT INTO events (event_id, name, start_date, end_date, start_time, imported_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(event_id) DO UPDATE SET name=?2, start_date=?3, end_date=?4, start_time=?5, imported_at=?6",
+      "INSERT INTO events (event_id, name, start_date, end_date, start_time, imported_at, source_type) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'json_sync') ON CONFLICT(event_id) DO UPDATE SET name=?2, start_date=?3, end_date=?4, start_time=?5, imported_at=?6, source_type='json_sync'",
       params![
         pull.event_id,
         name,

@@ -26,6 +26,7 @@ export type EventSummary = {
   endDate: string | null;
   startTime: string | null;
   importedAt: string;
+  sourceType?: "json_sync" | "legacy_csv";
   archivedAt?: string | null;
 };
 
@@ -59,6 +60,36 @@ export type TakeoutConfirmPayload = {
 };
 
 export type TakeoutConfirmResponse = { status: string };
+
+export type LegacyImportResponse = {
+  imported: number;
+  errors: string[];
+};
+
+export type LegacyEventParticipant = {
+  id: string;
+  bibNumber: number;
+  name: string;
+  sex?: string | null;
+  cpf: string;
+  birthDate: string;
+  modality?: string | null;
+  shirtSize?: string | null;
+  team?: string | null;
+  checkinDone: boolean;
+};
+
+export type LegacyTakeoutConfirmPayload = {
+  request_id: string;
+  event_id: string;
+  participant_id: string;
+  device_id: string;
+  payload_json?: string;
+};
+
+export type LegacyTakeoutConfirmResponse = {
+  status: "CONFIRMED" | "DUPLICATE";
+};
 
 export type TakeoutConfirmConflictResponse = {
   status: string;

@@ -12,6 +12,7 @@ pub struct EventRow {
   pub end_date: Option<String>,
   pub start_time: Option<String>,
   pub imported_at: String,
+  pub source_type: String,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub archived_at: Option<String>,
 }
@@ -48,9 +49,9 @@ impl EventsRepository {
       .lock()
       .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
     let sql = if include_archived {
-      "SELECT event_id, name, start_date, end_date, start_time, imported_at, archived_at FROM events ORDER BY imported_at DESC"
+      "SELECT event_id, name, start_date, end_date, start_time, imported_at, source_type, archived_at FROM events ORDER BY imported_at DESC"
     } else {
-      "SELECT event_id, name, start_date, end_date, start_time, imported_at, archived_at FROM events WHERE archived_at IS NULL ORDER BY imported_at DESC"
+      "SELECT event_id, name, start_date, end_date, start_time, imported_at, source_type, archived_at FROM events WHERE archived_at IS NULL ORDER BY imported_at DESC"
     };
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| {
@@ -61,7 +62,8 @@ impl EventsRepository {
         end_date: row.get(3)?,
         start_time: row.get(4)?,
         imported_at: row.get(5)?,
-        archived_at: row.get::<_, Option<String>>(6)?,
+        source_type: row.get(6)?,
+        archived_at: row.get::<_, Option<String>>(7)?,
       })
     })?;
     rows.collect()
