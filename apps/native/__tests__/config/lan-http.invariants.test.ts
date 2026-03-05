@@ -11,6 +11,7 @@ const appJsonPath = path.resolve(__dirname, "../../app.json");
 type AppJson = {
   expo?: {
     plugins?: unknown[];
+    android?: { softwareKeyboardLayoutMode?: string };
     ios?: { infoPlist?: { NSAppTransportSecurity?: { NSAllowsArbitraryLoads?: boolean } } };
   };
 };
@@ -35,5 +36,10 @@ describe("lan-http invariants", () => {
   it("app.json must have ios.infoPlist.NSAppTransportSecurity.NSAllowsArbitraryLoads true", () => {
     const app = loadAppJson();
     expect(app.expo?.ios?.infoPlist?.NSAppTransportSecurity?.NSAllowsArbitraryLoads).toBe(true);
+  });
+
+  it('app.json must set android.softwareKeyboardLayoutMode to "resize"', () => {
+    const app = loadAppJson();
+    expect(app.expo?.android?.softwareKeyboardLayoutMode).toBe("resize");
   });
 });
