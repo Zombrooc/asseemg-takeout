@@ -65,14 +65,18 @@ impl PairingService {
         pool: Arc<DbPool>,
         device_id: String,
         pairing_token: String,
+        operator_alias: String,
     ) -> Result<String, String> {
+        if operator_alias.trim().is_empty() {
+            return Err("operator_alias is required".to_string());
+        }
         let consumed =
             PairingRepository::consume_token(&pool, &pairing_token).map_err(|e| e.to_string())?;
         if !consumed {
             return Err("invalid or expired pairing token".to_string());
         }
         let access_token = uuid::Uuid::new_v4().to_string();
-        PairingRepository::insert_device(&pool, &device_id, &access_token)
+        PairingRepository::insert_device(&pool, &device_id, &access_token, operator_alias.trim())
             .map_err(|e| e.to_string())?;
         Ok(access_token)
     }
@@ -104,15 +108,26 @@ mod tests {
         let pool = mem_pool();
         let info = PairingService::get_info(pool.clone(), "http://x".to_string()).unwrap();
         let token = info.pairing_token.clone();
-        let access = PairingService::pair(pool.clone(), "device-1".to_string(), token).unwrap();
+        let access = PairingService::pair(
+            pool.clone(),
+            "device-1".to_string(),
+            token,
+            "Operador 1".to_string(),
+        )
+        .unwrap();
         assert!(!access.is_empty());
     }
 
     #[test]
     fn pair_fails_with_invalid_token() {
         let pool = mem_pool();
-        let err = PairingService::pair(pool, "device-1".to_string(), "invalid-token".to_string())
-            .unwrap_err();
+        let err = PairingService::pair(
+            pool,
+            "device-1".to_string(),
+            "invalid-token".to_string(),
+            "Operador 1".to_string(),
+        )
+        .unwrap_err();
         assert!(err.contains("invalid"));
     }
 }

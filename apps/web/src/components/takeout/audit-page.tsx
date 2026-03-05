@@ -3,15 +3,28 @@ import { useState, useMemo } from "react";
 import { AuditFilters } from "@/components/audit-filters";
 import { AuditLogTable } from "@/components/audit-log-table";
 import { buildAuditCsv, parseAuditRetirantePayload } from "@/lib/audit-utils";
-import { getAudit, type AuditParams } from "@/lib/takeout-api";
+import { getAudit, getEvents, type AuditParams } from "@/lib/takeout-api";
 
 export function AuditPage() {
   const [statusFilter, setStatusFilter] = useState<AuditParams["status"]>("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState("");
+
+  const { data: events = [] } = useQuery({
+    queryKey: ["takeout", "events", "audit-selector"],
+    queryFn: () => getEvents(true),
+  });
+
+  const effectiveEventId = selectedEventId || events[0]?.eventId || "";
 
   const { data: logs = [], isLoading } = useQuery({
-    queryKey: ["takeout", "audit", statusFilter],
-    queryFn: () => getAudit(statusFilter ? { status: statusFilter } : undefined),
+    queryKey: ["takeout", "audit", effectiveEventId, statusFilter],
+    queryFn: () =>
+      getAudit({
+        eventId: effectiveEventId,
+        ...(statusFilter ? { status: statusFilter } : {}),
+      }),
+    enabled: !!effectiveEventId,
   });
 
   const filteredLogs = useMemo(() => {
@@ -24,6 +37,9 @@ export function AuditPage() {
         log.device_id.toLowerCase().includes(q) ||
         log.request_id.toLowerCase().includes(q) ||
         log.status.toLowerCase().includes(q) ||
+        (log.participant_name?.toLowerCase().includes(q) ?? false) ||
+        (log.ticket_name?.toLowerCase().includes(q) ?? false) ||
+        (log.operator_alias?.toLowerCase().includes(q) ?? false) ||
         (retirada.retiranteNome?.toLowerCase().includes(q) ?? false) ||
         (retirada.retiranteCpf?.toLowerCase().includes(q) ?? false)
       );
@@ -48,6 +64,25 @@ export function AuditPage() {
   return (
     <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
       <h1 className="text-2xl font-bold">Auditoria</h1>
+
+      <div className="max-w-md space-y-2">
+        <label htmlFor="event-audit-filter" className="text-sm font-medium">
+          Evento
+        </label>
+        <select
+          id="event-audit-filter"
+          aria-label="Selecionar evento da auditoria"
+          value={effectiveEventId}
+          onChange={(e) => setSelectedEventId(e.target.value)}
+          className="h-10 w-full rounded-md border bg-background px-3"
+        >
+          {events.map((event) => (
+            <option key={event.eventId} value={event.eventId}>
+              {event.name ?? event.eventId}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <AuditFilters
         statusFilter={statusFilter ?? ""}

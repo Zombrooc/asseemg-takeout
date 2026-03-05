@@ -1,4 +1,5 @@
 use crate::api::db::DbPool;
+use chrono::Datelike;
 use deunicode::deunicode;
 use rusqlite::params;
 
@@ -105,6 +106,21 @@ impl From<rusqlite::Error> for UpdateLegacyParticipantError {
 }
 
 impl LegacyRepository {
+    fn compute_age_at_checkin(birth_date: Option<&str>, checked_in_at: &str) -> Option<i64> {
+        let birth = birth_date
+            .and_then(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())?;
+        let checkin_dt = chrono::DateTime::parse_from_rfc3339(checked_in_at).ok()?;
+        let checkin_date = checkin_dt.date_naive();
+        let mut age = checkin_date.year() - birth.year();
+        if (checkin_date.month(), checkin_date.day()) < (birth.month(), birth.day()) {
+            age -= 1;
+        }
+        if age < 0 {
+            return None;
+        }
+        Some(i64::from(age))
+    }
+
     pub fn import_csv(
         pool: &DbPool,
         event_id: &str,
@@ -315,6 +331,7 @@ impl LegacyRepository {
         event_id: &str,
         participant_id: &str,
         device_id: &str,
+        operator_alias: Option<&str>,
         payload_json: Option<&str>,
     ) -> Result<super::takeout::ConfirmAtomicResult, rusqlite::Error> {
         let conn = pool
@@ -348,9 +365,46 @@ impl LegacyRepository {
         Err(e) => return Err(e),
       }
             let now = chrono::Utc::now().to_rfc3339();
+            let snapshot = conn
+                .query_row(
+                    "SELECT full_name, birth_date_iso, modality FROM legacy_participants WHERE id = ?1",
+                    [participant_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                        ))
+                    },
+                )
+                .ok();
+            let (participant_name, birth_date, ticket_name) =
+                snapshot.unwrap_or((None, None, None));
+            let age_at_checkin =
+                Self::compute_age_at_checkin(birth_date.as_deref(), &now);
             if let Err(e) = conn.execute(
-        "INSERT INTO legacy_checkins (request_id, event_id, participant_id, device_id, status, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, 'CONFIRMED', ?5, ?6)",
-        params![request_id, event_id, participant_id, device_id, payload_json, now],
+        "INSERT INTO legacy_checkins (
+            request_id, event_id, participant_id, device_id, status, payload_json, created_at,
+            source_type, ticket_id, participant_name, birth_date, age_at_checkin, ticket_name,
+            operator_alias, operator_device_id, checked_in_at
+         ) VALUES (?1, ?2, ?3, ?4, 'CONFIRMED', ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        params![
+          request_id,
+          event_id,
+          participant_id,
+          device_id,
+          payload_json,
+          now,
+          "legacy_csv",
+          participant_id,
+          participant_name,
+          birth_date,
+          age_at_checkin,
+          ticket_name,
+          operator_alias,
+          device_id,
+          now
+        ],
       ) {
         let _ = conn.execute("ROLLBACK", []);
         return Err(e);
@@ -387,6 +441,84 @@ impl LegacyRepository {
             })
         })?;
         rows.collect()
+    }
+
+    pub fn list_audit_enriched(
+        pool: &DbPool,
+        event_id: &str,
+        status_filter: Option<&str>,
+    ) -> Result<Vec<super::takeout::TakeoutEventRow>, rusqlite::Error> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        let mut query = String::from(
+            "SELECT
+              c.request_id,
+              COALESCE(c.ticket_id, c.participant_id) AS ticket_id,
+              c.device_id,
+              c.status,
+              c.payload_json,
+              c.created_at,
+              COALESCE(c.source_type, 'legacy_csv') AS source_type,
+              c.event_id,
+              c.participant_id,
+              COALESCE(c.participant_name, p.full_name) AS participant_name,
+              COALESCE(c.birth_date, p.birth_date_iso) AS birth_date,
+              c.age_at_checkin,
+              c.ticket_source_id,
+              COALESCE(c.ticket_name, p.modality) AS ticket_name,
+              c.ticket_code,
+              COALESCE(c.operator_alias, pd.operator_alias) AS operator_alias,
+              COALESCE(c.operator_device_id, c.device_id) AS operator_device_id,
+              COALESCE(c.checked_in_at, c.created_at) AS checked_in_at
+            FROM legacy_checkins c
+            LEFT JOIN legacy_participants p ON p.id = c.participant_id
+            LEFT JOIN paired_devices pd ON pd.device_id = COALESCE(c.operator_device_id, c.device_id)
+            WHERE c.event_id = ?1",
+        );
+        if status_filter.is_some() {
+            query.push_str(" AND c.status = ?2");
+        }
+        query.push_str(" ORDER BY c.created_at DESC");
+
+        let mut stmt = conn.prepare(&query)?;
+        let mut rows = if let Some(status) = status_filter {
+            stmt.query(params![event_id, status])?
+        } else {
+            stmt.query(params![event_id])?
+        };
+
+        let mut out = Vec::new();
+        while let Some(row) = rows.next()? {
+            let birth_date: Option<String> = row.get(10)?;
+            let checked_in_at: String = row.get(17)?;
+            let age_at_checkin_db: Option<i64> = row.get(11)?;
+            let age_at_checkin = age_at_checkin_db
+                .or_else(|| Self::compute_age_at_checkin(birth_date.as_deref(), &checked_in_at));
+
+            out.push(super::takeout::TakeoutEventRow {
+                request_id: row.get(0)?,
+                ticket_id: row.get(1)?,
+                device_id: row.get(2)?,
+                status: row.get(3)?,
+                payload_json: row.get(4)?,
+                created_at: row.get(5)?,
+                source_type: row.get(6)?,
+                event_id: row.get(7)?,
+                participant_id: row.get(8)?,
+                participant_name: row.get(9)?,
+                birth_date,
+                age_at_checkin,
+                ticket_source_id: row.get(12)?,
+                ticket_name: row.get(13)?,
+                ticket_code: row.get(14)?,
+                operator_alias: row.get(15)?,
+                operator_device_id: row.get(16)?,
+                checked_in_at,
+            });
+        }
+        Ok(out)
     }
 
     pub fn update_event_participant(

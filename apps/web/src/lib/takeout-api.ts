@@ -37,7 +37,7 @@ export type {
   UpdateEventParticipantPayload,
   UpdateLegacyParticipantPayload,
 };
-export type AuditParams = { status?: string; from?: string; to?: string };
+export type AuditParams = { eventId: string; status?: string; from?: string; to?: string };
 
 /** Same structure as thevent sync/checkin pull and POST /sync/import body. */
 export type CustomFormResponse = {
@@ -93,8 +93,12 @@ export async function renewPairingToken(): Promise<ConnectionInfo> {
   return request<ConnectionInfo>("/pair/renew", { method: "POST" });
 }
 
-export async function getAudit(params?: AuditParams): Promise<AuditEvent[]> {
+export async function getAudit(params: AuditParams): Promise<AuditEvent[]> {
+  if (!params.eventId) {
+    throw new Error("eventId is required");
+  }
   const q = new URLSearchParams();
+  q.set("eventId", params.eventId);
   if (params?.status) q.set("status", params.status);
   if (params?.from) q.set("from", params.from);
   if (params?.to) q.set("to", params.to);

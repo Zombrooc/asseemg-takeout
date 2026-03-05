@@ -159,8 +159,9 @@ export default function EventScreen() {
   });
 
   const auditQuery = useQuery({
-    queryKey: ["takeout-audit"],
-    queryFn: () => (api ? api.getAudit() : Promise.reject(new Error("No API"))),
+    queryKey: ["takeout-audit", eventId],
+    queryFn: () =>
+      api && eventId ? api.getAudit({ eventId }) : Promise.reject(new Error("No API")),
     enabled: !!api && !!eventId && isReachable,
   });
 

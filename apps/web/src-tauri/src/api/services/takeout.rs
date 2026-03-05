@@ -39,6 +39,7 @@ impl TakeoutService {
     pub fn confirm(
         pool: Arc<DbPool>,
         device_id: String,
+        operator_alias: Option<String>,
         payload: ConfirmTakeoutPayload,
     ) -> Result<ConfirmTakeoutResponse, ConfirmError> {
         if payload.request_id.is_empty() {
@@ -51,6 +52,7 @@ impl TakeoutService {
             &payload.request_id,
             &payload.ticket_id,
             &device_id,
+            operator_alias.as_deref(),
             payload.payload_json.as_deref(),
         )
         .map_err(|e| ConfirmError::Validation(e.to_string()))?;
@@ -72,11 +74,12 @@ impl TakeoutService {
 
     pub fn list_audit(
         pool: &DbPool,
+        event_id: &str,
         status: Option<String>,
         from_ts: Option<i64>,
         to_ts: Option<i64>,
     ) -> Result<Vec<TakeoutEventRow>, String> {
-        TakeoutRepository::list_events(pool, status.as_deref(), from_ts, to_ts)
+        TakeoutRepository::list_events_by_event(pool, event_id, status.as_deref(), from_ts, to_ts)
             .map_err(|e| e.to_string())
     }
 }
@@ -98,9 +101,10 @@ mod tests {
             device_id: "d1".to_string(),
             payload_json: None,
         };
-        let r = TakeoutService::confirm(pool.clone(), "d1".to_string(), payload.clone()).unwrap();
+        let r = TakeoutService::confirm(pool.clone(), "d1".to_string(), None, payload.clone())
+            .unwrap();
         assert_eq!(r.status, "CONFIRMED");
-        let r2 = TakeoutService::confirm(pool, "d1".to_string(), payload).unwrap();
+        let r2 = TakeoutService::confirm(pool, "d1".to_string(), None, payload).unwrap();
         assert_eq!(r2.status, "DUPLICATE");
     }
 
@@ -113,7 +117,7 @@ mod tests {
             device_id: "d1".to_string(),
             payload_json: None,
         };
-        let err = TakeoutService::confirm(pool, "d1".to_string(), payload).unwrap_err();
+        let err = TakeoutService::confirm(pool, "d1".to_string(), None, payload).unwrap_err();
         match &err {
             ConfirmError::Validation(s) => assert!(s.contains("request_id")),
             _ => panic!("expected Validation"),
@@ -129,7 +133,8 @@ mod tests {
             device_id: "d1".to_string(),
             payload_json: None,
         };
-        let r1 = TakeoutService::confirm(pool.clone(), "d1".to_string(), payload1).unwrap();
+        let r1 =
+            TakeoutService::confirm(pool.clone(), "d1".to_string(), None, payload1).unwrap();
         assert_eq!(r1.status, "CONFIRMED");
         let payload2 = ConfirmTakeoutPayload {
             request_id: uuid::Uuid::new_v4().to_string(),
@@ -137,7 +142,7 @@ mod tests {
             device_id: "d2".to_string(),
             payload_json: None,
         };
-        let err = TakeoutService::confirm(pool, "d2".to_string(), payload2).unwrap_err();
+        let err = TakeoutService::confirm(pool, "d2".to_string(), None, payload2).unwrap_err();
         match &err {
             ConfirmError::Conflict { ticket_id, .. } => assert_eq!(ticket_id, "T1"),
             _ => panic!("expected Conflict"),

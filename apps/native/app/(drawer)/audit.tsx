@@ -14,13 +14,25 @@ export default function AuditScreen() {
   const { api, isPaired } = useTakeoutConnection();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
 
-  const auditQuery = useQuery({
-    queryKey: ["takeout-audit", statusFilter],
-    queryFn: () =>
-      api
-        ? api.getAudit(statusFilter === "ALL" ? undefined : { status: statusFilter })
-        : Promise.reject(new Error("No API")),
+  const eventsQuery = useQuery({
+    queryKey: ["takeout-events-audit-screen"],
+    queryFn: () => (api ? api.getEvents() : Promise.reject(new Error("No API"))),
     enabled: !!api && isPaired,
+  });
+
+  const effectiveEventId = eventsQuery.data?.[0]?.eventId ?? null;
+
+  const auditQuery = useQuery({
+    queryKey: ["takeout-audit", effectiveEventId, statusFilter],
+    queryFn: () =>
+      api && effectiveEventId
+        ? api.getAudit(
+            statusFilter === "ALL"
+              ? { eventId: effectiveEventId }
+              : { eventId: effectiveEventId, status: statusFilter }
+          )
+        : Promise.reject(new Error("No API")),
+    enabled: !!api && isPaired && !!effectiveEventId,
   });
 
   const items: AuditEvent[] = useMemo(
@@ -57,6 +69,8 @@ export default function AuditScreen() {
         </View>
         {auditQuery.isLoading ? (
           <Text style={{ color: "#6b7280", paddingVertical: 32 }}>Carregando...</Text>
+        ) : !effectiveEventId ? (
+          <Text style={{ color: "#6b7280", paddingVertical: 32 }}>Nenhum evento disponivel.</Text>
         ) : items.length === 0 ? (
           <Text style={{ color: "#6b7280", paddingVertical: 32 }}>
             Nenhum registro de auditoria.

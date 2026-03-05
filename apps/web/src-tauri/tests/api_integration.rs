@@ -694,17 +694,311 @@ async fn takeout_confirm_second_device_same_ticket_returns_409() {
 }
 
 #[tokio::test]
-async fn audit_returns_empty_array() {
+async fn audit_requires_event_id_query_param() {
     let app = app();
     let req = Request::builder()
         .uri("/audit")
         .body(Body::empty())
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::OK);
+    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = body_bytes(res.into_body()).await;
-    let json: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(json.is_empty());
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json.get("error").and_then(|v| v.as_str()),
+        Some("eventId required")
+    );
+}
+
+#[tokio::test]
+async fn audit_returns_only_requested_event_and_unifies_sources() {
+    let app = app();
+
+    import_event(
+        &app,
+        serde_json::json!({
+          "eventId": "ev-json-audit",
+          "event": {
+            "id": "ev-json-audit",
+            "name": "Evento JSON",
+            "startDate": "2026-02-23T09:00:00.000Z",
+            "endDate": null,
+            "startTime": "09:00"
+          },
+          "exportedAt": "2026-02-23T12:00:00.000Z",
+          "customForm": [],
+          "participants": [
+            {
+              "seatId": "seat-json-audit",
+              "ticketId": "ticket-origem-1",
+              "ticketName": "5K",
+              "qrCode": "QR-JSON-AUDIT",
+              "participantName": "Joana Souza",
+              "cpf": "123.456.789-00",
+              "birthDate": "1990-01-01",
+              "age": 35,
+              "customFormResponses": [],
+              "checkinDone": false,
+              "checkedInAt": null
+            }
+          ],
+          "checkins": []
+        }),
+    )
+    .await;
+
+    let json_confirm = Request::builder()
+        .uri("/takeout/confirm")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": uuid::Uuid::new_v4().to_string(),
+              "ticket_id": "seat-json-audit",
+              "device_id": "mobile-json-audit"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let json_confirm_res = app.clone().oneshot(json_confirm).await.unwrap();
+    assert_eq!(json_confirm_res.status(), StatusCode::OK);
+
+    let boundary = "----takeout-legacy-boundary-audit";
+    let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima,Masculino,17979086937,08/03/2000,10KM,M,Equipe A\n";
+    let import_body = format!(
+      "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-audit\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado Audit\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+      b = boundary
+    );
+    let legacy_import_req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(import_body))
+        .unwrap();
+    let legacy_import_res = app.clone().oneshot(legacy_import_req).await.unwrap();
+    assert_eq!(legacy_import_res.status(), StatusCode::OK);
+
+    let legacy_list_req = Request::builder()
+        .uri("/events/ev-legacy-audit/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let legacy_list_res = app.clone().oneshot(legacy_list_req).await.unwrap();
+    assert_eq!(legacy_list_res.status(), StatusCode::OK);
+    let legacy_list_body = body_bytes(legacy_list_res.into_body()).await;
+    let legacy_list_json: serde_json::Value = serde_json::from_slice(&legacy_list_body).unwrap();
+    let legacy_participant_id = legacy_list_json
+        .as_array()
+        .unwrap()
+        .first()
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    let legacy_confirm_req = Request::builder()
+        .uri("/takeout/confirm/legacy")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": uuid::Uuid::new_v4().to_string(),
+              "event_id": "ev-legacy-audit",
+              "participant_id": legacy_participant_id,
+              "device_id": "mobile-legacy-audit"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let legacy_confirm_res = app.clone().oneshot(legacy_confirm_req).await.unwrap();
+    assert_eq!(legacy_confirm_res.status(), StatusCode::OK);
+
+    let json_audit_req = Request::builder()
+        .uri("/audit?eventId=ev-json-audit")
+        .body(Body::empty())
+        .unwrap();
+    let json_audit_res = app.clone().oneshot(json_audit_req).await.unwrap();
+    assert_eq!(json_audit_res.status(), StatusCode::OK);
+    let json_audit_body = body_bytes(json_audit_res.into_body()).await;
+    let json_audit_list: Vec<serde_json::Value> = serde_json::from_slice(&json_audit_body).unwrap();
+    assert_eq!(json_audit_list.len(), 1);
+    assert_eq!(
+        json_audit_list[0].get("event_id").and_then(|v| v.as_str()),
+        Some("ev-json-audit")
+    );
+    assert_eq!(
+        json_audit_list[0].get("source_type").and_then(|v| v.as_str()),
+        Some("json_sync")
+    );
+
+    let legacy_audit_req = Request::builder()
+        .uri("/audit?eventId=ev-legacy-audit")
+        .body(Body::empty())
+        .unwrap();
+    let legacy_audit_res = app.oneshot(legacy_audit_req).await.unwrap();
+    assert_eq!(legacy_audit_res.status(), StatusCode::OK);
+    let legacy_audit_body = body_bytes(legacy_audit_res.into_body()).await;
+    let legacy_audit_list: Vec<serde_json::Value> =
+        serde_json::from_slice(&legacy_audit_body).unwrap();
+    assert_eq!(legacy_audit_list.len(), 1);
+    assert_eq!(
+        legacy_audit_list[0].get("event_id").and_then(|v| v.as_str()),
+        Some("ev-legacy-audit")
+    );
+    assert_eq!(
+        legacy_audit_list[0]
+            .get("source_type")
+            .and_then(|v| v.as_str()),
+        Some("legacy_csv")
+    );
+    assert!(legacy_audit_list[0].get("participant_name").is_some());
+    assert!(legacy_audit_list[0].get("ticket_name").is_some());
+    assert!(legacy_audit_list[0].get("checked_in_at").is_some());
+}
+
+#[tokio::test]
+async fn pair_requires_operator_alias() {
+    let app = app();
+    let pair_info_req = Request::builder()
+        .uri("/pair/info")
+        .body(Body::empty())
+        .unwrap();
+    let pair_info_res = app.clone().oneshot(pair_info_req).await.unwrap();
+    assert_eq!(pair_info_res.status(), StatusCode::OK);
+    let pair_info_body = body_bytes(pair_info_res.into_body()).await;
+    let pair_info_json: serde_json::Value = serde_json::from_slice(&pair_info_body).unwrap();
+    let token = pair_info_json
+        .get("pairingToken")
+        .and_then(|v| v.as_str())
+        .unwrap();
+
+    let missing_alias_req = Request::builder()
+        .uri("/pair")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "device_id": "mobile-1",
+              "pairing_token": token
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let missing_alias_res = app.oneshot(missing_alias_req).await.unwrap();
+    assert_eq!(missing_alias_res.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn audit_uses_paired_operator_alias_and_device_snapshot() {
+    let app = app();
+    let pair_info_req = Request::builder()
+        .uri("/pair/info")
+        .body(Body::empty())
+        .unwrap();
+    let pair_info_res = app.clone().oneshot(pair_info_req).await.unwrap();
+    assert_eq!(pair_info_res.status(), StatusCode::OK);
+    let pair_info_body = body_bytes(pair_info_res.into_body()).await;
+    let pair_info_json: serde_json::Value = serde_json::from_slice(&pair_info_body).unwrap();
+    let token = pair_info_json
+        .get("pairingToken")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    let pair_req = Request::builder()
+        .uri("/pair")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "device_id": "paired-device-01",
+              "operator_alias": "Operador Posto 01",
+              "pairing_token": token
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let pair_res = app.clone().oneshot(pair_req).await.unwrap();
+    assert_eq!(pair_res.status(), StatusCode::OK);
+    let pair_body = body_bytes(pair_res.into_body()).await;
+    let pair_json: serde_json::Value = serde_json::from_slice(&pair_body).unwrap();
+    let access_token = pair_json
+        .get("access_token")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    import_event(
+        &app,
+        serde_json::json!({
+          "eventId": "ev-alias-audit",
+          "event": {
+            "id": "ev-alias-audit",
+            "name": "Evento Alias",
+            "startDate": "2026-02-23T09:00:00.000Z",
+            "endDate": null,
+            "startTime": "09:00"
+          },
+          "exportedAt": "2026-02-23T12:00:00.000Z",
+          "customForm": [],
+          "participants": [
+            {
+              "seatId": "seat-alias",
+              "ticketId": "ticket-origem-alias",
+              "ticketName": "5K",
+              "qrCode": "QR-ALIAS",
+              "participantName": "Pessoa Alias",
+              "cpf": "123.456.789-00",
+              "birthDate": "1990-01-01",
+              "age": 35,
+              "customFormResponses": [],
+              "checkinDone": false,
+              "checkedInAt": null
+            }
+          ],
+          "checkins": []
+        }),
+    )
+    .await;
+
+    let confirm_req = Request::builder()
+        .uri("/takeout/confirm")
+        .method("POST")
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {}", access_token))
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": uuid::Uuid::new_v4().to_string(),
+              "ticket_id": "seat-alias",
+              "device_id": "payload-device-ignored"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let confirm_res = app.clone().oneshot(confirm_req).await.unwrap();
+    assert_eq!(confirm_res.status(), StatusCode::OK);
+
+    let audit_req = Request::builder()
+        .uri("/audit?eventId=ev-alias-audit")
+        .body(Body::empty())
+        .unwrap();
+    let audit_res = app.oneshot(audit_req).await.unwrap();
+    assert_eq!(audit_res.status(), StatusCode::OK);
+    let audit_body = body_bytes(audit_res.into_body()).await;
+    let audit_json: Vec<serde_json::Value> = serde_json::from_slice(&audit_body).unwrap();
+    assert_eq!(audit_json.len(), 1);
+    assert_eq!(
+        audit_json[0].get("operator_alias").and_then(|v| v.as_str()),
+        Some("Operador Posto 01")
+    );
+    assert_eq!(
+        audit_json[0]
+            .get("operator_device_id")
+            .and_then(|v| v.as_str()),
+        Some("paired-device-01")
+    );
 }
 
 #[tokio::test]

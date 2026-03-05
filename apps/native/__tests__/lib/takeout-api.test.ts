@@ -150,27 +150,19 @@ describe("createTakeoutClient", () => {
       baseUrl,
       getAccessToken: async () => "token",
     });
-    await client.getAudit({ status: "CONFIRMED" });
+    await client.getAudit({ eventId: "ev-1", status: "CONFIRMED" });
     expect(global.fetch).toHaveBeenCalledWith(
-      "http://192.168.1.10:5555/audit?status=CONFIRMED",
+      "http://192.168.1.10:5555/audit?eventId=ev-1&status=CONFIRMED",
       expect.any(Object)
     );
   });
 
-  it("GET /audit without params calls /audit with no query", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      text: () => Promise.resolve("[]"),
-    });
+  it("GET /audit requires eventId", async () => {
     const client = createTakeoutClient({
       baseUrl,
       getAccessToken: async () => "token",
     });
-    await client.getAudit();
-    expect(global.fetch).toHaveBeenCalledWith(
-      "http://192.168.1.10:5555/audit",
-      expect.any(Object)
-    );
+    expect(() => client.getAudit({ eventId: "" })).toThrow("eventId is required");
   });
 
   it("GET /events/:eventId/participants/search sends q and mode", async () => {

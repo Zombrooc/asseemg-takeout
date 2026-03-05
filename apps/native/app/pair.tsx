@@ -11,7 +11,7 @@ import {
   PermissionPrompt,
   QrScannerOverlay,
 } from "@/components/mobile-tamagui/pair";
-import { Button, ScreenContainer } from "@/components/ui-tamagui";
+import { Button, Input, ScreenContainer } from "@/components/ui-tamagui";
 
 function generateDeviceId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -40,6 +40,7 @@ export default function PairScreen() {
   const router = useRouter();
   const [baseUrl, setBaseUrl] = useState(defaultBaseUrl);
   const [pairingToken, setPairingToken] = useState("");
+  const [operatorAlias, setOperatorAlias] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
@@ -50,8 +51,9 @@ export default function PairScreen() {
     async (url: string, token: string) => {
       const base = url.trim().replace(/\/$/, "");
       const t = token.trim();
-      if (!base || !t) {
-        setError("URL e token são obrigatórios.");
+      const alias = operatorAlias.trim();
+      if (!base || !t || !alias) {
+        setError("URL, token e nome do operador são obrigatórios.");
         return;
       }
       setError(null);
@@ -64,6 +66,7 @@ export default function PairScreen() {
           body: JSON.stringify({
             device_id: deviceId,
             pairing_token: t,
+            operator_alias: alias,
           }),
         });
         const data = (await res.json()) as {
@@ -86,7 +89,7 @@ export default function PairScreen() {
         setLoading(false);
       }
     },
-    [setConnection, router],
+    [setConnection, router, operatorAlias],
   );
 
   const handleBarcodeScanned = useCallback(
@@ -167,6 +170,16 @@ export default function PairScreen() {
 
         {pairMethod === "qr" ? (
           <View style={{ marginBottom: 24 }}>
+            <Text style={{ color: "#111827", fontWeight: "500", fontSize: 14, marginBottom: 6 }}>
+              Nome do operador
+            </Text>
+            <Input
+              placeholder="Ex: Posto 1 - Ana"
+              value={operatorAlias}
+              onChangeText={setOperatorAlias}
+              autoCorrect={false}
+              style={{ marginBottom: 16, minHeight: 48 }}
+            />
             <Button
               minHeight={48}
               onPress={() => setShowScanner(true)}
@@ -178,8 +191,10 @@ export default function PairScreen() {
           <ManualPairForm
             baseUrl={baseUrl}
             pairingToken={pairingToken}
+            operatorAlias={operatorAlias}
             onChangeBaseUrl={setBaseUrl}
             onChangeToken={setPairingToken}
+            onChangeOperatorAlias={setOperatorAlias}
             onSubmit={() => doPair(baseUrl, pairingToken)}
             loading={loading}
             error={error}

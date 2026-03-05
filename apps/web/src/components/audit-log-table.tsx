@@ -51,9 +51,12 @@ export function AuditLogTable({
         <Table role="table">
           <TableHeader>
             <TableRow>
-              <TableHead scope="col">Hora</TableHead>
-              <TableHead scope="col">Ticket</TableHead>
-              <TableHead scope="col">Dispositivo</TableHead>
+              <TableHead scope="col">Check-in</TableHead>
+              <TableHead scope="col">Participante</TableHead>
+              <TableHead scope="col">Ingresso</TableHead>
+              <TableHead scope="col">Nascimento</TableHead>
+              <TableHead scope="col">Idade</TableHead>
+              <TableHead scope="col">Operador</TableHead>
               <TableHead scope="col">Tipo de retirada</TableHead>
               <TableHead scope="col">Retirante</TableHead>
               <TableHead scope="col">Status</TableHead>
@@ -65,13 +68,13 @@ export function AuditLogTable({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={onRetry != null ? 7 : 6} className="text-center text-muted-foreground">
+                <TableCell colSpan={onRetry != null ? 10 : 9} className="text-center text-muted-foreground">
                   Carregando...
                 </TableCell>
               </TableRow>
             ) : logs.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={onRetry != null ? 7 : 6} className="text-center text-muted-foreground">
+                <TableCell colSpan={onRetry != null ? 10 : 9} className="text-center text-muted-foreground">
                   Nenhum registro encontrado.
                 </TableCell>
               </TableRow>
@@ -81,10 +84,17 @@ export function AuditLogTable({
                 return (
                   <TableRow key={log.request_id}>
                     <TableCell className="whitespace-nowrap text-sm">
-                      {formatDateTimeBR(log.created_at)}
+                      {formatDateTimeBR(log.checked_in_at)}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{log.ticket_id}</TableCell>
-                    <TableCell className="text-sm">{log.device_id}</TableCell>
+                    <TableCell className="text-sm">{log.participant_name ?? "-"}</TableCell>
+                    <TableCell className="text-xs">
+                      <div className="font-mono">{log.ticket_id}</div>
+                      <div className="text-muted-foreground">{log.ticket_name ?? "-"}</div>
+                      <div className="text-muted-foreground">{log.ticket_source_id ?? "-"}</div>
+                    </TableCell>
+                    <TableCell className="text-sm">{log.birth_date ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{log.age_at_checkin ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{log.operator_alias ?? log.operator_device_id}</TableCell>
                     <TableCell className="text-sm">
                       {retirada.retiradaPorTerceiro ? "Terceiro" : "Titular"}
                     </TableCell>

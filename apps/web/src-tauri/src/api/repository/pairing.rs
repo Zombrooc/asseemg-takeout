@@ -58,6 +58,7 @@ impl PairingRepository {
         pool: &DbPool,
         device_id: &str,
         access_token: &str,
+        operator_alias: &str,
     ) -> Result<(), rusqlite::Error> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -68,8 +69,8 @@ impl PairingRepository {
             .lock()
             .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
         conn.execute(
-      "INSERT OR REPLACE INTO paired_devices (device_id, access_token, created_at) VALUES (?1, ?2, ?3)",
-      params![device_id, access_token, now.to_string()],
+      "INSERT OR REPLACE INTO paired_devices (device_id, access_token, created_at, operator_alias) VALUES (?1, ?2, ?3, ?4)",
+      params![device_id, access_token, now.to_string(), operator_alias],
     )?;
         Ok(())
     }
@@ -77,16 +78,16 @@ impl PairingRepository {
     pub fn find_device_by_token(
         pool: &DbPool,
         access_token: &str,
-    ) -> Result<Option<String>, rusqlite::Error> {
+    ) -> Result<Option<(String, Option<String>)>, rusqlite::Error> {
         let conn = pool
             .conn
             .lock()
             .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
-        let mut stmt =
-            conn.prepare("SELECT device_id FROM paired_devices WHERE access_token = ?1")?;
+        let mut stmt = conn
+            .prepare("SELECT device_id, operator_alias FROM paired_devices WHERE access_token = ?1")?;
         let mut rows = stmt.query([access_token])?;
         if let Some(row) = rows.next()? {
-            return Ok(Some(row.get::<_, String>(0)?));
+            return Ok(Some((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)));
         }
         Ok(None)
     }

@@ -4,8 +4,10 @@ import { Button, Input } from "@/components/ui-tamagui";
 type Props = {
   baseUrl: string;
   pairingToken: string;
+  operatorAlias: string;
   onChangeBaseUrl: (value: string) => void;
   onChangeToken: (value: string) => void;
+  onChangeOperatorAlias: (value: string) => void;
   onSubmit: () => void;
   loading: boolean;
   error: string | null;
@@ -14,8 +16,10 @@ type Props = {
 export function ManualPairForm({
   baseUrl,
   pairingToken,
+  operatorAlias,
   onChangeBaseUrl,
   onChangeToken,
+  onChangeOperatorAlias,
   onSubmit,
   loading,
   error,
@@ -42,6 +46,16 @@ export function ManualPairForm({
         value={pairingToken}
         onChangeText={onChangeToken}
         autoCapitalize="characters"
+        autoCorrect={false}
+        style={{ marginBottom: 24, minHeight: 48 }}
+      />
+      <Text style={{ color: "#111827", fontWeight: "500", fontSize: 14, marginBottom: 6 }}>
+        Nome do operador
+      </Text>
+      <Input
+        placeholder="Ex: Posto 1 - Ana"
+        value={operatorAlias}
+        onChangeText={onChangeOperatorAlias}
         autoCorrect={false}
         style={{ marginBottom: 24, minHeight: 48 }}
       />

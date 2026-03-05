@@ -126,6 +126,18 @@ export type AuditEvent = {
   status: "CONFIRMED" | "DUPLICATE" | "FAILED";
   payload_json: string | null;
   created_at: string;
+  source_type: "json_sync" | "legacy_csv";
+  event_id: string | null;
+  participant_id: string | null;
+  participant_name: string | null;
+  birth_date: string | null;
+  age_at_checkin: number | null;
+  ticket_source_id: string | null;
+  ticket_name: string | null;
+  ticket_code: string | null;
+  operator_alias: string | null;
+  operator_device_id: string;
+  checked_in_at: string;
 };
 
 export type WsTakeoutMessage =

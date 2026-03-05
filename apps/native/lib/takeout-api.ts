@@ -58,11 +58,15 @@ export function createTakeoutClient(config: {
     getHealth: () => request<HealthResponse>("/health", { skipAuth: true }),
     getNetworkAddresses: () => request<NetworkAddressesResponse>("/network/addresses", { skipAuth: true }),
     getConnectionInfo: () => request<ConnectionInfo>("/pair/info", { skipAuth: true }),
-    pair: (deviceId: string, pairingToken: string) =>
+    pair: (deviceId: string, pairingToken: string, operatorAlias: string) =>
       request<{ access_token: string }>("/pair", {
         method: "POST",
         skipAuth: true,
-        body: JSON.stringify({ device_id: deviceId, pairing_token: pairingToken }),
+        body: JSON.stringify({
+          device_id: deviceId,
+          pairing_token: pairingToken,
+          operator_alias: operatorAlias,
+        }),
       }),
     getEvents: () => request<EventSummary[]>("/events"),
     getEventParticipants: (eventId: string) =>
@@ -95,8 +99,12 @@ export function createTakeoutClient(config: {
         method: "POST",
         body: JSON.stringify(payload),
       }),
-    getAudit: (params?: { status?: string; from?: string; to?: string }) => {
+    getAudit: (params: { eventId: string; status?: string; from?: string; to?: string }) => {
+      if (!params.eventId) {
+        throw new Error("eventId is required");
+      }
       const q = new URLSearchParams();
+      q.set("eventId", params.eventId);
       if (params?.status) q.set("status", params.status);
       if (params?.from) q.set("from", params.from);
       if (params?.to) q.set("to", params.to);

@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS pairing_tokens (
 CREATE TABLE IF NOT EXISTS paired_devices (
   device_id TEXT PRIMARY KEY,
   access_token TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  operator_alias TEXT
 );
 CREATE TABLE IF NOT EXISTS events (
   event_id TEXT PRIMARY KEY,
@@ -28,7 +29,19 @@ CREATE TABLE IF NOT EXISTS takeout_events (
   device_id TEXT NOT NULL,
   status TEXT NOT NULL,
   payload_json TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  source_type TEXT,
+  event_id TEXT,
+  participant_id TEXT,
+  participant_name TEXT,
+  birth_date TEXT,
+  age_at_checkin INTEGER,
+  ticket_source_id TEXT,
+  ticket_name TEXT,
+  ticket_code TEXT,
+  operator_alias TEXT,
+  operator_device_id TEXT,
+  checked_in_at TEXT
 );
 CREATE TABLE IF NOT EXISTS check_ins (
   ticket_id TEXT PRIMARY KEY,
@@ -91,7 +104,18 @@ CREATE TABLE IF NOT EXISTS legacy_checkins (
   device_id TEXT NOT NULL,
   status TEXT NOT NULL,
   payload_json TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  source_type TEXT,
+  ticket_id TEXT,
+  participant_name TEXT,
+  birth_date TEXT,
+  age_at_checkin INTEGER,
+  ticket_source_id TEXT,
+  ticket_name TEXT,
+  ticket_code TEXT,
+  operator_alias TEXT,
+  operator_device_id TEXT,
+  checked_in_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id);
 CREATE INDEX IF NOT EXISTS idx_takeout_events_request_id ON takeout_events(request_id);
@@ -111,15 +135,45 @@ pub struct DbPool {
 }
 
 impl DbPool {
+    fn apply_runtime_migrations(conn: &Connection) {
+        let alter_statements = [
+            "ALTER TABLE participants ADD COLUMN event_id TEXT",
+            "ALTER TABLE events ADD COLUMN archived_at TEXT",
+            "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
+            "ALTER TABLE paired_devices ADD COLUMN operator_alias TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN source_type TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN event_id TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN participant_id TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN participant_name TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN birth_date TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN age_at_checkin INTEGER",
+            "ALTER TABLE takeout_events ADD COLUMN ticket_source_id TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN ticket_name TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN ticket_code TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN operator_alias TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN operator_device_id TEXT",
+            "ALTER TABLE takeout_events ADD COLUMN checked_in_at TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN source_type TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN ticket_id TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN participant_name TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN birth_date TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN age_at_checkin INTEGER",
+            "ALTER TABLE legacy_checkins ADD COLUMN ticket_source_id TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN ticket_name TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN ticket_code TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN operator_alias TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN operator_device_id TEXT",
+            "ALTER TABLE legacy_checkins ADD COLUMN checked_in_at TEXT",
+        ];
+        for sql in alter_statements {
+            let _ = conn.execute(sql, []);
+        }
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {
         let conn = Connection::open(path)?;
         conn.execute_batch(SCHEMA_SQL)?;
-        let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
-        let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
-        let _ = conn.execute(
-            "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
-            [],
-        );
+        Self::apply_runtime_migrations(&conn);
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -128,12 +182,7 @@ impl DbPool {
     pub fn open_in_memory() -> Result<Self, rusqlite::Error> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch(SCHEMA_SQL)?;
-        let _ = conn.execute("ALTER TABLE participants ADD COLUMN event_id TEXT", []);
-        let _ = conn.execute("ALTER TABLE events ADD COLUMN archived_at TEXT", []);
-        let _ = conn.execute(
-            "ALTER TABLE events ADD COLUMN source_type TEXT NOT NULL DEFAULT 'json_sync'",
-            [],
-        );
+        Self::apply_runtime_migrations(&conn);
         Ok(Self {
             conn: Mutex::new(conn),
         })

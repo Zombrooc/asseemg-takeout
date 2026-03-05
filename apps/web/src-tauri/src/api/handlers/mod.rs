@@ -14,7 +14,8 @@ use tower_http::cors::{Any, CorsLayer};
 use crate::api::db::DbPool;
 use crate::api::repository::{
     EventLogRepository, EventsRepository, LegacyParticipantSearchMode, LegacyRepository,
-    LocksRepository, ParticipantSearchMode, ParticipantsRepository, TakeoutRepository,
+    LocksRepository, PairingRepository, ParticipantSearchMode, ParticipantsRepository,
+    TakeoutRepository,
     UpdateLegacyParticipantError, UpdateParticipantError,
 };
 use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
@@ -196,10 +197,30 @@ async fn pair_renew(State(state): State<AppState>) -> impl IntoResponse {
 struct PairBody {
     device_id: String,
     pairing_token: String,
+    operator_alias: Option<String>,
 }
 
 async fn pair(State(state): State<AppState>, Json(body): Json<PairBody>) -> impl IntoResponse {
-    match PairingService::pair(state.pool.clone(), body.device_id, body.pairing_token) {
+    let Some(operator_alias) = body.operator_alias.map(|v| v.trim().to_string()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "operator_alias is required" })),
+        )
+            .into_response();
+    };
+    if operator_alias.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "operator_alias is required" })),
+        )
+            .into_response();
+    }
+    match PairingService::pair(
+        state.pool.clone(),
+        body.device_id,
+        body.pairing_token,
+        operator_alias,
+    ) {
         Ok(access_token) => (
             StatusCode::OK,
             Json(serde_json::json!({ "access_token": access_token })),
@@ -246,6 +267,22 @@ async fn participants_get(
 fn bearer_token(headers: &HeaderMap) -> Option<String> {
     let v = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     v.strip_prefix("Bearer ").map(String::from)
+}
+
+fn resolve_operator_identity(
+    pool: &DbPool,
+    headers: &HeaderMap,
+    payload_device_id: &str,
+) -> (String, Option<String>) {
+    let token = bearer_token(headers);
+    if let Some(access_token) = token {
+        if let Ok(Some((paired_device_id, operator_alias))) =
+            PairingRepository::find_device_by_token(pool, &access_token)
+        {
+            return (paired_device_id, operator_alias);
+        }
+    }
+    (payload_device_id.to_string(), None)
 }
 
 #[derive(serde::Deserialize)]
@@ -811,8 +848,9 @@ async fn takeout_confirm(
     headers: HeaderMap,
     Json(payload): Json<crate::api::services::takeout::ConfirmTakeoutPayload>,
 ) -> impl IntoResponse {
-    let device_id = bearer_token(&headers).unwrap_or_else(|| "unknown".to_string());
-    match TakeoutService::confirm(state.pool.clone(), device_id, payload.clone()) {
+    let (device_id, operator_alias) =
+        resolve_operator_identity(&state.pool, &headers, &payload.device_id);
+    match TakeoutService::confirm(state.pool.clone(), device_id, operator_alias, payload.clone()) {
         Ok(r) => {
             if r.status == "CONFIRMED" {
                 if let Ok(Some(ev_id)) = ParticipantsRepository::get_event_id_by_ticket_id(
@@ -867,16 +905,39 @@ async fn takeout_confirm(
 
 #[derive(serde::Deserialize)]
 struct AuditQuery {
+    #[serde(rename = "eventId")]
+    event_id: Option<String>,
     status: Option<String>,
     from: Option<String>,
     to: Option<String>,
 }
 
 async fn audit(State(state): State<AppState>, Query(q): Query<AuditQuery>) -> impl IntoResponse {
+    let Some(event_id) = q.event_id.filter(|v| !v.is_empty()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "eventId required" })),
+        )
+            .into_response();
+    };
     let from_ts = q.from.and_then(|s| s.parse::<i64>().ok());
     let to_ts = q.to.and_then(|s| s.parse::<i64>().ok());
-    match TakeoutService::list_audit(&state.pool, q.status, from_ts, to_ts) {
-        Ok(events) => (StatusCode::OK, Json(events)).into_response(),
+    match TakeoutService::list_audit(&state.pool, &event_id, q.status.clone(), from_ts, to_ts) {
+        Ok(mut events) => {
+            match LegacyRepository::list_audit_enriched(&state.pool, &event_id, q.status.as_deref())
+            {
+                Ok(mut legacy_events) => {
+                    events.append(&mut legacy_events);
+                    events.sort_by(|a, b| b.checked_in_at.cmp(&a.checked_in_at));
+                    (StatusCode::OK, Json(events)).into_response()
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+                    .into_response(),
+            }
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e })),
@@ -1129,6 +1190,7 @@ struct LegacyConfirmPayload {
 
 async fn takeout_confirm_legacy(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<LegacyConfirmPayload>,
 ) -> impl IntoResponse {
     if payload.request_id.trim().is_empty()
@@ -1141,12 +1203,15 @@ async fn takeout_confirm_legacy(
     )
       .into_response();
     }
+    let (device_id, operator_alias) =
+        resolve_operator_identity(&state.pool, &headers, &payload.device_id);
     match LegacyRepository::confirm_atomic(
         &state.pool,
         &payload.request_id,
         &payload.event_id,
         &payload.participant_id,
-        &payload.device_id,
+        &device_id,
+        operator_alias.as_deref(),
         payload.payload_json.as_deref(),
     ) {
         Ok(crate::api::repository::ConfirmAtomicResult::Confirmed) => {
@@ -1161,7 +1226,7 @@ async fn takeout_confirm_legacy(
               "participant_id": payload.participant_id.clone(),
               "request_id": payload.request_id.clone(),
               "event_id": payload.event_id.clone(),
-              "device_id": payload.device_id.clone(),
+              "device_id": device_id.clone(),
               "source_type": "legacy_csv"
             })
             .to_string();
@@ -1177,7 +1242,7 @@ async fn takeout_confirm_legacy(
                 Some(&payload.participant_id),
                 Some(&payload.request_id),
                 Some(&payload.participant_id),
-                Some(&payload.device_id),
+                Some(&device_id),
                 "legacy_csv",
             );
             (
