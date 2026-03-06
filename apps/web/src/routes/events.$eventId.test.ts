@@ -30,6 +30,25 @@ describe("mapLegacyToEventParticipant", () => {
     expect(mapped.sourceTicketId).toBeUndefined();
     expect(resolveDisplayTicket(mapped)).toBe("5KM");
   });
+
+  it("does not add cpf inconsistency marker in legacy mapping", () => {
+    const legacy: LegacyEventParticipant = {
+      id: "legacy-2",
+      bibNumber: 33,
+      name: "Runner Missing CPF",
+      sex: "Masculino",
+      cpf: "",
+      cpfInconsistent: true,
+      birthDate: "2001-01-01",
+      modality: "10KM",
+      shirtSize: "M",
+      team: null,
+      checkinDone: false,
+    };
+
+    const mapped = mapLegacyToEventParticipant(legacy);
+    expect(mapped.customFormResponses?.some((r) => r.name === "cpf_inconsistente")).toBe(false);
+  });
 });
 
 describe("participant search helpers", () => {

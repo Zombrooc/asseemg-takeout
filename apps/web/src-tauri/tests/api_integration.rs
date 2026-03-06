@@ -356,7 +356,10 @@ async fn participants_update_json_sync_updates_fields() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Novo",
               "birthDate": "1991-02-03",
-              "ticketType": "10K"
+              "ticketType": "10K",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -377,6 +380,9 @@ async fn participants_update_json_sync_updates_fields() {
         update_json.get("ticketName").and_then(|v| v.as_str()),
         Some("10K")
     );
+    assert_eq!(update_json.get("cpf").and_then(|v| v.as_str()), Some("CPF LIVRE"));
+    assert_eq!(update_json.get("shirtSize").and_then(|v| v.as_str()), Some("GG"));
+    assert_eq!(update_json.get("team").and_then(|v| v.as_str()), Some("Equipe X"));
 }
 
 #[tokio::test]
@@ -424,7 +430,10 @@ async fn participants_update_json_sync_returns_400_404_and_409() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Novo",
               "birthDate": "03/02/1991",
-              "ticketType": "10K"
+              "ticketType": "10K",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -440,7 +449,10 @@ async fn participants_update_json_sync_returns_400_404_and_409() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Novo",
               "birthDate": "1991-02-03",
-              "ticketType": "10K"
+              "ticketType": "10K",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -472,7 +484,10 @@ async fn participants_update_json_sync_returns_400_404_and_409() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Novo",
               "birthDate": "1991-02-03",
-              "ticketType": "10K"
+              "ticketType": "10K",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -529,7 +544,10 @@ async fn participants_update_legacy_updates_fields_and_blocks_confirmed() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Legado Novo",
               "birthDate": "2001-04-09",
-              "ticketType": "10KM"
+              "ticketType": "10KM",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -550,6 +568,9 @@ async fn participants_update_legacy_updates_fields_and_blocks_confirmed() {
         update_json.get("modality").and_then(|v| v.as_str()),
         Some("10KM")
     );
+    assert_eq!(update_json.get("cpf").and_then(|v| v.as_str()), Some("CPF LIVRE"));
+    assert_eq!(update_json.get("shirtSize").and_then(|v| v.as_str()), Some("GG"));
+    assert_eq!(update_json.get("team").and_then(|v| v.as_str()), Some("Equipe X"));
 
     let confirm_req = Request::builder()
         .uri("/takeout/confirm/legacy")
@@ -579,7 +600,10 @@ async fn participants_update_legacy_updates_fields_and_blocks_confirmed() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Legado Novo",
               "birthDate": "2001-04-09",
-              "ticketType": "10KM"
+              "ticketType": "10KM",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -598,7 +622,10 @@ async fn participants_update_legacy_updates_fields_and_blocks_confirmed() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Legado Novo",
               "birthDate": "09/04/2001",
-              "ticketType": "10KM"
+              "ticketType": "10KM",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -1237,6 +1264,156 @@ async fn legacy_csv_import_endpoint_accepts_valid_file_and_returns_summary() {
         0
     );
 }
+
+#[tokio::test]
+async fn legacy_csv_import_accepts_semicolon_delimiter() {
+    let app = app();
+    let boundary = "----takeout-legacy-boundary-semicolon";
+    let csv = "N\u{00FA}mero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Thiago Lima Araujo;Masculino;17979086937;08/03/2000;5KM;EXG;\n";
+    let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-semicolon\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado Ponto e Virgula\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+    let req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let payload = body_bytes(res.into_body()).await;
+    let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(json.get("imported").and_then(|v| v.as_i64()), Some(1));
+    assert_eq!(
+        json.get("errors").and_then(|v| v.as_array()).unwrap().len(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn legacy_csv_import_accepts_windows_1252_header() {
+    let app = app();
+    let boundary = "----takeout-legacy-boundary-cp1252";
+    let mut body = Vec::<u8>::new();
+    let prefix = format!(
+        "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-cp1252\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado CP1252\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n",
+        b = boundary
+    );
+    body.extend_from_slice(prefix.as_bytes());
+    body.extend_from_slice(
+        b"N\xFAmero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Thiago Lima Araujo;Masculino;17979086937;08/03/2000;5KM;EXG;\n",
+    );
+    let suffix = format!("\r\n--{b}--\r\n", b = boundary);
+    body.extend_from_slice(suffix.as_bytes());
+
+    let req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let payload = body_bytes(res.into_body()).await;
+    let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(json.get("imported").and_then(|v| v.as_i64()), Some(1));
+    assert_eq!(
+        json.get("errors").and_then(|v| v.as_array()).unwrap().len(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn legacy_csv_import_accepts_empty_cpf_without_inconsistency_flag() {
+    let app = app();
+    let boundary = "----takeout-legacy-boundary-empty-cpf";
+    let csv = "N\u{00FA}mero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Ana Teste;Feminino;;08/03/2000;5KM;P;\n";
+    let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-empty-cpf\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado CPF Vazio\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+    let import_req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let import_res = app.clone().oneshot(import_req).await.unwrap();
+    assert_eq!(import_res.status(), StatusCode::OK);
+    let payload = body_bytes(import_res.into_body()).await;
+    let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(json.get("imported").and_then(|v| v.as_i64()), Some(1));
+
+    let list_req = Request::builder()
+        .uri("/events/ev-legacy-empty-cpf/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_payload = body_bytes(list_res.into_body()).await;
+    let list_json: serde_json::Value = serde_json::from_slice(&list_payload).unwrap();
+    let participant = list_json.as_array().unwrap().first().unwrap();
+    assert_eq!(participant.get("cpf").and_then(|v| v.as_str()), Some(""));
+    assert_eq!(
+        participant
+            .get("cpfInconsistent")
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+}
+
+#[tokio::test]
+async fn legacy_csv_import_accepts_non_numeric_cpf_without_sanitization() {
+    let app = app();
+    let boundary = "----takeout-legacy-boundary-invalid-cpf";
+    let csv = "N\u{00FA}mero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n2;Beto Teste;Masculino;ABC-123-45;08/03/2000;5KM;P;\n";
+    let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-invalid-cpf\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado CPF Invalido\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+    let import_req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let import_res = app.clone().oneshot(import_req).await.unwrap();
+    assert_eq!(import_res.status(), StatusCode::OK);
+    let payload = body_bytes(import_res.into_body()).await;
+    let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(json.get("imported").and_then(|v| v.as_i64()), Some(1));
+
+    let list_req = Request::builder()
+        .uri("/events/ev-legacy-invalid-cpf/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_payload = body_bytes(list_res.into_body()).await;
+    let list_json: serde_json::Value = serde_json::from_slice(&list_payload).unwrap();
+    let participant = list_json.as_array().unwrap().first().unwrap();
+    assert_eq!(participant.get("cpf").and_then(|v| v.as_str()), Some("ABC-123-45"));
+    assert_eq!(
+        participant
+            .get("cpfInconsistent")
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+}
+
 #[tokio::test]
 async fn legacy_participants_endpoints_list_search_and_confirm_are_available() {
     let app = app();
@@ -1373,7 +1550,10 @@ async fn participants_update_json_sync_emits_ws_participant_updated() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Novo",
               "birthDate": "1991-02-03",
-              "ticketType": "10K"
+              "ticketType": "10K",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))
@@ -1447,7 +1627,10 @@ async fn participants_update_legacy_emits_ws_participant_updated() {
             serde_json::to_vec(&serde_json::json!({
               "name": "Nome Legado Novo",
               "birthDate": "2001-04-09",
-              "ticketType": "10KM"
+              "ticketType": "10KM",
+              "cpf": "CPF LIVRE",
+              "shirtSize": "GG",
+              "team": "Equipe X"
             }))
             .unwrap(),
         ))

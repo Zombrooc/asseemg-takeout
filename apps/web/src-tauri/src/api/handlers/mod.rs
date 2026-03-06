@@ -30,6 +30,54 @@ pub struct AppState {
     pub ws_registry: Arc<WsRegistry>,
 }
 
+fn decode_windows_1252(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|byte| match byte {
+            0x80 => '\u{20AC}',
+            0x81 => '\u{0081}',
+            0x82 => '\u{201A}',
+            0x83 => '\u{0192}',
+            0x84 => '\u{201E}',
+            0x85 => '\u{2026}',
+            0x86 => '\u{2020}',
+            0x87 => '\u{2021}',
+            0x88 => '\u{02C6}',
+            0x89 => '\u{2030}',
+            0x8A => '\u{0160}',
+            0x8B => '\u{2039}',
+            0x8C => '\u{0152}',
+            0x8D => '\u{008D}',
+            0x8E => '\u{017D}',
+            0x8F => '\u{008F}',
+            0x90 => '\u{0090}',
+            0x91 => '\u{2018}',
+            0x92 => '\u{2019}',
+            0x93 => '\u{201C}',
+            0x94 => '\u{201D}',
+            0x95 => '\u{2022}',
+            0x96 => '\u{2013}',
+            0x97 => '\u{2014}',
+            0x98 => '\u{02DC}',
+            0x99 => '\u{2122}',
+            0x9A => '\u{0161}',
+            0x9B => '\u{203A}',
+            0x9C => '\u{0153}',
+            0x9D => '\u{009D}',
+            0x9E => '\u{017E}',
+            0x9F => '\u{0178}',
+            _ => char::from(*byte),
+        })
+        .collect()
+}
+
+fn decode_utf8_or_windows_1252(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(value) => value.to_string(),
+        Err(_) => decode_windows_1252(bytes),
+    }
+}
+
 pub fn router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -450,8 +498,13 @@ async fn events_participants(
 #[serde(rename_all = "camelCase")]
 struct ParticipantEditPayload {
     name: String,
+    cpf: String,
     birth_date: String,
     ticket_type: String,
+    #[serde(default)]
+    shirt_size: Option<String>,
+    #[serde(default)]
+    team: Option<String>,
 }
 
 fn is_valid_birth_date(value: &str) -> bool {
@@ -492,8 +545,11 @@ async fn events_participants_update(
         &event_id,
         &participant_id,
         payload.name.trim(),
+        payload.cpf.trim(),
         payload.birth_date.trim(),
         payload.ticket_type.trim(),
+        payload.shirt_size.as_deref().unwrap_or("").trim(),
+        payload.team.as_deref().unwrap_or("").trim(),
     ) {
         Ok(updated) => {
             println!(
@@ -951,19 +1007,13 @@ async fn admin_import(
     mut multipart: Multipart,
 ) -> impl IntoResponse {
     let mut imported = 0i32;
-    let mut errors = Vec::<String>::new();
+    let errors = Vec::<String>::new();
     while let Ok(Some(field)) = multipart.next_field().await {
         if field.name() != Some("file") {
             continue;
         }
         if let Ok(data) = field.bytes().await {
-            let s = match String::from_utf8(data.to_vec()) {
-                Ok(x) => x,
-                Err(e) => {
-                    errors.push(e.to_string());
-                    continue;
-                }
-            };
+            let s = decode_utf8_or_windows_1252(&data);
             let lines: Vec<&str> = s.lines().filter(|l| !l.is_empty()).collect();
             imported = (lines.len().saturating_sub(1)) as i32; // header row
         }
@@ -999,18 +1049,14 @@ async fn admin_import_legacy_csv(
                     .bytes()
                     .await
                     .ok()
-                    .and_then(|v| String::from_utf8(v.to_vec()).ok());
+                    .map(|v| decode_utf8_or_windows_1252(&v));
             }
             _ => {}
         }
     }
-    let Some(event_id) = event_id.filter(|v| !v.is_empty()) else {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "eventId is required" })),
-        )
-            .into_response();
-    };
+    let event_id = event_id
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(cuid2::create_id);
     let Some(event_name) = event_name.filter(|v| !v.is_empty()) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -1085,8 +1131,11 @@ async fn events_legacy_participants_update(
         &event_id,
         &participant_id,
         payload.name.trim(),
+        payload.cpf.trim(),
         payload.birth_date.trim(),
         payload.ticket_type.trim(),
+        payload.shirt_size.as_deref().unwrap_or("").trim(),
+        payload.team.as_deref().unwrap_or("").trim(),
     ) {
         Ok(updated) => {
             println!(
@@ -1483,3 +1532,4 @@ async fn sync_push(Json(body): Json<thevent::SyncPushBody>) -> impl IntoResponse
             .into_response(),
     }
 }
+

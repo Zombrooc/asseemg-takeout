@@ -34,6 +34,110 @@ fn normalize_nome(value: &str) -> String {
     deunicode(value).to_lowercase()
 }
 
+fn normalize_lookup_key(value: &str) -> String {
+    deunicode(value)
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn read_string_field(json: &serde_json::Value, key: &str) -> Option<String> {
+    json.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+}
+
+fn read_custom_form_value(json: &serde_json::Value, aliases: &[&str]) -> Option<String> {
+    let alias_keys = aliases
+        .iter()
+        .map(|alias| normalize_lookup_key(alias))
+        .collect::<Vec<_>>();
+    let items = json.get("customFormResponses")?.as_array()?;
+    for item in items {
+        let name = item.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+        let label = item
+            .get("label")
+            .and_then(|l| l.as_str())
+            .unwrap_or_default();
+        let name_key = normalize_lookup_key(name);
+        let label_key = normalize_lookup_key(label);
+        let is_match = alias_keys
+            .iter()
+            .any(|alias| alias == &name_key || alias == &label_key);
+        if !is_match {
+            continue;
+        }
+        let response = item.get("response").unwrap_or(&serde_json::Value::Null);
+        let value = match response {
+            serde_json::Value::String(s) => s.trim().to_string(),
+            serde_json::Value::Null => String::new(),
+            _ => response.to_string(),
+        };
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn upsert_custom_form_value(
+    participant_raw_obj: &mut serde_json::Map<String, serde_json::Value>,
+    aliases: &[&str],
+    fallback_name: &str,
+    fallback_label: &str,
+    value: &str,
+) {
+    let alias_keys = aliases
+        .iter()
+        .map(|alias| normalize_lookup_key(alias))
+        .collect::<Vec<_>>();
+    let responses = participant_raw_obj
+        .entry("customFormResponses")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+    if !responses.is_array() {
+        *responses = serde_json::Value::Array(Vec::new());
+    }
+    let Some(items) = responses.as_array_mut() else {
+        return;
+    };
+
+    for item in items.iter_mut() {
+        let Some(item_obj) = item.as_object_mut() else {
+            continue;
+        };
+        let name = item_obj
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or_default();
+        let label = item_obj
+            .get("label")
+            .and_then(|l| l.as_str())
+            .unwrap_or_default();
+        let name_key = normalize_lookup_key(name);
+        let label_key = normalize_lookup_key(label);
+        let is_match = alias_keys
+            .iter()
+            .any(|alias| alias == &name_key || alias == &label_key);
+        if is_match {
+            item_obj.insert(
+                "response".to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+            return;
+        }
+    }
+
+    items.push(serde_json::json!({
+      "name": fallback_name,
+      "label": fallback_label,
+      "type": "text",
+      "response": value
+    }));
+}
+
 fn matches_search(row: &EventParticipantRow, mode: ParticipantSearchMode, query: &str) -> bool {
     match mode {
         ParticipantSearchMode::Qr => row.qr_code.trim() == query,
@@ -170,8 +274,11 @@ impl ParticipantsRepository {
         event_id: &str,
         participant_id: &str,
         name: &str,
+        cpf: &str,
         birth_date: &str,
         ticket_type: &str,
+        shirt_size: &str,
+        team: &str,
     ) -> Result<EventParticipantRow, UpdateParticipantError> {
         let conn = pool
             .conn
@@ -179,7 +286,7 @@ impl ParticipantsRepository {
             .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
 
         let lookup = conn.query_row(
-            "SELECT t.id, t.raw_json,
+            "SELECT t.id, t.raw_json, p.raw_json,
        EXISTS (
          SELECT 1
          FROM takeout_events te
@@ -193,12 +300,13 @@ impl ParticipantsRepository {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, Option<String>>(1)?,
-                    row.get::<_, bool>(2)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, bool>(3)?,
                 ))
             },
         );
 
-        let (ticket_id, ticket_raw, checkin_done) = match lookup {
+        let (ticket_id, ticket_raw, participant_raw, checkin_done) = match lookup {
             Ok(v) => v,
             Err(rusqlite::Error::QueryReturnedNoRows) => {
                 return Err(UpdateParticipantError::NotFound)
@@ -225,12 +333,52 @@ impl ParticipantsRepository {
         }
         let ticket_raw_updated = ticket_raw_value.to_string();
 
+        let mut participant_raw_value = participant_raw
+            .as_deref()
+            .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+            .unwrap_or_else(|| serde_json::json!({}));
+        if !participant_raw_value.is_object() {
+            participant_raw_value = serde_json::json!({});
+        }
+        if let Some(obj) = participant_raw_value.as_object_mut() {
+            obj.insert(
+                "participantName".to_string(),
+                serde_json::Value::String(name.to_string()),
+            );
+            obj.insert("cpf".to_string(), serde_json::Value::String(cpf.to_string()));
+            obj.insert(
+                "birthDate".to_string(),
+                serde_json::Value::String(birth_date.to_string()),
+            );
+            obj.insert(
+                "shirtSize".to_string(),
+                serde_json::Value::String(shirt_size.to_string()),
+            );
+            obj.insert("team".to_string(), serde_json::Value::String(team.to_string()));
+            upsert_custom_form_value(
+                obj,
+                &["camisa", "tamanho da camisa", "shirtSize"],
+                "camisa",
+                "Tamanho da Camisa",
+                shirt_size,
+            );
+            upsert_custom_form_value(obj, &["equipe", "team"], "equipe", "Equipe", team);
+        }
+        let participant_raw_updated = participant_raw_value.to_string();
+
         conn.execute("BEGIN IMMEDIATE", [])?;
         let result = (|| -> Result<(), rusqlite::Error> {
             conn.execute(
-                "UPDATE participants SET name = ?3, birth_date = ?4
+                "UPDATE participants SET name = ?3, cpf = ?4, birth_date = ?5, raw_json = ?6
          WHERE event_id = ?1 AND id = ?2",
-                rusqlite::params![event_id, participant_id, name, birth_date],
+                rusqlite::params![
+                    event_id,
+                    participant_id,
+                    name,
+                    cpf,
+                    birth_date,
+                    participant_raw_updated
+                ],
             )?;
             conn.execute(
                 "UPDATE tickets SET raw_json = ?3
@@ -276,14 +424,14 @@ impl ParticipantsRepository {
                 v.get("ticketName")
                     .and_then(|n| n.as_str().map(String::from))
             });
-            let custom_form_responses = participant_raw
+            let participant_raw_json = participant_raw
                 .as_ref()
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
-                .and_then(|v| {
-                    v.get("customFormResponses")
-                        .and_then(|a| a.as_array())
-                        .map(|a| a.to_vec())
-                })
+                .unwrap_or_else(|| serde_json::json!({}));
+            let custom_form_responses = participant_raw_json
+                .get("customFormResponses")
+                .and_then(|a| a.as_array())
+                .map(|a| a.to_vec())
                 .map(|arr| {
                     arr.iter()
                         .map(|item| {
@@ -315,12 +463,20 @@ impl ParticipantsRepository {
                         })
                         .collect::<Vec<_>>()
                 });
+            let shirt_size = read_string_field(&participant_raw_json, "shirtSize")
+                .or_else(|| read_string_field(&participant_raw_json, "tamanhoCamisa"))
+                .or_else(|| read_custom_form_value(&participant_raw_json, &["camisa", "tamanho da camisa", "shirtSize"]));
+            let team = read_string_field(&participant_raw_json, "team")
+                .or_else(|| read_string_field(&participant_raw_json, "equipe"))
+                .or_else(|| read_custom_form_value(&participant_raw_json, &["team", "equipe"]));
 
             Ok(EventParticipantRow {
                 id,
                 name: row_name,
                 cpf,
                 birth_date: row_birth_date,
+                shirt_size,
+                team,
                 ticket_id: row_ticket_id,
                 source_ticket_id,
                 ticket_name,
@@ -380,7 +536,7 @@ mod tests {
             "João da Silva",
             "123.456.789-00",
             "1990-01-01",
-            r#"{"customFormResponses":[]}"#,
+            r#"{"customFormResponses":[{"name":"camisa","label":"Tamanho da Camisa","type":"text","response":"P"},{"name":"equipe","label":"Equipe","type":"text","response":"Time Antigo"}]}"#,
           ],
         )
         .unwrap();
@@ -552,20 +708,33 @@ mod tests {
     }
 
     #[test]
-    fn update_event_participant_persists_name_birth_date_and_ticket_name() {
+    fn update_event_participant_persists_all_editable_fields() {
         let pool = seeded_pool();
         let updated = ParticipantsRepository::update_event_participant(
             &pool,
             "ev-1",
             "seat-joao",
             "Joao Atualizado",
+            "CPF LIVRE",
             "1991-10-11",
             "10K",
+            "GG",
+            "Time Novo",
         )
         .unwrap();
         assert_eq!(updated.name.as_deref(), Some("Joao Atualizado"));
+        assert_eq!(updated.cpf.as_deref(), Some("CPF LIVRE"));
         assert_eq!(updated.birth_date.as_deref(), Some("1991-10-11"));
         assert_eq!(updated.ticket_name.as_deref(), Some("10K"));
+        assert_eq!(updated.shirt_size.as_deref(), Some("GG"));
+        assert_eq!(updated.team.as_deref(), Some("Time Novo"));
+        let custom = updated.custom_form_responses.unwrap_or_default();
+        assert!(custom
+            .iter()
+            .any(|entry| entry.name == "camisa" && entry.response == serde_json::Value::String("GG".to_string())));
+        assert!(custom
+            .iter()
+            .any(|entry| entry.name == "equipe" && entry.response == serde_json::Value::String("Time Novo".to_string())));
     }
 
     #[test]
@@ -586,8 +755,11 @@ mod tests {
             "ev-1",
             "seat-joao",
             "Nome",
+            "12345678900",
             "1991-10-11",
             "10K",
+            "M",
+            "Equipe",
         );
         assert!(matches!(
             result,

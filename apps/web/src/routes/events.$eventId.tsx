@@ -115,8 +115,11 @@ function EventDetailPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [editingParticipant, setEditingParticipant] = useState<EventParticipant | null>(null);
   const [editName, setEditName] = useState("");
+  const [editCpf, setEditCpf] = useState("");
   const [editBirthDate, setEditBirthDate] = useState("");
   const [editTicketType, setEditTicketType] = useState("");
+  const [editShirtSize, setEditShirtSize] = useState("");
+  const [editTeam, setEditTeam] = useState("");
   const minBirthDate = "1900-01-01";
   const maxBirthDate = useMemo(() => getTodayIsoDate(), []);
 
@@ -166,8 +169,11 @@ function EventDetailPage() {
     mutationFn: async (p: EventParticipant) => {
       const payload = {
         name: editName.trim(),
+        cpf: editCpf.trim(),
         birthDate: editBirthDate.trim(),
         ticketType: editTicketType.trim(),
+        shirtSize: editShirtSize.trim(),
+        team: editTeam.trim(),
       };
 
       if (eventSummary?.sourceType === "legacy_csv") {
@@ -188,7 +194,7 @@ function EventDetailPage() {
         return;
       }
       if (message.includes("HTTP 400")) {
-        toast.error("Dados invalidos. Confira nome, data e tipo de ingresso.");
+        toast.error("Dados invalidos. Confira nome, cpf, data e tipo de ingresso.");
         return;
       }
       toast.error(message);
@@ -200,8 +206,11 @@ function EventDetailPage() {
   useEffect(() => {
     if (!editingParticipant) return;
     setEditName(editingParticipant.name ?? "");
+    setEditCpf(editingParticipant.cpf ?? "");
     setEditBirthDate(editingParticipant.birthDate ?? "");
     setEditTicketType(resolveInitialTicketType(editingParticipant, ticketTypeOptions));
+    setEditShirtSize(editingParticipant.shirtSize ?? "");
+    setEditTeam(editingParticipant.team ?? "");
   }, [editingParticipant, ticketTypeOptions]);
 
   const filteredParticipants = useMemo(
@@ -217,12 +226,8 @@ function EventDetailPage() {
       toast.error(`Data de nascimento invalida. Use uma data entre ${minBirthDate} e ${maxBirthDate}.`);
       return;
     }
-    if (ticketTypeOptions.length === 0) {
-      toast.error("Nao ha tipos de ingresso disponiveis para este evento.");
-      return;
-    }
-    if (!ticketTypeOptions.includes(editTicketType.trim())) {
-      toast.error("Selecione um tipo de ingresso valido.");
+    if (!editTicketType.trim()) {
+      toast.error("Tipo de ingresso e obrigatorio.");
       return;
     }
     editMutation.mutate(editingParticipant);
@@ -329,25 +334,54 @@ function EventDetailPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="edit-cpf">CPF</Label>
+              <Input
+                id="edit-cpf"
+                value={editCpf}
+                onChange={(e) => setEditCpf(e.target.value)}
+                placeholder="CPF"
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="edit-ticket-type">Tipo de ingresso</Label>
-              <select
+              <Input
                 id="edit-ticket-type"
                 aria-label="Tipo de ingresso"
-                className="h-10 w-full rounded-md border bg-background px-3"
                 value={editTicketType}
+                list="ticket-type-options"
                 onChange={(e) => setEditTicketType(e.target.value)}
-              >
+                placeholder="Ex.: 5KM, 10KM, Kids..."
+              />
+              <datalist id="ticket-type-options">
                 {ticketTypeOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
                 ))}
-              </select>
+              </datalist>
               {ticketTypeOptions.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Nenhum tipo de ingresso disponivel para este evento.
+                  Nenhuma sugestao disponivel; voce pode digitar um valor customizado.
                 </p>
               ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-shirt-size">Tamanho da camisa</Label>
+              <Input
+                id="edit-shirt-size"
+                value={editShirtSize}
+                onChange={(e) => setEditShirtSize(e.target.value)}
+                placeholder="Ex.: P, M, G, GG"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-team">Equipe</Label>
+              <Input
+                id="edit-team"
+                value={editTeam}
+                onChange={(e) => setEditTeam(e.target.value)}
+                placeholder="Nome da equipe"
+              />
             </div>
 
             <div className="flex items-center justify-end gap-2">
@@ -356,7 +390,7 @@ function EventDetailPage() {
               </Button>
               <Button
                 onClick={handleSaveEdit}
-                disabled={editMutation.isPending || ticketTypeOptions.length === 0}
+                disabled={editMutation.isPending}
               >
                 {editMutation.isPending ? "Salvando..." : "Salvar"}
               </Button>
@@ -369,20 +403,24 @@ function EventDetailPage() {
 }
 
 export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): EventParticipant {
+  const customFormResponses = [
+    { name: "sexo", label: "Sexo", type: "text", response: legacy.sex ?? "-" },
+    { name: "camisa", label: "Tamanho da Camisa", type: "text", response: legacy.shirtSize ?? "-" },
+    { name: "equipe", label: "Equipe", type: "text", response: legacy.team ?? "-" },
+  ];
+
   return {
     id: legacy.id,
     name: legacy.name,
     cpf: legacy.cpf,
     birthDate: legacy.birthDate,
+    shirtSize: legacy.shirtSize ?? null,
+    team: legacy.team ?? null,
     ticketId: legacy.id,
     sourceTicketId: undefined,
     ticketName: legacy.modality ?? "Legado CSV",
     qrCode: legacy.id,
     checkinDone: legacy.checkinDone,
-    customFormResponses: [
-      { name: "sexo", label: "Sexo", type: "text", response: legacy.sex ?? "-" },
-      { name: "camisa", label: "Tamanho da Camisa", type: "text", response: legacy.shirtSize ?? "-" },
-      { name: "equipe", label: "Equipe", type: "text", response: legacy.team ?? "-" },
-    ],
+    customFormResponses,
   };
 }

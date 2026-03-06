@@ -1,4 +1,5 @@
 use crate::api::db::DbPool;
+use deunicode::deunicode;
 use rusqlite::params;
 
 pub struct EventsRepository;
@@ -34,12 +35,77 @@ pub struct EventParticipantRow {
     pub name: Option<String>,
     pub cpf: Option<String>,
     pub birth_date: Option<String>,
+    pub shirt_size: Option<String>,
+    pub team: Option<String>,
     pub ticket_id: String,
     pub source_ticket_id: Option<String>,
     pub ticket_name: Option<String>,
     pub qr_code: String,
     pub checkin_done: bool,
     pub custom_form_responses: Option<Vec<CustomFormResponseRow>>,
+}
+
+fn normalize_lookup_key(value: &str) -> String {
+    deunicode(value)
+        .to_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect()
+}
+
+fn read_string_field(json: &serde_json::Value, key: &str) -> Option<String> {
+    json.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+}
+
+fn read_custom_form_value(json: &serde_json::Value, aliases: &[&str]) -> Option<String> {
+    let alias_keys = aliases
+        .iter()
+        .map(|alias| normalize_lookup_key(alias))
+        .collect::<Vec<_>>();
+    let items = json.get("customFormResponses")?.as_array()?;
+    for item in items {
+        let name = item.get("name").and_then(|n| n.as_str()).unwrap_or_default();
+        let label = item
+            .get("label")
+            .and_then(|l| l.as_str())
+            .unwrap_or_default();
+        let name_key = normalize_lookup_key(name);
+        let label_key = normalize_lookup_key(label);
+        let is_match = alias_keys
+            .iter()
+            .any(|alias| alias == &name_key || alias == &label_key);
+        if !is_match {
+            continue;
+        }
+        let response = item.get("response").unwrap_or(&serde_json::Value::Null);
+        let value = match response {
+            serde_json::Value::String(s) => s.trim().to_string(),
+            serde_json::Value::Null => String::new(),
+            _ => response.to_string(),
+        };
+        if !value.is_empty() {
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn extract_shirt_and_team(participant_raw_json: Option<&serde_json::Value>) -> (Option<String>, Option<String>) {
+    let Some(raw) = participant_raw_json else {
+        return (None, None);
+    };
+    let shirt_size = read_string_field(raw, "shirtSize")
+        .or_else(|| read_string_field(raw, "tamanhoCamisa"))
+        .or_else(|| read_string_field(raw, "camisa"))
+        .or_else(|| read_custom_form_value(raw, &["camisa", "tamanho da camisa", "shirtSize"]));
+    let team = read_string_field(raw, "team")
+        .or_else(|| read_string_field(raw, "equipe"))
+        .or_else(|| read_custom_form_value(raw, &["team", "equipe"]));
+    (shirt_size, team)
 }
 
 impl EventsRepository {
@@ -173,10 +239,12 @@ impl EventsRepository {
                 v.get("ticketName")
                     .and_then(|n| n.as_str().map(String::from))
             });
-            let checkin_done = checkin_done_db;
-            let custom_form_responses = participant_raw
+            let participant_raw_json = participant_raw
                 .as_ref()
-                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+            let checkin_done = checkin_done_db;
+            let custom_form_responses = participant_raw_json
+                .as_ref()
                 .and_then(|v| {
                     v.get("customFormResponses")
                         .and_then(|a| a.as_array())
@@ -213,11 +281,14 @@ impl EventsRepository {
                         })
                         .collect::<Vec<_>>()
                 });
+            let (shirt_size, team) = extract_shirt_and_team(participant_raw_json.as_ref());
             Ok(EventParticipantRow {
                 id,
                 name,
                 cpf,
                 birth_date,
+                shirt_size,
+                team,
                 ticket_id,
                 source_ticket_id,
                 ticket_name,

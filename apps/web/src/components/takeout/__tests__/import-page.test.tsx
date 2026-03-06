@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImportPage } from "../import-page";
 
 const {
@@ -25,14 +25,14 @@ vi.mock("sonner", () => ({
 }));
 
 class MockFileReader {
-  result: string | null = null;
+  result: ArrayBuffer | null = null;
   onload: null | (() => void) = null;
 
-  readAsText(file: Blob) {
+  readAsArrayBuffer(file: Blob) {
     file
-      .text()
-      .then((text) => {
-        this.result = text;
+      .arrayBuffer()
+      .then((buffer) => {
+        this.result = buffer;
         this.onload?.();
       })
       .catch(() => {
@@ -52,12 +52,12 @@ describe("ImportPage", () => {
 
   it("renders model selector and toggles csv metadata fields", () => {
     render(<ImportPage />);
-    expect(screen.getByLabelText("Modelo de importação")).toBeInTheDocument();
+    const modelSelect = screen.getByRole("combobox");
+    expect(modelSelect).toBeInTheDocument();
     expect(screen.queryByLabelText("Event ID")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Modelo de importação"), {
+    fireEvent.change(modelSelect, {
       target: { value: "legacy_csv" },
     });
-    expect(screen.getByLabelText("Event ID")).toBeInTheDocument();
     expect(screen.getByLabelText("Nome do evento")).toBeInTheDocument();
     expect(screen.getByLabelText("Data inicial")).toBeInTheDocument();
   });
@@ -65,11 +65,11 @@ describe("ImportPage", () => {
   it("validates csv metadata before import", async () => {
     postImportLegacyCsv.mockResolvedValue({ imported: 1, errors: [] });
     render(<ImportPage />);
-    fireEvent.change(screen.getByLabelText("Modelo de importação"), {
+    fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "legacy_csv" },
     });
     const csvContent =
-      "Número,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Ana,Feminino,17979086937,08/03/2000,5KM,P,\n";
+      "Número;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Ana;Feminino;17979086937;08/03/2000;5KM;P;\n";
     const input = screen.getByLabelText("Selecionar arquivo") as HTMLInputElement;
     const file = new File([csvContent], "legacy.csv", { type: "text/csv" });
     fireEvent.change(input, { target: { files: [file] } });
@@ -81,5 +81,50 @@ describe("ImportPage", () => {
     fireEvent.click(screen.getByText("Importar e Salvar"));
     expect(postImportLegacyCsv).not.toHaveBeenCalled();
     expect(toastError).toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText("Nome do evento"), {
+      target: { value: "Evento Teste" },
+    });
+    fireEvent.change(screen.getByLabelText("Data inicial"), {
+      target: { value: "2026-03-06" },
+    });
+    fireEvent.click(screen.getByText("Importar e Salvar"));
+
+    await waitFor(() => {
+      expect(postImportLegacyCsv).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("accepts flexible legacy header variations", async () => {
+    render(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "legacy_csv" },
+    });
+    const csvContent =
+      " numero ;  nome completo;sexo;cpf;data   de nascimento;modalidade (5km, 10km, caminhada ou kids);tamanho da camisa;equipe\n1;Ana;Feminino;17979086937;08/03/2000;5KM;P;\n";
+    const input = screen.getByLabelText("Selecionar arquivo") as HTMLInputElement;
+    const file = new File([csvContent], "legacy-flex.csv", { type: "text/csv" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Importar e Salvar")).toBeInTheDocument();
+    });
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  it("rejects legacy csv when columns are out of order", async () => {
+    render(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "legacy_csv" },
+    });
+    const csvContent =
+      "Nome Completo;Número;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\nAna;1;Feminino;17979086937;08/03/2000;5KM;P;\n";
+    const input = screen.getByLabelText("Selecionar arquivo") as HTMLInputElement;
+    const file = new File([csvContent], "legacy-wrong-order.csv", { type: "text/csv" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalledWith("Header legado inválido");
+    });
   });
 });

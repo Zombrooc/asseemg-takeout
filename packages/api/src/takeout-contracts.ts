@@ -42,6 +42,8 @@ export type EventParticipant = {
   name: string | null;
   cpf: string | null;
   birthDate?: string | null;
+  shirtSize?: string | null;
+  team?: string | null;
   ticketId: string;
   sourceTicketId?: string | null;
   ticketName?: string | null;
@@ -54,8 +56,11 @@ export type ParticipantSearchMode = "qr" | "ticket_id" | "cpf" | "nome" | "birth
 
 export type UpdateEventParticipantPayload = {
   name: string;
+  cpf: string;
   birthDate: string;
   ticketType: string;
+  shirtSize?: string | null;
+  team?: string | null;
 };
 
 export type TakeoutConfirmPayload = {
@@ -84,6 +89,7 @@ export type LegacyEventParticipant = {
   name: string;
   sex?: string | null;
   cpf: string;
+  cpfInconsistent?: boolean;
   birthDate: string;
   modality?: string | null;
   shirtSize?: string | null;

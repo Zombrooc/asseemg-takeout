@@ -1,11 +1,17 @@
 use crate::api::db::DbPool;
 use crate::api::thevent::PullResponse;
 use rusqlite::params;
+use std::collections::HashSet;
 
 /// Imports pull response into local SQLite: events, participants, tickets, custom_forms.
 /// Uses one lock and runs all upserts in sequence.
 pub fn import_pull_to_db(pool: &DbPool, pull: &PullResponse) -> Result<(), String> {
     let conn = pool.conn.lock().map_err(|_| "db lock".to_string())?;
+    let current_participant_ids = pull
+        .participants
+        .iter()
+        .map(|p| p.seat_id.as_str().to_string())
+        .collect::<HashSet<_>>();
 
     let imported_at = chrono::Utc::now().to_rfc3339();
     let (name, start_date, end_date, start_time) = match &pull.event {
@@ -53,6 +59,28 @@ pub fn import_pull_to_db(pool: &DbPool, pull: &PullResponse) -> Result<(), Strin
         ],
       )
       .map_err(|e| e.to_string())?;
+    }
+
+    // Snapshot semantics: remove participants from this event that are not present in the latest payload.
+    let mut stale_stmt = conn
+        .prepare("SELECT id FROM participants WHERE event_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let stale_rows = stale_stmt
+        .query_map([pull.event_id.as_str()], |row| row.get::<_, String>(0))
+        .map_err(|e| e.to_string())?;
+    let stale_ids = stale_rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|id| !current_participant_ids.contains(id))
+        .collect::<Vec<_>>();
+    for stale_id in stale_ids {
+        conn.execute("DELETE FROM tickets WHERE participant_id = ?1", [stale_id.as_str()])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM locks WHERE participant_id = ?1", [stale_id.as_str()])
+            .map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM participants WHERE id = ?1", [stale_id.as_str()])
+            .map_err(|e| e.to_string())?;
     }
 
     conn
@@ -211,5 +239,61 @@ mod tests {
                 .count()
                 == 2
         );
+    }
+
+    #[test]
+    fn import_replaces_event_snapshot_and_removes_stale_participants() {
+        let pool = DbPool::open_in_memory().unwrap();
+        let mut pull = minimal_pull();
+        pull.participants = vec![
+            PullParticipant {
+                seat_id: "seat-a".to_string(),
+                ticket_id: "tkt-a".to_string(),
+                ticket_name: "5K".to_string(),
+                qr_code: "QR-A".to_string(),
+                participant_name: "Ana".to_string(),
+                cpf: "111".to_string(),
+                birth_date: None,
+                age: None,
+                custom_form_responses: vec![],
+                checkin_done: false,
+                checked_in_at: None,
+            },
+            PullParticipant {
+                seat_id: "seat-b".to_string(),
+                ticket_id: "tkt-b".to_string(),
+                ticket_name: "10K".to_string(),
+                qr_code: "QR-B".to_string(),
+                participant_name: "Bruno".to_string(),
+                cpf: "222".to_string(),
+                birth_date: None,
+                age: None,
+                custom_form_responses: vec![],
+                checkin_done: false,
+                checked_in_at: None,
+            },
+        ];
+        super::import_pull_to_db(&pool, &pull).unwrap();
+
+        pull.participants = vec![PullParticipant {
+            seat_id: "seat-a".to_string(),
+            ticket_id: "tkt-a".to_string(),
+            ticket_name: "5K".to_string(),
+            qr_code: "QR-A".to_string(),
+            participant_name: "Ana Atualizada".to_string(),
+            cpf: "999".to_string(),
+            birth_date: None,
+            age: None,
+            custom_form_responses: vec![],
+            checkin_done: false,
+            checked_in_at: None,
+        }];
+        super::import_pull_to_db(&pool, &pull).unwrap();
+
+        let participants = EventsRepository::list_participants_by_event(&pool, "ev-test").unwrap();
+        assert_eq!(participants.len(), 1);
+        assert_eq!(participants[0].id, "seat-a");
+        assert_eq!(participants[0].name.as_deref(), Some("Ana Atualizada"));
+        assert_eq!(participants[0].cpf.as_deref(), Some("999"));
     }
 }

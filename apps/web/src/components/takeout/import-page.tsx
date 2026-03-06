@@ -47,7 +47,17 @@ const LEGACY_HEADERS = [
   "Equipe",
 ] as const;
 
-function parseCsvLine(line: string): string[] {
+function normalizeHeader(value: string): string {
+  return value
+    .trim()
+    .replace(/^\uFEFF/, "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function parseCsvLine(line: string, delimiter: "," | ";"): string[] {
   const out: string[] = [];
   let current = "";
   let inQuotes = false;
@@ -63,7 +73,7 @@ function parseCsvLine(line: string): string[] {
       }
       continue;
     }
-    if (char === "," && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       out.push(current.trim());
       current = "";
       continue;
@@ -74,6 +84,21 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
+function detectDelimiter(headerLine: string): "," | ";" {
+  const headerNoBom = headerLine.replace(/^\uFEFF/, "");
+  const comma = parseCsvLine(headerNoBom, ",");
+  const semicolon = parseCsvLine(headerNoBom, ";");
+  const score = (cols: string[]) =>
+    LEGACY_HEADERS.filter((expected, index) => normalizeHeader(cols[index] ?? "") === normalizeHeader(expected)).length;
+  const commaScore = score(comma);
+  const semicolonScore = score(semicolon);
+
+  if (semicolonScore > commaScore) return ";";
+  if (commaScore > semicolonScore) return ",";
+  if (semicolon.length === LEGACY_HEADERS.length && comma.length !== LEGACY_HEADERS.length) return ";";
+  return ",";
+}
+
 function parseLegacyCsv(content: string): LegacyCsvParticipant[] {
   const lines = content
     .split(/\r?\n/)
@@ -82,15 +107,16 @@ function parseLegacyCsv(content: string): LegacyCsvParticipant[] {
   if (lines.length < 2) {
     throw new Error("CSV vazio");
   }
-  const header = parseCsvLine(lines[0]);
+  const delimiter = detectDelimiter(lines[0]);
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ""), delimiter);
   if (
     header.length !== LEGACY_HEADERS.length ||
-    !LEGACY_HEADERS.every((expected, index) => header[index] === expected)
+    !LEGACY_HEADERS.every((expected, index) => normalizeHeader(header[index] ?? "") === normalizeHeader(expected))
   ) {
     throw new Error("Header legado inválido");
   }
   return lines.slice(1).map((line) => {
-    const cols = parseCsvLine(line);
+    const cols = parseCsvLine(line, delimiter);
     return {
       number: cols[0] ?? "",
       fullName: cols[1] ?? "",
@@ -104,6 +130,15 @@ function parseLegacyCsv(content: string): LegacyCsvParticipant[] {
   });
 }
 
+function decodeUtf8OrWindows1252(content: ArrayBuffer): string {
+  const utf8 = new TextDecoder("utf-8");
+  const utf8Text = utf8.decode(content);
+  if (!utf8Text.includes("\uFFFD")) {
+    return utf8Text;
+  }
+  return new TextDecoder("windows-1252").decode(content);
+}
+
 export function ImportPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<ImportMode>("json_sync");
@@ -111,7 +146,6 @@ export function ImportPage() {
   const [parsedJson, setParsedJson] = useState<PullResponse | null>(null);
   const [legacyRows, setLegacyRows] = useState<LegacyCsvParticipant[] | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [eventId, setEventId] = useState("");
   const [eventName, setEventName] = useState("");
   const [eventStartDate, setEventStartDate] = useState("");
   const [legacyImportResult, setLegacyImportResult] = useState<LegacyImportResponse | null>(null);
@@ -127,8 +161,11 @@ export function ImportPage() {
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          const text = String(reader.result ?? "");
           if (mode === "json_sync") {
+            if (!(reader.result instanceof ArrayBuffer)) {
+              throw new Error("Arquivo inválido");
+            }
+            const text = new TextDecoder("utf-8", { fatal: true }).decode(reader.result);
             const data = JSON.parse(text) as PullResponse;
             if (!data.eventId || !Array.isArray(data.participants)) {
               throw new Error("JSON inválido");
@@ -137,6 +174,10 @@ export function ImportPage() {
             setLegacyRows(null);
             return;
           }
+          if (!(reader.result instanceof ArrayBuffer)) {
+            throw new Error("Arquivo inválido");
+          }
+          const text = decodeUtf8OrWindows1252(reader.result);
           const rows = parseLegacyCsv(text);
           setLegacyRows(rows);
           setParsedJson(null);
@@ -145,7 +186,7 @@ export function ImportPage() {
           resetParsedState();
         }
       };
-      reader.readAsText(f, "utf-8");
+      reader.readAsArrayBuffer(f);
     },
     [mode, resetParsedState],
   );
@@ -185,15 +226,14 @@ export function ImportPage() {
   const importMutation = useMutation({
     mutationFn: async () => {
       if (mode === "json_sync") {
-        if (!parsedJson) throw new Error("Selecione um arquivo JSON válido");
+        if (!parsedJson) throw new Error("Selecione um arquivo JSON vÃ¡lido");
         return postImportJson(parsedJson);
       }
-      if (!file || !legacyRows) throw new Error("Selecione um arquivo CSV válido");
-      if (!eventId.trim() || !eventName.trim() || !eventStartDate.trim()) {
-        throw new Error("Preencha Event ID, Nome do evento e Data inicial");
+      if (!file || !legacyRows) throw new Error("Selecione um arquivo CSV vÃ¡lido");
+      if (!eventName.trim() || !eventStartDate.trim()) {
+        throw new Error("Preencha Nome do evento e Data inicial");
       }
       const form = new FormData();
-      form.append("eventId", eventId.trim());
       form.append("eventName", eventName.trim());
       form.append("eventStartDate", eventStartDate.trim());
       form.append("file", file);
@@ -229,10 +269,10 @@ export function ImportPage() {
 
       <Card>
         <CardContent className="space-y-2 pt-6">
-          <Label htmlFor="import-model">Modelo de importação</Label>
+          <Label htmlFor="import-model">Modelo de importaÃ§Ã£o</Label>
           <select
             id="import-model"
-            aria-label="Modelo de importação"
+            aria-label="Modelo de importaÃ§Ã£o"
             className="h-10 w-full rounded-md border bg-background px-3"
             value={mode}
             onChange={(event) => {
@@ -252,11 +292,7 @@ export function ImportPage() {
           <CardHeader>
             <CardTitle className="text-lg">Metadados do evento</CardTitle>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="legacy-event-id">Event ID</Label>
-              <Input id="legacy-event-id" aria-label="Event ID" value={eventId} onChange={(e) => setEventId(e.target.value)} />
-            </div>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="legacy-event-name">Nome do evento</Label>
               <Input
@@ -335,7 +371,7 @@ export function ImportPage() {
               <ul className="mt-1 list-inside list-disc space-y-0.5">
                 <li>Formato JSON do checkin-sync (thevent)</li>
                 <li>
-                  Campos obrigatórios: <code>eventId</code>, <code>participants</code>
+                  Campos obrigatÃ³rios: <code>eventId</code>, <code>participants</code>
                 </li>
                 <li>
                   Cada participante com <code>seatId</code>, <code>ticketId</code>, <code>participantName</code>,{" "}
@@ -345,7 +381,7 @@ export function ImportPage() {
             ) : (
               <ul className="mt-1 list-inside list-disc space-y-0.5">
                 <li>Formato CSV legado com header exato do sistema antigo</li>
-                <li>Campos obrigatórios: Número, Nome Completo, CPF, Data de Nascimento</li>
+                <li>Campos obrigatÃ³rios: NÃºmero, Nome Completo, CPF, Data de Nascimento</li>
                 <li>Campos extras: Sexo, Modalidade, Tamanho da Camisa, Equipe</li>
               </ul>
             )}
@@ -364,7 +400,7 @@ export function ImportPage() {
       {mode === "json_sync" && listJson.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Preview — Participantes ({listJson.length})</CardTitle>
+            <CardTitle className="text-lg">Preview â€” Participantes ({listJson.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
@@ -385,7 +421,7 @@ export function ImportPage() {
                       <TableCell className="font-mono text-xs">{p.cpf}</TableCell>
                       <TableCell>{p.ticketName}</TableCell>
                       <TableCell className="font-mono text-xs">{p.qrCode}</TableCell>
-                      <TableCell>{p.checkinDone ? "Sim" : "Não"}</TableCell>
+                      <TableCell>{p.checkinDone ? "Sim" : "NÃ£o"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -398,14 +434,14 @@ export function ImportPage() {
       {mode === "legacy_csv" && legacyRows != null ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Preview — Participantes legado ({legacyRows.length})</CardTitle>
+            <CardTitle className="text-lg">Preview â€” Participantes legado ({legacyRows.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border">
               <Table role="table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead scope="col">Número</TableHead>
+                    <TableHead scope="col">NÃºmero</TableHead>
                     <TableHead scope="col">Nome Completo</TableHead>
                     <TableHead scope="col">Sexo</TableHead>
                     <TableHead scope="col">CPF</TableHead>

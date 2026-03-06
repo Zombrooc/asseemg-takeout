@@ -1,11 +1,13 @@
 import type { AuditEvent } from "@/lib/takeout-api-types";
 import { formatDateBR } from "@/lib/format-date";
+import { getAuditItemTitle } from "@/lib/audit-item-title";
 import { parseTakeoutRetirantePayload } from "@/lib/takeout-retirante-payload";
 import { Card } from "@/components/ui-tamagui";
 import { Text, View } from "react-native";
 
 export function AuditListItem({ item }: { item: AuditEvent }) {
   const retirante = parseTakeoutRetirantePayload(item.payload_json);
+  const title = getAuditItemTitle(item);
 
   return (
     <Card>
@@ -15,7 +17,7 @@ export function AuditListItem({ item }: { item: AuditEvent }) {
           numberOfLines={1}
           ellipsizeMode="tail"
         >
-          {item.ticket_id}
+          {title}
         </Text>
         <Text style={{ color: "#6b7280", fontSize: 12 }}>{item.status}</Text>
       </View>
