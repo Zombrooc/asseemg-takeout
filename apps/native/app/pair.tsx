@@ -1,7 +1,8 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
+import { parsePairingUrl } from "@/lib/parse-pairing-url";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { Text, View } from "react-native";
 
 import {
@@ -13,26 +14,15 @@ import {
 } from "@/components/mobile-tamagui/pair";
 import { Button, Input, ScreenContainer } from "@/components/ui-tamagui";
 
+const PAIR_FETCH_TIMEOUT_MS = 15_000;
+const BARCODE_SCAN_THROTTLE_MS = 2_000;
+
 function generateDeviceId(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-}
-
-function parsePairingUrl(
-  urlString: string,
-): { baseUrl: string; token: string } | null {
-  try {
-    const u = new URL(urlString.trim());
-    const token = u.searchParams.get("token");
-    if (!token) return null;
-    const baseUrl = `${u.protocol}//${u.host}`;
-    return { baseUrl, token };
-  } catch {
-    return null;
-  }
 }
 
 export default function PairScreen() {
@@ -45,7 +35,9 @@ export default function PairScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [pairMethod, setPairMethod] = useState<"qr" | "manual">("qr");
+  const [cameraReady, setCameraReady] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const lastScannedAt = useRef(0);
 
   const doPair = useCallback(
     async (url: string, token: string) => {
@@ -59,6 +51,8 @@ export default function PairScreen() {
       setError(null);
       setLoading(true);
       const deviceId = generateDeviceId();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), PAIR_FETCH_TIMEOUT_MS);
       try {
         const res = await fetch(`${base}/pair`, {
           method: "POST",
@@ -68,7 +62,9 @@ export default function PairScreen() {
             pairing_token: t,
             operator_alias: alias,
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeoutId);
         const data = (await res.json()) as {
           access_token?: string;
           error?: string;
@@ -84,7 +80,16 @@ export default function PairScreen() {
         await setConnection(base, data.access_token, deviceId);
         router.replace("/(drawer)");
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Falha ao conectar.");
+        clearTimeout(timeoutId);
+        if (e instanceof Error) {
+          if (e.name === "AbortError") {
+            setError("Tempo esgotado. Verifique se o celular e o desktop estão na mesma rede.");
+          } else {
+            setError(e.message || "Falha ao conectar.");
+          }
+        } else {
+          setError("Falha ao conectar.");
+        }
       } finally {
         setLoading(false);
       }
@@ -94,6 +99,14 @@ export default function PairScreen() {
 
   const handleBarcodeScanned = useCallback(
     ({ data }: { data: string }) => {
+      const now = Date.now();
+      if (now - lastScannedAt.current < BARCODE_SCAN_THROTTLE_MS) return;
+      lastScannedAt.current = now;
+
+      if (!__DEV__) {
+        console.warn("[pair] barcodeScanned", { len: data?.length ?? 0, prefix: (data ?? "").slice(0, 30) });
+      }
+
       const parsed = parsePairingUrl(data);
       if (parsed) {
         setShowScanner(false);
@@ -101,6 +114,9 @@ export default function PairScreen() {
         setPairingToken(parsed.token);
         doPair(parsed.baseUrl, parsed.token);
       } else {
+        if (!__DEV__) {
+          console.warn("[pair] parsePairingUrl null", { raw: (data ?? "").slice(0, 80) });
+        }
         setError("QR inválido. Escaneie o QR exibido no desktop.");
       }
     },
@@ -139,7 +155,8 @@ export default function PairScreen() {
           barcodeScannerSettings={{
             barcodeTypes: ["qr"],
           }}
-          onBarcodeScanned={handleBarcodeScanned}
+          onCameraReady={() => setCameraReady(true)}
+          onBarcodeScanned={cameraReady ? handleBarcodeScanned : undefined}
         />
         <QrScannerOverlay
           description="Aponte para o QR code na tela do desktop"
@@ -148,6 +165,8 @@ export default function PairScreen() {
       </View>
     );
   }
+
+  const operatorFilled = operatorAlias.trim().length > 0;
 
   return (
     <ScreenContainer mode="scroll">
@@ -180,11 +199,18 @@ export default function PairScreen() {
               autoCorrect={false}
               style={{ marginBottom: 16, minHeight: 48 }}
             />
+            {error ? (
+              <Text style={{ color: "#dc2626", fontSize: 14, marginBottom: 12 }}>{error}</Text>
+            ) : null}
             <Button
               minHeight={48}
-              onPress={() => setShowScanner(true)}
+              onPress={() => {
+                setCameraReady(false);
+                setShowScanner(true);
+              }}
+              disabled={!operatorFilled || loading}
             >
-              Escanear QR code
+              {loading ? "Conectando..." : "Escanear QR code"}
             </Button>
           </View>
         ) : (

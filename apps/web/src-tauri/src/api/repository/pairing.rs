@@ -54,6 +54,30 @@ impl PairingRepository {
         Ok(n > 0)
     }
 
+    pub fn token_is_valid(pool: &DbPool, token: &str) -> Result<bool, rusqlite::Error> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        let mut stmt =
+            conn.prepare("SELECT 1 FROM pairing_tokens WHERE token = ?1 AND expires_at > ?2 LIMIT 1")?;
+        let mut rows = stmt.query(params![token, now])?;
+        Ok(rows.next()?.is_some())
+    }
+
+    pub fn delete_all_tokens(pool: &DbPool) -> Result<(), rusqlite::Error> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        conn.execute("DELETE FROM pairing_tokens", [])?;
+        Ok(())
+    }
+
     pub fn insert_device(
         pool: &DbPool,
         device_id: &str,

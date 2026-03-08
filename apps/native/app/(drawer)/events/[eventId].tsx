@@ -126,6 +126,7 @@ export default function EventScreen() {
     useState<DisplayParticipant | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [offlineNoticeVisible, setOfflineNoticeVisible] = useState(false);
   const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(
@@ -182,14 +183,19 @@ export default function EventScreen() {
     }
   }, [event?.name, navigation]);
 
+  const closeQrScanner = useCallback(() => {
+    setCameraReady(false);
+    setShowQrScanner(false);
+  }, []);
+
   useEffect(() => {
     if (!showQrScanner) return;
     const sub = BackHandler.addEventListener("hardwareBackPress", () => {
-      setShowQrScanner(false);
+      closeQrScanner();
       return true;
     });
     return () => sub.remove();
-  }, [showQrScanner]);
+  }, [showQrScanner, closeQrScanner]);
 
   const participants: DisplayParticipant[] = participantsQuery.data ?? [];
   const participantsById = useMemo(
@@ -247,7 +253,7 @@ export default function EventScreen() {
           p.qrCode.trim() === code
         );
       });
-      setShowQrScanner(false);
+      closeQrScanner();
       if (!participant) {
         Alert.alert(
           "Ingresso não encontrado",
@@ -276,7 +282,7 @@ export default function EventScreen() {
       }
       setSelectedParticipant(participant);
     },
-    [participants, auditConfirmedTicketIds, lockMap, deviceId, sourceType],
+    [participants, auditConfirmedTicketIds, lockMap, deviceId, sourceType, closeQrScanner],
   );
 
   const offlineNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -429,7 +435,7 @@ export default function EventScreen() {
             </Text>
             <Button onPress={requestPermission}>Permitir câmera</Button>
             <View style={{ marginTop: 12 }}>
-              <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
+              <Button variant="bordered" onPress={closeQrScanner}>
                 Voltar
               </Button>
             </View>
@@ -444,11 +450,12 @@ export default function EventScreen() {
           style={{ flex: 1 }}
           facing="back"
           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-          onBarcodeScanned={onQrScanned}
+          onCameraReady={() => setCameraReady(true)}
+          onBarcodeScanned={cameraReady ? onQrScanned : undefined}
         />
-        <QrTicketScannerOverlay onBack={() => setShowQrScanner(false)} />
+        <QrTicketScannerOverlay onBack={closeQrScanner} />
         <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: 16, paddingBottom: 32 }}>
-          <Button variant="bordered" onPress={() => setShowQrScanner(false)}>
+          <Button variant="bordered" onPress={closeQrScanner}>
             Cancelar
           </Button>
         </View>
@@ -494,7 +501,10 @@ export default function EventScreen() {
         >
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
           <QuickActionsRow
-            onScan={() => setShowQrScanner(true)}
+            onScan={() => {
+              setCameraReady(false);
+              setShowQrScanner(true);
+            }}
             onReset={handleResetCheckins}
             resetLoading={resetLoading}
             undoCount={confirmed}
