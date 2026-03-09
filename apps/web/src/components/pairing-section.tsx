@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 export interface PairingSectionProps {
   pairingUrl: string;
+  expiresAt?: string;
   onRenewToken?: () => void;
   isRenewing?: boolean;
 }
@@ -16,15 +17,21 @@ const QR_SIZE = 200;
 
 export function PairingSection({
   pairingUrl,
+  expiresAt,
   onRenewToken,
   isRenewing = false,
 }: PairingSectionProps) {
   const [copied, setCopied] = useState(false);
+  const expiresAtEpoch = Number(expiresAt ?? "0");
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  const isTokenExpired = expiresAtEpoch > 0 && expiresAtEpoch <= nowEpoch;
+  const expiresInMin =
+    expiresAtEpoch > 0 ? Math.max(0, Math.ceil((expiresAtEpoch - nowEpoch) / 60)) : null;
 
   const handleCopyUrl = () => {
     navigator.clipboard.writeText(pairingUrl);
     setCopied(true);
-    toast.success("URL copiada para a área de transferência");
+    toast.success("URL copiada para a area de transferencia");
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -39,7 +46,14 @@ export function PairingSection({
         </div>
         <div className="flex flex-1 flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Escaneie com o app mobile ou acesse a URL manualmente:
+            Escaneie com o app mobile ou acesse a URL manualmente. O mesmo QR funciona em multiplos aparelhos ate a expiracao do token.
+          </p>
+          <p className={cn("text-xs", isTokenExpired ? "text-amber-600" : "text-muted-foreground")}>
+            {isTokenExpired
+              ? "Token expirado. O desktop vai gerar um novo automaticamente."
+              : expiresInMin != null
+                ? `Token valido por cerca de ${expiresInMin} min`
+                : "Validade do token indisponivel"}
           </p>
           <code className="block max-w-full truncate rounded-md border bg-muted px-3 py-2 text-xs">
             {pairingUrl}

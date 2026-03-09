@@ -14,7 +14,7 @@ pub use legacy::{
     LegacyRepository, UpdateLegacyParticipantError,
 };
 pub use locks::{AcquireResult, LocksRepository};
-pub use pairing::PairingRepository;
+pub use pairing::{PairingRepository, PairingTokenState};
 pub use participants::{
     ParticipantRow, ParticipantSearchMode, ParticipantsRepository, UpdateParticipantError,
 };

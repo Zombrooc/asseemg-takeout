@@ -1,11 +1,19 @@
 use crate::api::db::DbPool;
-use crate::api::repository::PairingRepository;
+use crate::api::repository::{PairingRepository, PairingTokenState};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const TOKEN_TTL_SECS: u64 = 15 * 60; // 15 min
 
 pub struct PairingService;
+
+#[derive(Debug)]
+pub enum PairingError {
+    OperatorAliasRequired,
+    PairingTokenInvalid,
+    PairingTokenExpired,
+    Storage(String),
+}
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,18 +74,20 @@ impl PairingService {
         device_id: String,
         pairing_token: String,
         operator_alias: String,
-    ) -> Result<String, String> {
+    ) -> Result<String, PairingError> {
         if operator_alias.trim().is_empty() {
-            return Err("operator_alias is required".to_string());
+            return Err(PairingError::OperatorAliasRequired);
         }
-        let consumed =
-            PairingRepository::consume_token(&pool, &pairing_token).map_err(|e| e.to_string())?;
-        if !consumed {
-            return Err("invalid or expired pairing token".to_string());
+        match PairingRepository::token_state(&pool, &pairing_token)
+            .map_err(|e| PairingError::Storage(e.to_string()))?
+        {
+            PairingTokenState::Active => {}
+            PairingTokenState::Expired => return Err(PairingError::PairingTokenExpired),
+            PairingTokenState::Missing => return Err(PairingError::PairingTokenInvalid),
         }
         let access_token = uuid::Uuid::new_v4().to_string();
         PairingRepository::insert_device(&pool, &device_id, &access_token, operator_alias.trim())
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| PairingError::Storage(e.to_string()))?;
         Ok(access_token)
     }
 
@@ -104,18 +114,27 @@ mod tests {
     }
 
     #[test]
-    fn pair_consumes_token_and_returns_access_token() {
+    fn pair_allows_reusing_token_until_expiration() {
         let pool = mem_pool();
         let info = PairingService::get_info(pool.clone(), "http://x".to_string()).unwrap();
         let token = info.pairing_token.clone();
-        let access = PairingService::pair(
+        let access_first = PairingService::pair(
             pool.clone(),
             "device-1".to_string(),
+            token.clone(),
+            "Operador 1".to_string(),
+        )
+        .unwrap();
+        let access_second = PairingService::pair(
+            pool.clone(),
+            "device-2".to_string(),
             token,
             "Operador 1".to_string(),
         )
         .unwrap();
-        assert!(!access.is_empty());
+        assert!(!access_first.is_empty());
+        assert!(!access_second.is_empty());
+        assert_ne!(access_first, access_second);
     }
 
     #[test]
@@ -128,6 +147,27 @@ mod tests {
             "Operador 1".to_string(),
         )
         .unwrap_err();
-        assert!(err.contains("invalid"));
+        assert!(matches!(err, PairingError::PairingTokenInvalid));
+    }
+
+    #[test]
+    fn pair_fails_with_expired_token() {
+        let pool = mem_pool();
+        let conn = pool.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO pairing_tokens (token, expires_at) VALUES (?1, ?2)",
+            rusqlite::params!["expired-token", "1"],
+        )
+        .unwrap();
+        drop(conn);
+
+        let err = PairingService::pair(
+            pool,
+            "device-1".to_string(),
+            "expired-token".to_string(),
+            "Operador 1".to_string(),
+        )
+        .unwrap_err();
+        assert!(matches!(err, PairingError::PairingTokenExpired));
     }
 }

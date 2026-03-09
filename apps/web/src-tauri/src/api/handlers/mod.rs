@@ -19,7 +19,7 @@ use crate::api::repository::{
     UpdateLegacyParticipantError, UpdateParticipantError,
 };
 use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
-use crate::api::services::PairingService;
+use crate::api::services::{PairingError, PairingService};
 use crate::api::thevent;
 use crate::api::ws::WsRegistry;
 
@@ -252,14 +252,20 @@ async fn pair(State(state): State<AppState>, Json(body): Json<PairBody>) -> impl
     let Some(operator_alias) = body.operator_alias.map(|v| v.trim().to_string()) else {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "operator_alias is required" })),
+            Json(serde_json::json!({
+              "error": "operator_alias is required",
+              "code": "OPERATOR_ALIAS_REQUIRED"
+            })),
         )
             .into_response();
     };
     if operator_alias.is_empty() {
         return (
             StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "operator_alias is required" })),
+            Json(serde_json::json!({
+              "error": "operator_alias is required",
+              "code": "OPERATOR_ALIAS_REQUIRED"
+            })),
         )
             .into_response();
     }
@@ -274,9 +280,33 @@ async fn pair(State(state): State<AppState>, Json(body): Json<PairBody>) -> impl
             Json(serde_json::json!({ "access_token": access_token })),
         )
             .into_response(),
-        Err(e) => (
+        Err(PairingError::PairingTokenInvalid) => (
             StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": e })),
+            Json(serde_json::json!({
+              "error": "invalid pairing token",
+              "code": "PAIRING_TOKEN_INVALID"
+            })),
+        )
+            .into_response(),
+        Err(PairingError::PairingTokenExpired) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({
+              "error": "expired pairing token",
+              "code": "PAIRING_TOKEN_EXPIRED"
+            })),
+        )
+            .into_response(),
+        Err(PairingError::OperatorAliasRequired) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+              "error": "operator_alias is required",
+              "code": "OPERATOR_ALIAS_REQUIRED"
+            })),
+        )
+            .into_response(),
+        Err(PairingError::Storage(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e, "code": "PAIRING_INTERNAL_ERROR" })),
         )
             .into_response(),
     }

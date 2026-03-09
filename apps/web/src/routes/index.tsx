@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { EventCard } from "@/components/event-card";
 import { PairingSection } from "@/components/pairing-section";
 import { StatusCard } from "@/components/status-card";
@@ -59,6 +60,7 @@ function DashboardPage() {
   const { data: connectionInfo, isLoading: connectionLoading } = useQuery({
     queryKey: ["takeout", "connectionInfo"],
     queryFn: getConnectionInfo,
+    refetchInterval: 5_000,
   });
 
   const renewMutation = useMutation({
@@ -116,6 +118,21 @@ function DashboardPage() {
     connectionInfo != null
       ? pairingUrl(connectionInfo.baseUrl, connectionInfo.pairingToken)
       : "";
+  const autoRenewCooldownMs = 10_000;
+  const lastAutoRenewAtRef = useRef<number>(0);
+  const renewToken = renewMutation.mutate;
+  const isPairingTokenExpired =
+    connectionInfo != null &&
+    Number(connectionInfo.expiresAt) > 0 &&
+    Number(connectionInfo.expiresAt) <= Math.floor(Date.now() / 1000);
+
+  useEffect(() => {
+    if (!isPairingTokenExpired || renewMutation.isPending) return;
+    const now = Date.now();
+    if (now - lastAutoRenewAtRef.current < autoRenewCooldownMs) return;
+    lastAutoRenewAtRef.current = now;
+    renewToken();
+  }, [isPairingTokenExpired, renewMutation.isPending, renewToken]);
 
   return (
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-8 sm:px-6 lg:px-8">
@@ -149,6 +166,7 @@ function DashboardPage() {
         ) : (
           <PairingSection
             pairingUrl={pairingUrlValue}
+            expiresAt={connectionInfo.expiresAt}
             onRenewToken={() => renewMutation.mutate()}
             isRenewing={renewMutation.isPending}
           />

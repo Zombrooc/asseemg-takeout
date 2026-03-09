@@ -4,6 +4,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct PairingRepository;
 
+pub enum PairingTokenState {
+    Active,
+    Expired,
+    Missing,
+}
+
 impl PairingRepository {
     pub fn get_current_token(pool: &DbPool) -> Result<Option<(String, String)>, rusqlite::Error> {
         let now = SystemTime::now()
@@ -52,6 +58,31 @@ impl PairingRepository {
             params![token],
         )?;
         Ok(n > 0)
+    }
+
+    pub fn token_state(
+        pool: &DbPool,
+        token: &str,
+    ) -> Result<PairingTokenState, rusqlite::Error> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        let mut stmt = conn.prepare("SELECT expires_at FROM pairing_tokens WHERE token = ?1 LIMIT 1")?;
+        let mut rows = stmt.query(params![token])?;
+        if let Some(row) = rows.next()? {
+            let expires_at: String = row.get(0)?;
+            let expires_at_ts = expires_at.parse::<i64>().unwrap_or_default();
+            if expires_at_ts > now {
+                return Ok(PairingTokenState::Active);
+            }
+            return Ok(PairingTokenState::Expired);
+        }
+        Ok(PairingTokenState::Missing)
     }
 
     pub fn insert_device(

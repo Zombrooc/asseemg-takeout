@@ -915,6 +915,132 @@ async fn pair_requires_operator_alias() {
         .unwrap();
     let missing_alias_res = app.oneshot(missing_alias_req).await.unwrap();
     assert_eq!(missing_alias_res.status(), StatusCode::BAD_REQUEST);
+    let missing_alias_body = body_bytes(missing_alias_res.into_body()).await;
+    let missing_alias_json: serde_json::Value = serde_json::from_slice(&missing_alias_body).unwrap();
+    assert_eq!(
+        missing_alias_json.get("code").and_then(|v| v.as_str()),
+        Some("OPERATOR_ALIAS_REQUIRED")
+    );
+}
+
+#[tokio::test]
+async fn pair_token_is_multi_use_until_expiration() {
+    let app = app();
+    let pair_info_req = Request::builder()
+        .uri("/pair/info")
+        .body(Body::empty())
+        .unwrap();
+    let pair_info_res = app.clone().oneshot(pair_info_req).await.unwrap();
+    assert_eq!(pair_info_res.status(), StatusCode::OK);
+    let pair_info_body = body_bytes(pair_info_res.into_body()).await;
+    let pair_info_json: serde_json::Value = serde_json::from_slice(&pair_info_body).unwrap();
+    let token = pair_info_json
+        .get("pairingToken")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+
+    let pair_first_req = Request::builder()
+        .uri("/pair")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "device_id": "mobile-1",
+              "operator_alias": "Operador 1",
+              "pairing_token": token
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let pair_first_res = app.clone().oneshot(pair_first_req).await.unwrap();
+    assert_eq!(pair_first_res.status(), StatusCode::OK);
+
+    let pair_second_req = Request::builder()
+        .uri("/pair")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "device_id": "mobile-2",
+              "operator_alias": "Operador 2",
+              "pairing_token": token
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let pair_second_res = app.oneshot(pair_second_req).await.unwrap();
+    assert_eq!(pair_second_res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn pair_returns_code_when_token_is_invalid_or_expired() {
+    let (app, pool) = app_with_seeded_pool();
+
+    let invalid_req = Request::builder()
+        .uri("/pair")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "device_id": "mobile-invalid",
+              "operator_alias": "Operador",
+              "pairing_token": "TOKEN-INEXISTENTE"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let invalid_res = app.clone().oneshot(invalid_req).await.unwrap();
+    assert_eq!(invalid_res.status(), StatusCode::UNAUTHORIZED);
+    let invalid_body = body_bytes(invalid_res.into_body()).await;
+    let invalid_json: serde_json::Value = serde_json::from_slice(&invalid_body).unwrap();
+    assert_eq!(
+        invalid_json.get("code").and_then(|v| v.as_str()),
+        Some("PAIRING_TOKEN_INVALID")
+    );
+
+    let pair_info_req = Request::builder()
+        .uri("/pair/info")
+        .body(Body::empty())
+        .unwrap();
+    let pair_info_res = app.clone().oneshot(pair_info_req).await.unwrap();
+    assert_eq!(pair_info_res.status(), StatusCode::OK);
+    let pair_info_body = body_bytes(pair_info_res.into_body()).await;
+    let pair_info_json: serde_json::Value = serde_json::from_slice(&pair_info_body).unwrap();
+    let token = pair_info_json
+        .get("pairingToken")
+        .and_then(|v| v.as_str())
+        .unwrap()
+        .to_string();
+    let conn = pool.conn.lock().unwrap();
+    conn.execute(
+        "UPDATE pairing_tokens SET expires_at = ?1 WHERE token = ?2",
+        rusqlite::params!["1", token],
+    )
+    .unwrap();
+    drop(conn);
+
+    let expired_req = Request::builder()
+        .uri("/pair")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "device_id": "mobile-expired",
+              "operator_alias": "Operador",
+              "pairing_token": token
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let expired_res = app.oneshot(expired_req).await.unwrap();
+    assert_eq!(expired_res.status(), StatusCode::UNAUTHORIZED);
+    let expired_body = body_bytes(expired_res.into_body()).await;
+    let expired_json: serde_json::Value = serde_json::from_slice(&expired_body).unwrap();
+    assert_eq!(
+        expired_json.get("code").and_then(|v| v.as_str()),
+        Some("PAIRING_TOKEN_EXPIRED")
+    );
 }
 
 #[tokio::test]
