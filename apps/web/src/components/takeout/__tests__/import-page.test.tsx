@@ -75,6 +75,23 @@ describe("ImportPage", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
+      expect(screen.getByLabelText("Mapear CPF")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText("Mapear Número"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear Nome Completo"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear CPF"), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear Data de Nascimento"), {
+      target: { value: "4" },
+    });
+
+    await waitFor(() => {
       expect(screen.getByText("Importar e Salvar")).toBeInTheDocument();
     });
 
@@ -95,7 +112,7 @@ describe("ImportPage", () => {
     });
   });
 
-  it("accepts flexible legacy header variations", async () => {
+  it("auto-maps legacy headers with variations", async () => {
     render(<ImportPage />);
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "legacy_csv" },
@@ -112,7 +129,7 @@ describe("ImportPage", () => {
     expect(toastError).not.toHaveBeenCalled();
   });
 
-  it("rejects legacy csv when columns are out of order", async () => {
+  it("accepts legacy csv when columns are out of order (manual mapping)", async () => {
     render(<ImportPage />);
     fireEvent.change(screen.getByRole("combobox"), {
       target: { value: "legacy_csv" },
@@ -124,7 +141,25 @@ describe("ImportPage", () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(toastError).toHaveBeenCalledWith("Header legado inválido");
+      expect(screen.getByLabelText("Mapear CPF")).toBeInTheDocument();
     });
+
+    fireEvent.change(screen.getByLabelText("Mapear Número"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear Nome Completo"), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear CPF"), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear Data de Nascimento"), {
+      target: { value: "4" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Importar e Salvar")).toBeInTheDocument();
+    });
+    expect(toastError).not.toHaveBeenCalled();
   });
 });

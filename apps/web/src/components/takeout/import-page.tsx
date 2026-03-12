@@ -25,16 +25,38 @@ import { toast } from "sonner";
 
 type ImportMode = "json_sync" | "legacy_csv";
 
-type LegacyCsvParticipant = {
-  number: string;
-  fullName: string;
-  sex: string;
-  cpf: string;
-  birthDate: string;
-  modality: string;
-  shirtSize: string;
-  team: string;
+type ParsedCsv = {
+  headers: string[];
+  rows: string[][];
+  delimiter: "," | ";";
 };
+
+type LegacyFieldKey =
+  | "number"
+  | "fullName"
+  | "cpf"
+  | "birthDate"
+  | "sex"
+  | "modality"
+  | "shirtSize"
+  | "team";
+
+type LegacyField = {
+  key: LegacyFieldKey;
+  label: string;
+  required: boolean;
+};
+
+const LEGACY_FIELDS: LegacyField[] = [
+  { key: "number", label: "Número", required: true },
+  { key: "fullName", label: "Nome Completo", required: true },
+  { key: "cpf", label: "CPF", required: true },
+  { key: "birthDate", label: "Data de Nascimento", required: true },
+  { key: "sex", label: "Sexo", required: false },
+  { key: "modality", label: "Modalidade", required: false },
+  { key: "shirtSize", label: "Tamanho da Camisa", required: false },
+  { key: "team", label: "Equipe", required: false },
+];
 
 const LEGACY_HEADERS = [
   "Número",
@@ -54,6 +76,7 @@ function normalizeHeader(value: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
+    .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ");
 }
 
@@ -88,18 +111,13 @@ function detectDelimiter(headerLine: string): "," | ";" {
   const headerNoBom = headerLine.replace(/^\uFEFF/, "");
   const comma = parseCsvLine(headerNoBom, ",");
   const semicolon = parseCsvLine(headerNoBom, ";");
-  const score = (cols: string[]) =>
-    LEGACY_HEADERS.filter((expected, index) => normalizeHeader(cols[index] ?? "") === normalizeHeader(expected)).length;
-  const commaScore = score(comma);
-  const semicolonScore = score(semicolon);
-
-  if (semicolonScore > commaScore) return ";";
-  if (commaScore > semicolonScore) return ",";
-  if (semicolon.length === LEGACY_HEADERS.length && comma.length !== LEGACY_HEADERS.length) return ";";
+  if (semicolon.length > comma.length) return ";";
+  if (comma.length > semicolon.length) return ",";
+  if (headerNoBom.includes(";") && !headerNoBom.includes(",")) return ";";
   return ",";
 }
 
-function parseLegacyCsv(content: string): LegacyCsvParticipant[] {
+function parseGenericCsv(content: string): ParsedCsv {
   const lines = content
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -108,26 +126,85 @@ function parseLegacyCsv(content: string): LegacyCsvParticipant[] {
     throw new Error("CSV vazio");
   }
   const delimiter = detectDelimiter(lines[0]);
-  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, ""), delimiter);
-  if (
-    header.length !== LEGACY_HEADERS.length ||
-    !LEGACY_HEADERS.every((expected, index) => normalizeHeader(header[index] ?? "") === normalizeHeader(expected))
-  ) {
-    throw new Error("Header legado inválido");
+  const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""), delimiter);
+  const rows = lines.slice(1).map((line) => parseCsvLine(line, delimiter));
+  return { headers, rows, delimiter };
+}
+
+function csvEscape(value: unknown): string {
+  const str = String(value ?? "");
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
+const LEGACY_FIELD_ALIASES: Record<LegacyFieldKey, string[]> = {
+  number: ["numero", "número", "bib", "bib number", "bib_number", "numero atleta"],
+  fullName: ["nome completo", "nome", "nome do participante", "participante", "name"],
+  cpf: ["cpf", "documento", "documento cpf"],
+  birthDate: ["data de nascimento", "nascimento", "birth date", "data_nascimento"],
+  sex: ["sexo", "genero", "gênero", "gender"],
+  modality: ["modalidade", "categoria", "prova", "race"],
+  shirtSize: ["tamanho da camisa", "tamanho camisa", "camisa", "shirt size"],
+  team: ["equipe", "time", "assessoria", "team"],
+};
+
+function autoMapHeaders(headers: string[]): Record<LegacyFieldKey, number | null> {
+  const normalized = headers.map((header) => normalizeHeader(header));
+  const taken = new Set<number>();
+  const out = {} as Record<LegacyFieldKey, number | null>;
+
+  for (const field of LEGACY_FIELDS) {
+    const aliases = LEGACY_FIELD_ALIASES[field.key] ?? [];
+    const aliasSet = new Set(aliases.map((alias) => normalizeHeader(alias)));
+    let found: number | null = null;
+    for (let idx = 0; idx < normalized.length; idx += 1) {
+      if (taken.has(idx)) continue;
+      if (aliasSet.has(normalized[idx])) {
+        found = idx;
+        break;
+      }
+    }
+    if (found != null) taken.add(found);
+    out[field.key] = found;
   }
-  return lines.slice(1).map((line) => {
-    const cols = parseCsvLine(line, delimiter);
-    return {
-      number: cols[0] ?? "",
-      fullName: cols[1] ?? "",
-      sex: cols[2] ?? "",
-      cpf: cols[3] ?? "",
-      birthDate: cols[4] ?? "",
-      modality: cols[5] ?? "",
-      shirtSize: cols[6] ?? "",
-      team: cols[7] ?? "",
-    };
+
+  return out;
+}
+
+function mapRowToLegacy(row: string[], mapping: Record<LegacyFieldKey, number | null>) {
+  const pick = (key: LegacyFieldKey) => {
+    const idx = mapping[key];
+    if (idx == null) return "";
+    return row[idx] ?? "";
+  };
+  return {
+    number: pick("number"),
+    fullName: pick("fullName"),
+    sex: pick("sex"),
+    cpf: pick("cpf"),
+    birthDate: pick("birthDate"),
+    modality: pick("modality"),
+    shirtSize: pick("shirtSize"),
+    team: pick("team"),
+  };
+}
+
+function buildLegacyCsv(rows: string[][], mapping: Record<LegacyFieldKey, number | null>): string {
+  const header = [...LEGACY_HEADERS].map(csvEscape).join(",");
+  const mappedRows = rows.map((row) => {
+    const legacy = mapRowToLegacy(row, mapping);
+    const cells = [
+      legacy.number,
+      legacy.fullName,
+      legacy.sex,
+      legacy.cpf,
+      legacy.birthDate,
+      legacy.modality,
+      legacy.shirtSize,
+      legacy.team,
+    ];
+    return cells.map(csvEscape).join(",");
   });
+  return [header, ...mappedRows].join("\n");
 }
 
 function decodeUtf8OrWindows1252(content: ArrayBuffer): string {
@@ -144,7 +221,17 @@ export function ImportPage() {
   const [mode, setMode] = useState<ImportMode>("json_sync");
   const [file, setFile] = useState<File | null>(null);
   const [parsedJson, setParsedJson] = useState<PullResponse | null>(null);
-  const [legacyRows, setLegacyRows] = useState<LegacyCsvParticipant[] | null>(null);
+  const [legacyCsv, setLegacyCsv] = useState<ParsedCsv | null>(null);
+  const [legacyMapping, setLegacyMapping] = useState<Record<LegacyFieldKey, number | null>>(
+    () =>
+      LEGACY_FIELDS.reduce(
+        (acc, field) => {
+          acc[field.key] = null;
+          return acc;
+        },
+        {} as Record<LegacyFieldKey, number | null>,
+      ),
+  );
   const [dragOver, setDragOver] = useState(false);
   const [eventName, setEventName] = useState("");
   const [eventStartDate, setEventStartDate] = useState("");
@@ -152,7 +239,16 @@ export function ImportPage() {
 
   const resetParsedState = useCallback(() => {
     setParsedJson(null);
-    setLegacyRows(null);
+    setLegacyCsv(null);
+    setLegacyMapping(
+      LEGACY_FIELDS.reduce(
+        (acc, field) => {
+          acc[field.key] = null;
+          return acc;
+        },
+        {} as Record<LegacyFieldKey, number | null>,
+      ),
+    );
     setLegacyImportResult(null);
   }, []);
 
@@ -178,8 +274,9 @@ export function ImportPage() {
             throw new Error("Arquivo inválido");
           }
           const text = decodeUtf8OrWindows1252(reader.result);
-          const rows = parseLegacyCsv(text);
-          setLegacyRows(rows);
+          const parsed = parseGenericCsv(text);
+          setLegacyCsv(parsed);
+          setLegacyMapping(autoMapHeaders(parsed.headers));
           setParsedJson(null);
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Arquivo inválido");
@@ -223,20 +320,33 @@ export function ImportPage() {
     [mode, readFile, resetParsedState],
   );
 
+  const mappingValidation = useMemo(() => {
+    const requiredKeys = LEGACY_FIELDS.filter((field) => field.required).map((field) => field.key);
+    const selectedRequired = requiredKeys.map((key) => legacyMapping[key]).filter((v) => v != null) as number[];
+    const hasAllRequired = requiredKeys.every((key) => legacyMapping[key] != null);
+    const uniqueRequired = new Set(selectedRequired).size === selectedRequired.length;
+    return { hasAllRequired, uniqueRequired, valid: hasAllRequired && uniqueRequired };
+  }, [legacyMapping]);
+
   const importMutation = useMutation({
     mutationFn: async () => {
       if (mode === "json_sync") {
         if (!parsedJson) throw new Error("Selecione um arquivo JSON vÃ¡lido");
         return postImportJson(parsedJson);
       }
-      if (!file || !legacyRows) throw new Error("Selecione um arquivo CSV vÃ¡lido");
+      if (!file || !legacyCsv) throw new Error("Selecione um arquivo CSV vÃ¡lido");
+      if (!mappingValidation.valid) {
+        throw new Error("Preencha o mapeamento obrigatÃ³rio do CSV");
+      }
       if (!eventName.trim() || !eventStartDate.trim()) {
         throw new Error("Preencha Nome do evento e Data inicial");
       }
+      const csv = buildLegacyCsv(legacyCsv.rows, legacyMapping);
+      const mappedFile = new File([csv], file.name || "legacy.csv", { type: "text/csv" });
       const form = new FormData();
       form.append("eventName", eventName.trim());
       form.append("eventStartDate", eventStartDate.trim());
-      form.append("file", file);
+      form.append("file", mappedFile);
       return postImportLegacyCsv(form);
     },
     onSuccess: (res) => {
@@ -254,7 +364,8 @@ export function ImportPage() {
   });
 
   const listJson = parsedJson?.participants ?? [];
-  const showImportButton = mode === "json_sync" ? parsedJson != null : legacyRows != null;
+  const showImportButton =
+    mode === "json_sync" ? parsedJson != null : legacyCsv != null && mappingValidation.valid;
   const title = mode === "json_sync" ? "Importar JSON (checkin-sync)" : "Importar CSV legado";
 
   const accept = mode === "json_sync" ? ".json,application/json" : ".csv,text/csv";
@@ -380,14 +491,59 @@ export function ImportPage() {
               </ul>
             ) : (
               <ul className="mt-1 list-inside list-disc space-y-0.5">
-                <li>Formato CSV legado com header exato do sistema antigo</li>
-                <li>Campos obrigatÃ³rios: NÃºmero, Nome Completo, CPF, Data de Nascimento</li>
-                <li>Campos extras: Sexo, Modalidade, Tamanho da Camisa, Equipe</li>
+                <li>Pode ter colunas extras ou nomes diferentes</li>
+                <li>VocÃª precisarÃ¡ mapear as colunas obrigatÃ³rias</li>
               </ul>
             )}
           </div>
         </CardContent>
       </Card>
+
+      {mode === "legacy_csv" && legacyCsv != null ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Mapeamento do CSV</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {LEGACY_FIELDS.map((field) => {
+              const selected = legacyMapping[field.key];
+              return (
+                <div key={field.key} className="space-y-2">
+                  <Label htmlFor={`map-${field.key}`}>
+                    {field.label} {field.required ? "*" : "(opcional)"}
+                  </Label>
+                  <select
+                    id={`map-${field.key}`}
+                    aria-label={`Mapear ${field.label}`}
+                    className="h-10 w-full rounded-md border bg-background px-3"
+                    value={selected == null ? "" : String(selected)}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setLegacyMapping((prev) => ({
+                        ...prev,
+                        [field.key]: value === "" ? null : Number(value),
+                      }));
+                    }}
+                  >
+                    <option value="">{field.required ? "Selecione a coluna" : "NÃ£o usar"}</option>
+                    {legacyCsv.headers.map((header, index) => (
+                      <option key={`${header}-${index}`} value={String(index)}>
+                        {header || `Coluna ${index + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+            {!mappingValidation.hasAllRequired ? (
+              <p className="text-sm text-destructive">Selecione todas as colunas obrigatÃ³rias.</p>
+            ) : null}
+            {mappingValidation.hasAllRequired && !mappingValidation.uniqueRequired ? (
+              <p className="text-sm text-destructive">Colunas obrigatÃ³rias nÃ£o podem se repetir.</p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {showImportButton ? (
         <div className="flex justify-end">
@@ -431,10 +587,10 @@ export function ImportPage() {
         </Card>
       ) : null}
 
-      {mode === "legacy_csv" && legacyRows != null ? (
+      {mode === "legacy_csv" && legacyCsv != null && mappingValidation.valid ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Preview â€” Participantes legado ({legacyRows.length})</CardTitle>
+            <CardTitle className="text-lg">Preview â€” Participantes legado ({legacyCsv.rows.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border">
@@ -452,18 +608,21 @@ export function ImportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {legacyRows.map((row, index) => (
-                    <TableRow key={`${row.cpf}-${index}`}>
-                      <TableCell>{row.number}</TableCell>
-                      <TableCell>{row.fullName}</TableCell>
-                      <TableCell>{row.sex || "-"}</TableCell>
-                      <TableCell className="font-mono text-xs">{row.cpf}</TableCell>
-                      <TableCell>{row.birthDate}</TableCell>
-                      <TableCell>{row.modality || "-"}</TableCell>
-                      <TableCell>{row.shirtSize || "-"}</TableCell>
-                      <TableCell>{row.team || "-"}</TableCell>
-                    </TableRow>
-                  ))}
+                  {legacyCsv.rows.map((row, index) => {
+                    const legacy = mapRowToLegacy(row, legacyMapping);
+                    return (
+                      <TableRow key={`${legacy.cpf}-${index}`}>
+                        <TableCell>{legacy.number}</TableCell>
+                        <TableCell>{legacy.fullName}</TableCell>
+                        <TableCell>{legacy.sex || "-"}</TableCell>
+                        <TableCell className="font-mono text-xs">{legacy.cpf}</TableCell>
+                        <TableCell>{legacy.birthDate}</TableCell>
+                        <TableCell>{legacy.modality || "-"}</TableCell>
+                        <TableCell>{legacy.shirtSize || "-"}</TableCell>
+                        <TableCell>{legacy.team || "-"}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
