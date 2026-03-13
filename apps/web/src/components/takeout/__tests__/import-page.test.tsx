@@ -177,4 +177,70 @@ describe("ImportPage", () => {
     });
     expect(toastError).not.toHaveBeenCalled();
   }, TEST_TIMEOUT);
+  it("repairs mojibake values in legacy preview", async () => {
+    renderWithQueryClient(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: /modelo/i }), {
+      target: { value: "legacy_csv" },
+    });
+    const csvContent =
+      "N\u00C3\u00BAmero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Jo\u00C3\u00A3o da Silva;Masculino;17979086937;08/03/2000;5KM;P;\n";
+    const input = screen.getByLabelText("Selecionar arquivo") as HTMLInputElement;
+    const file = new File([csvContent], "legacy-mojibake.csv", { type: "text/csv" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText("Jo\u00E3o da Silva")).toBeInTheDocument();
+    });
+    expect(toastError).not.toHaveBeenCalled();
+  }, TEST_TIMEOUT);
+
+  it("does not include blank row with only number in mapped CSV", async () => {
+    postImportLegacyCsv.mockResolvedValue({ imported: 1, errors: [] });
+    renderWithQueryClient(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: /modelo/i }), {
+      target: { value: "legacy_csv" },
+    });
+    const csvContent =
+      "N\u00FAmero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Ana;Feminino;17979086937;08/03/2000;5KM;P;\n2;;;;;;;\n";
+    const input = screen.getByLabelText("Selecionar arquivo") as HTMLInputElement;
+    const file = new File([csvContent], "legacy-number-only-row.csv", { type: "text/csv" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Mapear CPF")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Mapear N.mero/), {
+      target: { value: "0" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear Nome Completo"), {
+      target: { value: "1" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear CPF"), {
+      target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText("Mapear Data de Nascimento"), {
+      target: { value: "4" },
+    });
+    fireEvent.change(screen.getByLabelText("Nome do evento"), {
+      target: { value: "Evento Teste" },
+    });
+    fireEvent.change(screen.getByLabelText("Data inicial"), {
+      target: { value: "2026-03-06" },
+    });
+
+    fireEvent.click(screen.getByText("Importar e Salvar"));
+
+    await waitFor(() => {
+      expect(postImportLegacyCsv).toHaveBeenCalledTimes(1);
+    });
+
+    const formData = postImportLegacyCsv.mock.calls[0][0] as FormData;
+    const mappedFile = formData.get("file") as File;
+    const mappedContent = await mappedFile.text();
+
+    expect(mappedContent).toContain('"1","Ana"');
+    expect(mappedContent).not.toContain('"2","","","","","","",""');
+  }, TEST_TIMEOUT);
+
 });

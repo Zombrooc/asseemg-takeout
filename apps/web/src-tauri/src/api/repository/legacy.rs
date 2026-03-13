@@ -104,6 +104,47 @@ fn normalize_header(value: &str) -> String {
         .join(" ")
 }
 
+fn mojibake_score(value: &str) -> usize {
+    value
+        .chars()
+        .filter(|ch| matches!(ch, 'Ã' | 'Â' | '�'))
+        .count()
+}
+
+fn try_decode_latin1ish_as_utf8(value: &str) -> Option<String> {
+    let mut bytes = Vec::<u8>::with_capacity(value.len());
+    for ch in value.chars() {
+        let code = ch as u32;
+        if code > 0xFF {
+            return None;
+        }
+        bytes.push(code as u8);
+    }
+    std::str::from_utf8(&bytes).ok().map(|decoded| decoded.to_string())
+}
+
+fn repair_mojibake_conservative(value: &str) -> String {
+    let mut current = value.to_string();
+    for _ in 0..3 {
+        let Some(repaired) = try_decode_latin1ish_as_utf8(&current) else {
+            break;
+        };
+        if repaired == current {
+            break;
+        }
+        if mojibake_score(&repaired) >= mojibake_score(&current) {
+            break;
+        }
+        current = repaired;
+    }
+    current
+}
+
+fn is_blank_or_number_only_row(values: &[String]) -> bool {
+    let has_other_data = values.iter().skip(1).any(|value| !value.trim().is_empty());
+    !has_other_data
+}
+
 fn header_match_score(headers: &StringRecord) -> usize {
     LEGACY_HEADERS
         .iter()
@@ -147,7 +188,7 @@ fn detect_csv_delimiter(csv_content: &str) -> u8 {
 
 fn parse_birth_date(value: &str) -> Result<String, String> {
     let date = chrono::NaiveDate::parse_from_str(value.trim(), "%d/%m/%Y")
-        .map_err(|_| format!("data_nascimento invÃ¡lida: {}", value.trim()))?;
+        .map_err(|_| format!("data_nascimento inválida: {}", value.trim()))?;
     Ok(date.format("%Y-%m-%d").to_string())
 }
 
@@ -220,22 +261,24 @@ impl LegacyRepository {
         event_start_date: &str,
         csv_content: &str,
     ) -> Result<LegacyImportResult, String> {
-        let delimiter = detect_csv_delimiter(csv_content);
+        let sanitized_csv = repair_mojibake_conservative(csv_content);
+        let delimiter = detect_csv_delimiter(&sanitized_csv);
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .delimiter(delimiter)
             .flexible(true)
-            .from_reader(csv_content.as_bytes());
+            .from_reader(sanitized_csv.as_bytes());
 
         let headers = reader.headers().map_err(|e| e.to_string())?;
         if headers.len() != LEGACY_HEADERS.len() {
-            return Err("header CSV legado invÃƒÂ¡lido".to_string());
+            return Err("header CSV legado inválido".to_string());
         }
         for (idx, expected) in LEGACY_HEADERS.iter().enumerate() {
             let actual = headers.get(idx).map(str::trim).unwrap_or_default();
-            if normalize_header(actual) != normalize_header(expected) {
+            let actual = repair_mojibake_conservative(actual);
+            if normalize_header(actual.as_str()) != normalize_header(expected) {
                 return Err(format!(
-                    "header CSV legado invÃƒÂ¡lido na coluna {}: esperado '{}', recebido '{}'",
+                    "header CSV legado inválido na coluna {}: esperado '{}', recebido '{}'",
                     idx + 1,
                     expected,
                     actual
@@ -265,30 +308,41 @@ impl LegacyRepository {
                     continue;
                 }
             };
-            let bib_number = match record.get(0).unwrap_or_default().trim().parse::<i64>() {
+            let values = (0..LEGACY_HEADERS.len())
+                .map(|idx| {
+                    repair_mojibake_conservative(record.get(idx).unwrap_or_default())
+                        .trim()
+                        .to_string()
+                })
+                .collect::<Vec<_>>();
+            if is_blank_or_number_only_row(&values) {
+                continue;
+            }
+
+            let bib_number = match values.first().map(String::as_str).unwrap_or_default().parse::<i64>() {
                 Ok(v) if v > 0 => v,
                 _ => {
-                    errors.push(format!("linha {}: nÃƒÂºmero invÃƒÂ¡lido", line_no));
+                    errors.push(format!("linha {}: número inválido", line_no));
                     continue;
                 }
             };
-            let name = record.get(1).unwrap_or_default().trim().to_string();
+            let name = values.get(1).cloned().unwrap_or_default();
             if name.is_empty() {
                 errors.push(format!("linha {}: nome vazio", line_no));
                 continue;
             }
-            let sex = normalize_optional(record.get(2));
-            let raw_cpf = record.get(3).unwrap_or_default().to_string();
-            let birth_date_iso = match parse_birth_date(record.get(4).unwrap_or_default()) {
+            let sex = normalize_optional(values.get(2).map(String::as_str));
+            let raw_cpf = values.get(3).cloned().unwrap_or_default();
+            let birth_date_iso = match parse_birth_date(values.get(4).map(String::as_str).unwrap_or_default()) {
                 Ok(v) => v,
                 Err(_) => {
-                    errors.push(format!("linha {}: data de nascimento invÃ¡lida", line_no));
+                    errors.push(format!("linha {}: data de nascimento inválida", line_no));
                     continue;
                 }
             };
-            let modality = normalize_optional(record.get(5));
-            let shirt_size = normalize_optional(record.get(6));
-            let team = normalize_optional(record.get(7));
+            let modality = normalize_optional(values.get(5).map(String::as_str));
+            let shirt_size = normalize_optional(values.get(6).map(String::as_str));
+            let team = normalize_optional(values.get(7).map(String::as_str));
             let now = chrono::Utc::now().to_rfc3339();
             let raw_json = serde_json::json!({
               "numero": bib_number,
@@ -1175,19 +1229,48 @@ mod tests {
     #[test]
     fn import_preserves_raw_cpf_value() {
         let pool = DbPool::open_in_memory().unwrap();
-        let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima AraÃƒÂºjo,Masculino,179.790.869-37,08/03/2000,5KM,EXG,\n";
+        let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Thiago Lima Ara\u{00C3}\u{00BA}jo,Masculino,179.790.869-37,08/03/2000,5KM,EXG,\n";
         let out =
             LegacyRepository::import_csv(&pool, "ev-legacy", "Evento", "2026-05-15", csv).unwrap();
         assert_eq!(out.imported, 1);
         assert!(out.errors.is_empty());
         let participants =
             LegacyRepository::list_participants_by_event(&pool, "ev-legacy").unwrap();
+        assert_eq!(participants[0].name, "Thiago Lima Ara\u{00FA}jo");
         assert_eq!(participants[0].cpf, "179.790.869-37");
         assert_eq!(participants[0].birth_date, "2000-03-08");
     }
 
     #[test]
+    fn import_keeps_correct_utf8_name() {
+        let pool = DbPool::open_in_memory().unwrap();
+        let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Jo\u{00E3}o da Silva,Masculino,17979086937,08/03/2000,5KM,EXG,\n";
+        let out =
+            LegacyRepository::import_csv(&pool, "ev-legacy", "Evento", "2026-05-15", csv).unwrap();
+        assert_eq!(out.imported, 1);
+        assert!(out.errors.is_empty());
+        let participants =
+            LegacyRepository::list_participants_by_event(&pool, "ev-legacy").unwrap();
+        assert_eq!(participants[0].name, "Jo\u{00E3}o da Silva");
+    }
+
+    #[test]
+    fn import_ignores_blank_row_with_only_number() {
+        let pool = DbPool::open_in_memory().unwrap();
+        let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Ana,Feminino,111,08/03/2000,5KM,P,\n2,,,,,,,\n";
+        let out =
+            LegacyRepository::import_csv(&pool, "ev-legacy", "Evento", "2026-05-15", csv).unwrap();
+        assert_eq!(out.imported, 1);
+        assert!(out.errors.is_empty());
+        let participants =
+            LegacyRepository::list_participants_by_event(&pool, "ev-legacy").unwrap();
+        assert_eq!(participants.len(), 1);
+        assert_eq!(participants[0].bib_number, 1);
+    }
+
+    #[test]
     fn import_rejects_invalid_birth_date() {
+
         let pool = DbPool::open_in_memory().unwrap();
         let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Ana,Feminino,17979086937,2000-03-08,5KM,P,\n";
         let out =

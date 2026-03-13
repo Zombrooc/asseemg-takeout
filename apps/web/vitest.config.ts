@@ -11,23 +11,9 @@ export default defineConfig({
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
       { find: /^react$/, replacement: appReact },
+      { find: /^react\/(.+)$/, replacement: `${appReact}/$1` },
       { find: /^react-dom$/, replacement: appReactDom },
-      {
-        find: /[\\/]node_modules[\\/]@testing-library[\\/]react[\\/]node_modules[\\/]react(?:[\\/](.*))?$/,
-        replacement: `${appReact}/$1`,
-      },
-      {
-        find: /[\\/]node_modules[\\/]@testing-library[\\/]react[\\/]node_modules[\\/]react-dom(?:[\\/](.*))?$/,
-        replacement: `${appReactDom}/$1`,
-      },
-      {
-        find: /[\\/]node_modules[\\/]@base-ui[\\/]react[\\/]node_modules[\\/]react(?:[\\/](.*))?$/,
-        replacement: `${appReact}/$1`,
-      },
-      {
-        find: /[\\/]node_modules[\\/]@base-ui[\\/]react[\\/]node_modules[\\/]react-dom(?:[\\/](.*))?$/,
-        replacement: `${appReactDom}/$1`,
-      },
+      { find: /^react-dom\/(.+)$/, replacement: `${appReactDom}/$1` },
     ],
     dedupe: ["react", "react-dom"],
   },
@@ -38,7 +24,7 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
     server: {
       deps: {
-        inline: ["@base-ui/react", "@testing-library/react", "@tanstack/react-query"],
+        inline: ["react", "react-dom", "@base-ui/react", "@testing-library/react", "@tanstack/react-query"],
       },
     },
   },

@@ -69,6 +69,48 @@ const LEGACY_HEADERS = [
   "Equipe",
 ] as const;
 
+const MOJIBAKE_PATTERN = /[\u00C3\u00C2\uFFFD]/g;
+const MAX_MOJIBAKE_REPAIR_PASSES = 3;
+
+function mojibakeScore(value: string): number {
+  return value.match(MOJIBAKE_PATTERN)?.length ?? 0;
+}
+
+function tryDecodeLatin1ishAsUtf8(value: string): string | null {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code > 0xff) {
+      return null;
+    }
+    bytes[index] = code;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+function repairMojibakeConservative(value: string): string {
+  let current = value;
+  for (let attempt = 0; attempt < MAX_MOJIBAKE_REPAIR_PASSES; attempt += 1) {
+    const repaired = tryDecodeLatin1ishAsUtf8(current);
+    if (!repaired || repaired === current) {
+      break;
+    }
+    if (mojibakeScore(repaired) >= mojibakeScore(current)) {
+      break;
+    }
+    current = repaired;
+  }
+  return current;
+}
+
+function sanitizeCsvValue(value: string): string {
+  return repairMojibakeConservative(value).trim();
+}
+
 function normalizeHeader(value: string): string {
   return value
     .trim()
@@ -118,7 +160,8 @@ function detectDelimiter(headerLine: string): "," | ";" {
 }
 
 function parseGenericCsv(content: string): ParsedCsv {
-  const lines = content
+  const repairedContent = repairMojibakeConservative(content);
+  const lines = repairedContent
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
@@ -126,8 +169,11 @@ function parseGenericCsv(content: string): ParsedCsv {
     throw new Error("CSV vazio");
   }
   const delimiter = detectDelimiter(lines[0]);
-  const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""), delimiter);
-  const rows = lines.slice(1).map((line) => parseCsvLine(line, delimiter));
+  const headers = parseCsvLine(lines[0].replace(/^\uFEFF/, ""), delimiter).map(sanitizeCsvValue);
+  const rows = lines
+    .slice(1)
+    .map((line) => parseCsvLine(line, delimiter).map(sanitizeCsvValue))
+    .filter((row) => row.some((cell) => cell.length > 0));
   return { headers, rows, delimiter };
 }
 
@@ -174,7 +220,7 @@ function mapRowToLegacy(row: string[], mapping: Record<LegacyFieldKey, number | 
   const pick = (key: LegacyFieldKey) => {
     const idx = mapping[key];
     if (idx == null) return "";
-    return row[idx] ?? "";
+    return sanitizeCsvValue(row[idx] ?? "");
   };
   return {
     number: pick("number"),
@@ -188,10 +234,26 @@ function mapRowToLegacy(row: string[], mapping: Record<LegacyFieldKey, number | 
   };
 }
 
+function isLegacyRowBlankOrNumberOnly(legacy: ReturnType<typeof mapRowToLegacy>): boolean {
+  const hasOtherData = [
+    legacy.fullName,
+    legacy.sex,
+    legacy.cpf,
+    legacy.birthDate,
+    legacy.modality,
+    legacy.shirtSize,
+    legacy.team,
+  ].some((value) => value.trim().length > 0);
+  return !hasOtherData;
+}
+
+function mapRowsToLegacy(rows: string[][], mapping: Record<LegacyFieldKey, number | null>) {
+  return rows.map((row) => mapRowToLegacy(row, mapping)).filter((legacy) => !isLegacyRowBlankOrNumberOnly(legacy));
+}
+
 function buildLegacyCsv(rows: string[][], mapping: Record<LegacyFieldKey, number | null>): string {
   const header = [...LEGACY_HEADERS].map(csvEscape).join(",");
-  const mappedRows = rows.map((row) => {
-    const legacy = mapRowToLegacy(row, mapping);
+  const mappedRows = mapRowsToLegacy(rows, mapping).map((legacy) => {
     const cells = [
       legacy.number,
       legacy.fullName,
@@ -273,7 +335,7 @@ export function ImportPage() {
           if (!(reader.result instanceof ArrayBuffer)) {
             throw new Error("Arquivo inválido");
           }
-          const text = decodeUtf8OrWindows1252(reader.result);
+          const text = repairMojibakeConservative(decodeUtf8OrWindows1252(reader.result));
           const parsed = parseGenericCsv(text);
           setLegacyCsv(parsed);
           setLegacyMapping(autoMapHeaders(parsed.headers));
@@ -327,16 +389,20 @@ export function ImportPage() {
     const uniqueRequired = new Set(selectedRequired).size === selectedRequired.length;
     return { hasAllRequired, uniqueRequired, valid: hasAllRequired && uniqueRequired };
   }, [legacyMapping]);
+  const mappedLegacyRows = useMemo(
+    () => (legacyCsv ? mapRowsToLegacy(legacyCsv.rows, legacyMapping) : []),
+    [legacyCsv, legacyMapping],
+  );
 
   const importMutation = useMutation({
     mutationFn: async () => {
       if (mode === "json_sync") {
-        if (!parsedJson) throw new Error("Selecione um arquivo JSON vÃ¡lido");
+        if (!parsedJson) throw new Error("Selecione um arquivo JSON válido");
         return postImportJson(parsedJson);
       }
-      if (!file || !legacyCsv) throw new Error("Selecione um arquivo CSV vÃ¡lido");
+      if (!file || !legacyCsv) throw new Error("Selecione um arquivo CSV válido");
       if (!mappingValidation.valid) {
-        throw new Error("Preencha o mapeamento obrigatÃ³rio do CSV");
+        throw new Error("Preencha o mapeamento obrigatório do CSV");
       }
       if (!eventName.trim() || !eventStartDate.trim()) {
         throw new Error("Preencha Nome do evento e Data inicial");
@@ -380,10 +446,10 @@ export function ImportPage() {
 
       <Card>
         <CardContent className="space-y-2 pt-6">
-          <Label htmlFor="import-model">Modelo de importaÃ§Ã£o</Label>
+          <Label htmlFor="import-model">Modelo de importação</Label>
           <select
             id="import-model"
-            aria-label="Modelo de importaÃ§Ã£o"
+            aria-label="Modelo de importação"
             className="h-10 w-full rounded-md border bg-background px-3"
             value={mode}
             onChange={(event) => {
@@ -482,7 +548,7 @@ export function ImportPage() {
               <ul className="mt-1 list-inside list-disc space-y-0.5">
                 <li>Formato JSON do checkin-sync (thevent)</li>
                 <li>
-                  Campos obrigatÃ³rios: <code>eventId</code>, <code>participants</code>
+                  Campos obrigatórios: <code>eventId</code>, <code>participants</code>
                 </li>
                 <li>
                   Cada participante com <code>seatId</code>, <code>ticketId</code>, <code>participantName</code>,{" "}
@@ -492,7 +558,7 @@ export function ImportPage() {
             ) : (
               <ul className="mt-1 list-inside list-disc space-y-0.5">
                 <li>Pode ter colunas extras ou nomes diferentes</li>
-                <li>VocÃª precisarÃ¡ mapear as colunas obrigatÃ³rias</li>
+                <li>Você precisará mapear as colunas obrigatórias</li>
               </ul>
             )}
           </div>
@@ -525,7 +591,7 @@ export function ImportPage() {
                       }));
                     }}
                   >
-                    <option value="">{field.required ? "Selecione a coluna" : "NÃ£o usar"}</option>
+                    <option value="">{field.required ? "Selecione a coluna" : "Não usar"}</option>
                     {legacyCsv.headers.map((header, index) => (
                       <option key={`${header}-${index}`} value={String(index)}>
                         {header || `Coluna ${index + 1}`}
@@ -536,10 +602,10 @@ export function ImportPage() {
               );
             })}
             {!mappingValidation.hasAllRequired ? (
-              <p className="text-sm text-destructive">Selecione todas as colunas obrigatÃ³rias.</p>
+              <p className="text-sm text-destructive">Selecione todas as colunas obrigatórias.</p>
             ) : null}
             {mappingValidation.hasAllRequired && !mappingValidation.uniqueRequired ? (
-              <p className="text-sm text-destructive">Colunas obrigatÃ³rias nÃ£o podem se repetir.</p>
+              <p className="text-sm text-destructive">Colunas obrigatórias não podem se repetir.</p>
             ) : null}
           </CardContent>
         </Card>
@@ -556,7 +622,7 @@ export function ImportPage() {
       {mode === "json_sync" && listJson.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Preview â€” Participantes ({listJson.length})</CardTitle>
+            <CardTitle className="text-lg">Preview - Participantes ({listJson.length})</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="rounded-md border">
@@ -577,7 +643,7 @@ export function ImportPage() {
                       <TableCell className="font-mono text-xs">{p.cpf}</TableCell>
                       <TableCell>{p.ticketName}</TableCell>
                       <TableCell className="font-mono text-xs">{p.qrCode}</TableCell>
-                      <TableCell>{p.checkinDone ? "Sim" : "NÃ£o"}</TableCell>
+                      <TableCell>{p.checkinDone ? "Sim" : "Não"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -590,14 +656,14 @@ export function ImportPage() {
       {mode === "legacy_csv" && legacyCsv != null && mappingValidation.valid ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Preview â€” Participantes legado ({legacyCsv.rows.length})</CardTitle>
+            <CardTitle className="text-lg">Preview - Participantes legado ({mappedLegacyRows.length})</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-md border">
               <Table role="table">
                 <TableHeader>
                   <TableRow>
-                    <TableHead scope="col">NÃºmero</TableHead>
+                    <TableHead scope="col">Número</TableHead>
                     <TableHead scope="col">Nome Completo</TableHead>
                     <TableHead scope="col">Sexo</TableHead>
                     <TableHead scope="col">CPF</TableHead>
@@ -608,8 +674,7 @@ export function ImportPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {legacyCsv.rows.map((row, index) => {
-                    const legacy = mapRowToLegacy(row, legacyMapping);
+                  {mappedLegacyRows.map((legacy, index) => {
                     return (
                       <TableRow key={`${legacy.cpf}-${index}`}>
                         <TableCell>{legacy.number}</TableCell>

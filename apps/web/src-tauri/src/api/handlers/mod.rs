@@ -71,11 +71,48 @@ fn decode_windows_1252(bytes: &[u8]) -> String {
         .collect()
 }
 
+fn mojibake_score(value: &str) -> usize {
+    value
+        .chars()
+        .filter(|ch| matches!(ch, 'Ã' | 'Â' | '�'))
+        .count()
+}
+
+fn try_decode_latin1ish_as_utf8(value: &str) -> Option<String> {
+    let mut bytes = Vec::<u8>::with_capacity(value.len());
+    for ch in value.chars() {
+        let code = ch as u32;
+        if code > 0xFF {
+            return None;
+        }
+        bytes.push(code as u8);
+    }
+    std::str::from_utf8(&bytes).ok().map(|decoded| decoded.to_string())
+}
+
+fn repair_mojibake_conservative(value: &str) -> String {
+    let mut current = value.to_string();
+    for _ in 0..3 {
+        let Some(repaired) = try_decode_latin1ish_as_utf8(&current) else {
+            break;
+        };
+        if repaired == current {
+            break;
+        }
+        if mojibake_score(&repaired) >= mojibake_score(&current) {
+            break;
+        }
+        current = repaired;
+    }
+    current
+}
+
 fn decode_utf8_or_windows_1252(bytes: &[u8]) -> String {
-    match std::str::from_utf8(bytes) {
+    let decoded = match std::str::from_utf8(bytes) {
         Ok(value) => value.to_string(),
         Err(_) => decode_windows_1252(bytes),
-    }
+    };
+    repair_mojibake_conservative(&decoded)
 }
 
 pub fn router(state: AppState) -> Router {

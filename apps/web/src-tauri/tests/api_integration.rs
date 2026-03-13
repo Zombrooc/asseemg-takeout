@@ -1659,6 +1659,61 @@ async fn legacy_csv_import_accepts_windows_1252_header() {
 }
 
 #[tokio::test]
+async fn legacy_csv_import_repairs_mojibake_and_ignores_number_only_rows() {
+    let app = app();
+    let boundary = "----takeout-legacy-boundary-repair-and-skip";
+    let csv = "N\u{00FA}mero;Nome Completo;Sexo;CPF;Data de Nascimento;Modalidade (5km, 10km, Caminhada ou Kids);Tamanho da Camisa;Equipe\n1;Ana Teste;Feminino;111;08/03/2000;5KM;P;\n2;;;;;;;\n3;Jo\u{00C3}\u{00A3}o da Silva;Masculino;333;08/03/2000;10KM;M;\n";
+    let body = format!(
+    "--{b}\r\nContent-Disposition: form-data; name=\"eventId\"\r\n\r\nev-legacy-repair-and-skip\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventName\"\r\n\r\nEvento Legado Reparo\r\n--{b}\r\nContent-Disposition: form-data; name=\"eventStartDate\"\r\n\r\n2026-05-15\r\n--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"legacy.csv\"\r\nContent-Type: text/csv\r\n\r\n{csv}\r\n--{b}--\r\n",
+    b = boundary
+  );
+    let import_req = Request::builder()
+        .uri("/admin/import/legacy-csv")
+        .method("POST")
+        .header(
+            "content-type",
+            format!("multipart/form-data; boundary={}", boundary),
+        )
+        .body(Body::from(body))
+        .unwrap();
+    let import_res = app.clone().oneshot(import_req).await.unwrap();
+    assert_eq!(import_res.status(), StatusCode::OK);
+    let payload = body_bytes(import_res.into_body()).await;
+    let json: serde_json::Value = serde_json::from_slice(&payload).unwrap();
+    assert_eq!(json.get("imported").and_then(|v| v.as_i64()), Some(2));
+    assert_eq!(
+        json.get("errors").and_then(|v| v.as_array()).unwrap().len(),
+        0
+    );
+
+    let list_req = Request::builder()
+        .uri("/events/ev-legacy-repair-and-skip/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let list_res = app.clone().oneshot(list_req).await.unwrap();
+    assert_eq!(list_res.status(), StatusCode::OK);
+    let list_payload = body_bytes(list_res.into_body()).await;
+    let list_json: serde_json::Value = serde_json::from_slice(&list_payload).unwrap();
+    let mut names = list_json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|participant| {
+            participant
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap()
+                .to_string()
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    assert_eq!(
+        names,
+        vec!["Ana Teste".to_string(), "Jo\u{00E3}o da Silva".to_string()]
+    );
+}
+
+#[tokio::test]
 async fn legacy_csv_import_accepts_empty_cpf_without_inconsistency_flag() {
     let app = app();
     let boundary = "----takeout-legacy-boundary-empty-cpf";

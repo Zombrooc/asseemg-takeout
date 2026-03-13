@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EventSummary } from "@/components/event-summary";
 import { ParticipantsTable } from "@/components/participants-table";
+import { ReservedNumbersCollapsible } from "@/components/takeout/reserved-numbers-collapsible";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { cn } from "@/lib/utils";
 import {
@@ -131,6 +132,7 @@ function EventDetailPage() {
   const [reserveStart, setReserveStart] = useState("");
   const [reserveEnd, setReserveEnd] = useState("");
   const [reserveLabel, setReserveLabel] = useState("");
+  const [isReservedListOpen, setIsReservedListOpen] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createReservationId, setCreateReservationId] = useState<number | null>(null);
   const [createName, setCreateName] = useState("");
@@ -486,24 +488,11 @@ function EventDetailPage() {
                     </p>
                   </div>
                   {reservedNumbers.length > 0 ? (
-                    <div className="rounded-md border">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b text-left text-muted-foreground">
-                            <th className="px-3 py-2 font-medium">Número</th>
-                            <th className="px-3 py-2 font-medium">Etiqueta</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {reservedNumbers.map((item) => (
-                            <tr key={item.bibNumber} className="border-b last:border-0">
-                              <td className="px-3 py-2 font-mono">#{item.bibNumber}</td>
-                              <td className="px-3 py-2">{item.label ?? "-"}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <ReservedNumbersCollapsible
+                      reservedNumbers={reservedNumbers}
+                      isOpen={isReservedListOpen}
+                      onOpenChange={setIsReservedListOpen}
+                    />
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       Nenhuma reserva disponível. Adicione uma faixa para liberar números.
@@ -767,4 +756,3 @@ export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): Eve
     customFormResponses,
   };
 }
-
