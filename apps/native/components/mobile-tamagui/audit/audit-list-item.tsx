@@ -5,6 +5,19 @@ import { parseTakeoutRetirantePayload } from "@/lib/takeout-retirante-payload";
 import { Card } from "@/components/ui-tamagui";
 import { Text, View } from "react-native";
 
+function statusLabel(status: AuditEvent["status"]): string {
+  switch (status) {
+    case "CONFIRMED":
+      return "Confirmado";
+    case "DUPLICATE":
+      return "Duplicado";
+    case "FAILED":
+      return "Falho";
+    case "REVERSED":
+      return "Desfeito";
+  }
+}
+
 export function AuditListItem({ item }: { item: AuditEvent }) {
   const retirante = parseTakeoutRetirantePayload(item.payload_json);
   const title = getAuditItemTitle(item);
@@ -19,7 +32,7 @@ export function AuditListItem({ item }: { item: AuditEvent }) {
         >
           {title}
         </Text>
-        <Text style={{ color: "#6b7280", fontSize: 12 }}>{item.status}</Text>
+        <Text style={{ color: "#6b7280", fontSize: 12 }}>{statusLabel(item.status)}</Text>
       </View>
       <Text style={{ color: "#6b7280", fontSize: 12, marginTop: 4 }}>
         {item.created_at ? formatDateBR(item.created_at) : "-"}

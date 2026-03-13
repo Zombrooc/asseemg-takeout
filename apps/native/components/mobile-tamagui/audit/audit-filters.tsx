@@ -5,6 +5,14 @@ const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED", "REVERSED"] as const
 
 export type StatusFilter = (typeof OPTIONS)[number];
 
+const STATUS_LABEL: Record<StatusFilter, string> = {
+  ALL: "Todos",
+  CONFIRMED: "Confirmado",
+  DUPLICATE: "Duplicado",
+  FAILED: "Falho",
+  REVERSED: "Desfeito",
+};
+
 export function AuditFilters({
   value,
   onChange,
@@ -34,7 +42,7 @@ export function AuditFilters({
               fontWeight="500"
               color={isActive ? "white" : "$foreground"}
             >
-              {option}
+              {STATUS_LABEL[option]}
             </Text>
           </Pressable>
         );

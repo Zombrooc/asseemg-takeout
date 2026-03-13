@@ -6,6 +6,14 @@ const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED", "REVERSED"] as const
 
 type StatusFilter = (typeof OPTIONS)[number];
 
+const STATUS_LABEL: Record<StatusFilter, string> = {
+  ALL: "Todos",
+  CONFIRMED: "Confirmado",
+  DUPLICATE: "Duplicado",
+  FAILED: "Falho",
+  REVERSED: "Desfeito",
+};
+
 export function AuditFilters({
   value,
   onChange,
@@ -22,7 +30,7 @@ export function AuditFilters({
           color={value === option ? "primary" : "secondary"}
           onPress={() => onChange(option)}
         >
-          <Chip.Label>{option}</Chip.Label>
+          <Chip.Label>{STATUS_LABEL[option]}</Chip.Label>
         </Chip>
       ))}
     </View>
