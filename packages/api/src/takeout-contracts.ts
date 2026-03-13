@@ -140,6 +140,29 @@ export type LegacyTakeoutConfirmResponse = {
   status: "CONFIRMED" | "DUPLICATE";
 };
 
+export type TakeoutUndoPayload = {
+  request_id: string;
+  ticket_id: string;
+  device_id: string;
+  payload_json?: string;
+};
+
+export type TakeoutUndoResponse = {
+  status: "REVERSED" | "DUPLICATE";
+};
+
+export type LegacyTakeoutUndoPayload = {
+  request_id: string;
+  event_id: string;
+  participant_id: string;
+  device_id: string;
+  payload_json?: string;
+};
+
+export type LegacyTakeoutUndoResponse = {
+  status: "REVERSED" | "DUPLICATE";
+};
+
 export type UpdateLegacyParticipantPayload = UpdateEventParticipantPayload;
 
 export type TakeoutConfirmConflictResponse = {
@@ -160,7 +183,7 @@ export type AuditEvent = {
   request_id: string;
   ticket_id: string;
   device_id: string;
-  status: "CONFIRMED" | "DUPLICATE" | "FAILED";
+  status: "CONFIRMED" | "DUPLICATE" | "FAILED" | "REVERSED";
   payload_json: string | null;
   created_at: string;
   source_type: "json_sync" | "legacy_csv";
@@ -180,6 +203,15 @@ export type AuditEvent = {
 export type WsTakeoutMessage =
   | {
       type: "participant_checked_in";
+      ticket_id?: string;
+      request_id?: string;
+      participant_id?: string;
+      device_id?: string;
+      event_id?: string;
+      source_type?: "json_sync" | "legacy_csv";
+    }
+  | {
+      type: "participant_checkin_reverted";
       ticket_id?: string;
       request_id?: string;
       participant_id?: string;

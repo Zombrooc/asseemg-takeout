@@ -655,12 +655,14 @@ impl LegacyRepository {
       "SELECT p.id, p.bib_number, p.full_name, p.sex, p.cpf_digits,
       p.birth_date_iso, p.modality, p.shirt_size, p.team,
       0 AS cpf_inconsistent,
-      EXISTS (SELECT 1 FROM legacy_checkins c WHERE c.participant_id = p.id AND c.status IN ('CONFIRMED', 'DUPLICATE')) AS checkin_done
+      (SELECT c.status FROM legacy_checkins c WHERE c.participant_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS last_status
       FROM legacy_participants p
       WHERE p.event_id = ?1
       ORDER BY p.bib_number",
     )?;
         let rows = stmt.query_map([event_id], |row| {
+            let last_status: Option<String> = row.get(10)?;
+            let checkin_done = matches!(last_status.as_deref(), Some("CONFIRMED" | "DUPLICATE"));
             Ok(LegacyParticipantRow {
                 id: row.get(0)?,
                 bib_number: row.get(1)?,
@@ -672,7 +674,7 @@ impl LegacyRepository {
                 modality: row.get(6)?,
                 shirt_size: row.get(7)?,
                 team: row.get(8)?,
-                checkin_done: row.get(10)?,
+                checkin_done,
             })
         })?;
         rows.collect()
@@ -735,17 +737,19 @@ impl LegacyRepository {
                 Err(e) => return Err(e),
             }
             match conn.query_row(
-        "SELECT request_id FROM legacy_checkins WHERE participant_id = ?1 AND status IN ('CONFIRMED', 'DUPLICATE')",
-        [participant_id],
-        |r| r.get::<_, String>(0),
-      ) {
-        Ok(existing_request_id) => {
-          let _ = conn.execute("ROLLBACK", []);
-          return Ok(super::takeout::ConfirmAtomicResult::Conflict { existing_request_id });
-        }
-        Err(rusqlite::Error::QueryReturnedNoRows) => {}
-        Err(e) => return Err(e),
-      }
+                "SELECT request_id, status FROM legacy_checkins WHERE participant_id = ?1 ORDER BY created_at DESC LIMIT 1",
+                [participant_id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            ) {
+                Ok((existing_request_id, status)) => {
+                    if status == "CONFIRMED" || status == "DUPLICATE" {
+                        let _ = conn.execute("ROLLBACK", []);
+                        return Ok(super::takeout::ConfirmAtomicResult::Conflict { existing_request_id });
+                    }
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => {}
+                Err(e) => return Err(e),
+            }
             let now = chrono::Utc::now().to_rfc3339();
             let snapshot = conn
                 .query_row(
@@ -792,6 +796,109 @@ impl LegacyRepository {
         return Err(e);
       }
             super::takeout::ConfirmAtomicResult::Confirmed
+        };
+        conn.execute("COMMIT", [])?;
+        Ok(result)
+    }
+
+    pub fn undo_atomic(
+        pool: &DbPool,
+        request_id: &str,
+        event_id: &str,
+        participant_id: &str,
+        device_id: &str,
+        operator_alias: Option<&str>,
+        payload_json: Option<&str>,
+    ) -> Result<super::takeout::UndoAtomicResult, rusqlite::Error> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        let result = {
+            match conn.query_row(
+                "SELECT status FROM legacy_checkins WHERE request_id = ?1",
+                [request_id],
+                |r| r.get::<_, String>(0),
+            ) {
+                Ok(_) => {
+                    let _ = conn.execute("ROLLBACK", []);
+                    return Ok(super::takeout::UndoAtomicResult::Duplicate);
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => {}
+                Err(e) => return Err(e),
+            }
+
+            let (existing_request_id, status) = match conn.query_row(
+                "SELECT request_id, status FROM legacy_checkins WHERE participant_id = ?1 ORDER BY created_at DESC LIMIT 1",
+                [participant_id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            ) {
+                Ok(value) => value,
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    let _ = conn.execute("ROLLBACK", []);
+                    return Ok(super::takeout::UndoAtomicResult::NotCheckedIn);
+                }
+                Err(e) => return Err(e),
+            };
+
+            if status != "CONFIRMED" && status != "DUPLICATE" {
+                let _ = conn.execute("ROLLBACK", []);
+                return Ok(super::takeout::UndoAtomicResult::NotCheckedIn);
+            }
+
+            let now = chrono::Utc::now().to_rfc3339();
+            let snapshot = conn
+                .query_row(
+                    "SELECT full_name, birth_date_iso, modality FROM legacy_participants WHERE id = ?1",
+                    [participant_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                        ))
+                    },
+                )
+                .ok();
+            let (participant_name, birth_date, ticket_name) =
+                snapshot.unwrap_or((None, None, None));
+            let age_at_checkin = Self::compute_age_at_checkin(birth_date.as_deref(), &now);
+            let payload_json = payload_json
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    serde_json::json!({ "undo_request_id": existing_request_id }).to_string()
+                });
+
+            if let Err(e) = conn.execute(
+        "INSERT INTO legacy_checkins (
+            request_id, event_id, participant_id, device_id, status, payload_json, created_at,
+            source_type, ticket_id, participant_name, birth_date, age_at_checkin, ticket_name,
+            operator_alias, operator_device_id, checked_in_at
+         ) VALUES (?1, ?2, ?3, ?4, 'REVERSED', ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+        params![
+          request_id,
+          event_id,
+          participant_id,
+          device_id,
+          payload_json,
+          now,
+          "legacy_csv",
+          participant_id,
+          participant_name,
+          birth_date,
+          age_at_checkin,
+          ticket_name,
+          operator_alias,
+          device_id,
+          now
+        ],
+      ) {
+        let _ = conn.execute("ROLLBACK", []);
+        return Err(e);
+      }
+
+            super::takeout::UndoAtomicResult::Reversed
         };
         conn.execute("COMMIT", [])?;
         Ok(result)
@@ -921,23 +1028,14 @@ impl LegacyRepository {
 
         let lookup = conn.query_row(
             "SELECT p.raw_json,
-       EXISTS (
-         SELECT 1
-         FROM legacy_checkins c
-         WHERE c.participant_id = p.id AND c.status IN ('CONFIRMED', 'DUPLICATE')
-       ) AS checkin_done
+       (SELECT c.status FROM legacy_checkins c WHERE c.participant_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS last_status
        FROM legacy_participants p
        WHERE p.event_id = ?1 AND p.id = ?2",
             [event_id, participant_id],
-            |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, bool>(1)?,
-                ))
-            },
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, Option<String>>(1)?)),
         );
 
-        let (raw_json, checkin_done) = match lookup {
+        let (raw_json, last_status) = match lookup {
             Ok(v) => v,
             Err(rusqlite::Error::QueryReturnedNoRows) => {
                 return Err(UpdateLegacyParticipantError::NotFound)
@@ -945,7 +1043,7 @@ impl LegacyRepository {
             Err(e) => return Err(UpdateLegacyParticipantError::Db(e)),
         };
 
-        if checkin_done {
+        if matches!(last_status.as_deref(), Some("CONFIRMED" | "DUPLICATE")) {
             return Err(UpdateLegacyParticipantError::AlreadyCheckedIn);
         }
 
@@ -1036,11 +1134,13 @@ impl LegacyRepository {
       "SELECT p.id, p.bib_number, p.full_name, p.sex, p.cpf_digits,
       p.birth_date_iso, p.modality, p.shirt_size, p.team,
       0 AS cpf_inconsistent,
-      EXISTS (SELECT 1 FROM legacy_checkins c WHERE c.participant_id = p.id AND c.status IN ('CONFIRMED', 'DUPLICATE')) AS checkin_done
+      (SELECT c.status FROM legacy_checkins c WHERE c.participant_id = p.id ORDER BY c.created_at DESC LIMIT 1) AS last_status
       FROM legacy_participants p
       WHERE p.event_id = ?1 AND p.id = ?2",
     )?;
         let updated = stmt.query_row(params![event_id, participant_id], |row| {
+            let last_status: Option<String> = row.get(10)?;
+            let checkin_done = matches!(last_status.as_deref(), Some("CONFIRMED" | "DUPLICATE"));
             Ok(LegacyParticipantRow {
                 id: row.get(0)?,
                 bib_number: row.get(1)?,
@@ -1052,7 +1152,7 @@ impl LegacyRepository {
                 modality: row.get(6)?,
                 shirt_size: row.get(7)?,
                 team: row.get(8)?,
-                checkin_done: row.get(10)?,
+                checkin_done,
             })
         });
 

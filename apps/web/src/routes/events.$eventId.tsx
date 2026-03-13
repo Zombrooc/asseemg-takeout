@@ -16,8 +16,10 @@ import {
   getLegacyReservedNumbers,
   postLegacyTakeoutConfirm,
   postLegacyCreateParticipant,
+  postLegacyTakeoutUndo,
   postLegacyReserveNumbers,
   postTakeoutConfirm,
+  postTakeoutUndo,
   putEventParticipant,
   putLegacyEventParticipant,
   type CreateLegacyParticipantPayload,
@@ -188,6 +190,27 @@ function EventDetailPage() {
       toast.success("Check-in confirmado");
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao confirmar"),
+  });
+
+  const undoMutation = useMutation({
+    mutationFn: (p: EventParticipant) =>
+      eventSummary?.sourceType === "legacy_csv"
+        ? postLegacyTakeoutUndo({
+            request_id: crypto.randomUUID(),
+            event_id: eventId,
+            participant_id: p.id,
+            device_id: "web-dashboard",
+          })
+        : postTakeoutUndo({
+            request_id: crypto.randomUUID(),
+            ticket_id: p.ticketId,
+            device_id: "web-dashboard",
+          }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events", eventId, "participants"] });
+      toast.success("Check-in desfeito");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao desfazer"),
   });
 
   const editMutation = useMutation({
@@ -494,8 +517,14 @@ function EventDetailPage() {
             eventName={eventName}
             participants={filteredParticipants}
             onConfirm={(p) => confirmMutation.mutate(p)}
+            onUndo={(p) => {
+              const label = p.name ?? p.ticketId;
+              if (!window.confirm(`Desfazer check-in de "${label}"?`)) return;
+              undoMutation.mutate(p);
+            }}
             onEdit={(p) => setEditingParticipant(p)}
             isConfirming={confirmMutation.isPending}
+            isUndoing={undoMutation.isPending}
             isEditing={editMutation.isPending}
             showQrColumn={isDev}
           />

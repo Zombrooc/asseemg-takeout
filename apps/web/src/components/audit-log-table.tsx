@@ -13,7 +13,9 @@ import { parseAuditRetirantePayload } from "@/lib/audit-utils";
 import type { AuditEvent } from "@/lib/takeout-api";
 import { Download, RotateCw } from "lucide-react";
 
-function auditStatusToBadge(status: AuditEvent["status"]): "confirmed" | "duplicate" | "failed" {
+function auditStatusToBadge(
+  status: AuditEvent["status"],
+): "confirmed" | "duplicate" | "failed" | "reversed" {
   switch (status) {
     case "CONFIRMED":
       return "confirmed";
@@ -21,6 +23,8 @@ function auditStatusToBadge(status: AuditEvent["status"]): "confirmed" | "duplic
       return "duplicate";
     case "FAILED":
       return "failed";
+    case "REVERSED":
+      return "reversed";
   }
 }
 

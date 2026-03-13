@@ -1,8 +1,8 @@
 import { Chip } from "@/components/ui";
 import { View } from "@/lib/primitives";
 
-/** Alinhado a GET /audit (status: CONFIRMED | DUPLICATE | FAILED) */
-const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED"] as const;
+/** Alinhado a GET /audit (status: CONFIRMED | DUPLICATE | FAILED | REVERSED) */
+const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED", "REVERSED"] as const;
 
 type StatusFilter = (typeof OPTIONS)[number];
 

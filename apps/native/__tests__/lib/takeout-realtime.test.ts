@@ -36,6 +36,19 @@ describe("realtime invalidation policy", () => {
     });
   });
 
+  it("invalidates participants and audit for participant_checkin_reverted", () => {
+    expect(
+      getRealtimeInvalidation({
+        type: "participant_checkin_reverted",
+        ticket_id: "seat-1",
+      })
+    ).toEqual({
+      invalidateParticipants: true,
+      invalidateAudit: true,
+      invalidateEvents: false,
+    });
+  });
+
   it("invalidates only participants for participant_updated", () => {
     expect(
       getRealtimeInvalidation({

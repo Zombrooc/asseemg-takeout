@@ -20,4 +20,4 @@ pub use participants::{
     ParticipantRow, ParticipantSearchMode, ParticipantsRepository, UpdateParticipantError,
 };
 pub use sync_import::import_pull_to_db;
-pub use takeout::{ConfirmAtomicResult, TakeoutEventRow, TakeoutRepository};
+pub use takeout::{ConfirmAtomicResult, TakeoutEventRow, TakeoutRepository, UndoAtomicResult};

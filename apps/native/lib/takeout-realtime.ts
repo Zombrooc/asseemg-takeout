@@ -35,6 +35,14 @@ export function getRealtimeInvalidation(message: WsTakeoutMessage): RealtimeInva
     };
   }
 
+  if (message.type === "participant_checkin_reverted") {
+    return {
+      invalidateParticipants: true,
+      invalidateAudit: true,
+      invalidateEvents: false,
+    };
+  }
+
   if (message.type === "participant_updated") {
     return {
       invalidateParticipants: true,

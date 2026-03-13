@@ -25,8 +25,10 @@ export interface ParticipantsTableProps {
   eventName: string;
   participants: EventParticipant[];
   onConfirm?: (participant: EventParticipant) => void;
+  onUndo?: (participant: EventParticipant) => void;
   onEdit?: (participant: EventParticipant) => void;
   isConfirming?: boolean;
+  isUndoing?: boolean;
   isEditing?: boolean;
   showQrColumn?: boolean;
 }
@@ -47,8 +49,10 @@ export function ParticipantsTable({
   eventName,
   participants,
   onConfirm,
+  onUndo,
   onEdit,
   isConfirming = false,
+  isUndoing = false,
   isEditing = false,
   showQrColumn = false,
 }: ParticipantsTableProps) {
@@ -125,6 +129,16 @@ export function ParticipantsTable({
                           onClick={() => onConfirm(p)}
                         >
                           {isConfirming ? "..." : "Confirmar"}
+                        </Button>
+                      )}
+                      {p.checkinDone && onUndo != null && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isUndoing}
+                          onClick={() => onUndo(p)}
+                        >
+                          {isUndoing ? "..." : "Desfazer"}
                         </Button>
                       )}
                     </div>

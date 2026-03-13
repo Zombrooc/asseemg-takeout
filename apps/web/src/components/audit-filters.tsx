@@ -36,6 +36,7 @@ export function AuditFilters({
         <option value="CONFIRMED">Confirmado</option>
         <option value="DUPLICATE">Duplicado</option>
         <option value="FAILED">Falho</option>
+        <option value="REVERSED">Desfeito</option>
       </select>
       {onSearchChange != null && (
         <div className="relative min-w-[200px] max-w-sm flex-1">

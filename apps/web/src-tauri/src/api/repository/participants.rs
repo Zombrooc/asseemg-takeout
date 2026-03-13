@@ -287,11 +287,7 @@ impl ParticipantsRepository {
 
         let lookup = conn.query_row(
             "SELECT t.id, t.raw_json, p.raw_json,
-       EXISTS (
-         SELECT 1
-         FROM takeout_events te
-         WHERE te.ticket_id = t.id AND te.status IN ('CONFIRMED', 'DUPLICATE')
-       ) AS checkin_done
+       EXISTS (SELECT 1 FROM check_ins ci WHERE ci.ticket_id = t.id) AS checkin_done
        FROM participants p
        INNER JOIN tickets t ON t.participant_id = p.id
        WHERE p.event_id = ?1 AND p.id = ?2",
@@ -398,7 +394,7 @@ impl ParticipantsRepository {
 
         let mut stmt = conn.prepare(
       "SELECT p.id, p.name, p.cpf, p.birth_date, t.id AS ticket_id, t.code AS qr_code, t.raw_json AS ticket_raw, p.raw_json AS participant_raw,
-       EXISTS (SELECT 1 FROM takeout_events te WHERE te.ticket_id = t.id AND te.status IN ('CONFIRMED', 'DUPLICATE')) AS checkin_done_db
+       EXISTS (SELECT 1 FROM check_ins ci WHERE ci.ticket_id = t.id) AS checkin_done_db
        FROM participants p
        JOIN tickets t ON t.participant_id = p.id
        WHERE p.event_id = ?1 AND p.id = ?2",
@@ -742,12 +738,11 @@ mod tests {
         let pool = seeded_pool();
         {
             let conn = pool.conn.lock().unwrap();
-            conn
-        .execute(
-          "INSERT INTO takeout_events (request_id, ticket_id, device_id, status, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-          params!["req-1", "seat-joao", "desk", "CONFIRMED", "2026-01-01T00:00:00Z"],
-        )
-        .unwrap();
+            conn.execute(
+                "INSERT INTO check_ins (ticket_id, request_id, device_id, created_at) VALUES (?1, ?2, ?3, ?4)",
+                params!["seat-joao", "req-1", "desk", "2026-01-01T00:00:00Z"],
+            )
+            .unwrap();
         }
 
         let result = ParticipantsRepository::update_event_participant(

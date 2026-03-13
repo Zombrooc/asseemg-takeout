@@ -33,6 +33,13 @@ pub enum ConfirmAtomicResult {
     Conflict { existing_request_id: String },
 }
 
+#[derive(Debug)]
+pub enum UndoAtomicResult {
+    Reversed,
+    Duplicate,
+    NotCheckedIn,
+}
+
 fn normalize_datetime(input: &str) -> String {
     if let Ok(ts) = input.parse::<i64>() {
         if let Some(dt) = chrono::DateTime::<chrono::Utc>::from_timestamp(ts, 0) {
@@ -180,6 +187,136 @@ impl TakeoutRepository {
                 return Err(e);
             }
             ConfirmAtomicResult::Confirmed
+        };
+        conn.execute("COMMIT", [])?;
+        Ok(result)
+    }
+
+    pub fn undo_atomic(
+        pool: &DbPool,
+        request_id: &str,
+        ticket_id: &str,
+        device_id: &str,
+        operator_alias: Option<&str>,
+        payload_json: Option<&str>,
+    ) -> Result<UndoAtomicResult, rusqlite::Error> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        conn.execute("BEGIN IMMEDIATE", [])?;
+        let result = {
+            match conn.query_row(
+                "SELECT status FROM takeout_events WHERE request_id = ?1",
+                [request_id],
+                |r| r.get::<_, String>(0),
+            ) {
+                Ok(_) => {
+                    let _ = conn.execute("ROLLBACK", []);
+                    return Ok(UndoAtomicResult::Duplicate);
+                }
+                Err(rusqlite::Error::QueryReturnedNoRows) => {}
+                Err(e) => return Err(e),
+            }
+
+            let existing_request_id = match conn.query_row(
+                "SELECT request_id FROM check_ins WHERE ticket_id = ?1",
+                [ticket_id],
+                |r| r.get::<_, String>(0),
+            ) {
+                Ok(value) => value,
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    let _ = conn.execute("ROLLBACK", []);
+                    return Ok(UndoAtomicResult::NotCheckedIn);
+                }
+                Err(e) => return Err(e),
+            };
+
+            if let Err(e) = conn.execute("DELETE FROM check_ins WHERE ticket_id = ?1", [ticket_id])
+            {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(e);
+            }
+
+            let now_epoch = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            let now_iso = chrono::Utc::now().to_rfc3339();
+
+            let snapshot = conn
+                .query_row(
+                    "SELECT p.event_id, p.id, p.name, p.birth_date,
+                     json_extract(t.raw_json, '$.ticketId'),
+                     json_extract(t.raw_json, '$.ticketName'),
+                     t.code
+                     FROM tickets t
+                     LEFT JOIN participants p ON p.id = t.participant_id
+                     WHERE t.id = ?1",
+                    [ticket_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
+                            row.get::<_, Option<String>>(6)?,
+                        ))
+                    },
+                )
+                .ok();
+
+            let (
+                event_id,
+                participant_id,
+                participant_name,
+                birth_date,
+                ticket_source_id,
+                ticket_name,
+                ticket_code,
+            ) = snapshot.unwrap_or((None, None, None, None, None, None, None));
+
+            let age_at_checkin = compute_age_at_checkin(birth_date.as_deref(), &now_iso);
+            let payload_json = payload_json
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    serde_json::json!({ "undo_request_id": existing_request_id }).to_string()
+                });
+
+            if let Err(e) = conn.execute(
+                "INSERT INTO takeout_events (
+                    request_id, ticket_id, device_id, status, payload_json, created_at,
+                    source_type, event_id, participant_id, participant_name, birth_date, age_at_checkin,
+                    ticket_source_id, ticket_name, ticket_code, operator_alias, operator_device_id, checked_in_at
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+                params![
+                    request_id,
+                    ticket_id,
+                    device_id,
+                    "REVERSED",
+                    payload_json,
+                    now_epoch.to_string(),
+                    "json_sync",
+                    event_id,
+                    participant_id,
+                    participant_name,
+                    birth_date,
+                    age_at_checkin,
+                    ticket_source_id,
+                    ticket_name,
+                    ticket_code,
+                    operator_alias,
+                    device_id,
+                    now_iso
+                ],
+            ) {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(e);
+            }
+
+            UndoAtomicResult::Reversed
         };
         conn.execute("COMMIT", [])?;
         Ok(result)

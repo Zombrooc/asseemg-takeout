@@ -1176,6 +1176,208 @@ async fn events_checkins_reset_deletes_and_returns_count() {
 }
 
 #[tokio::test]
+async fn takeout_undo_reverts_checkin_and_keeps_audit() {
+    let app = app();
+    import_event(
+        &app,
+        serde_json::json!({
+          "eventId": "ev-undo",
+          "event": {
+            "id": "ev-undo",
+            "name": "Evento Undo",
+            "startDate": "2026-02-23T09:00:00.000Z",
+            "endDate": null,
+            "startTime": "09:00"
+          },
+          "exportedAt": "2026-02-23T12:00:00.000Z",
+          "customForm": [],
+          "participants": [
+            {
+              "seatId": "seat-undo",
+              "ticketId": "ticket-undo",
+              "ticketName": "5K",
+              "qrCode": "QR-UNDO",
+              "participantName": "Ana Undo",
+              "cpf": "123.456.789-00",
+              "birthDate": "1990-01-01",
+              "age": 35,
+              "customFormResponses": [],
+              "checkinDone": false,
+              "checkedInAt": null
+            }
+          ],
+          "checkins": []
+        }),
+    )
+    .await;
+
+    let confirm_req = Request::builder()
+        .uri("/takeout/confirm")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": "req-confirm-undo",
+              "ticket_id": "seat-undo",
+              "device_id": "desk"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let confirm_res = app.clone().oneshot(confirm_req).await.unwrap();
+    assert_eq!(confirm_res.status(), StatusCode::OK);
+
+    let undo_req = Request::builder()
+        .uri("/takeout/undo")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": "req-undo",
+              "ticket_id": "seat-undo",
+              "device_id": "desk"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let undo_res = app.clone().oneshot(undo_req).await.unwrap();
+    assert_eq!(undo_res.status(), StatusCode::OK);
+    let undo_body = body_bytes(undo_res.into_body()).await;
+    let undo_json: serde_json::Value = serde_json::from_slice(&undo_body).unwrap();
+    assert_eq!(undo_json.get("status").and_then(|v| v.as_str()), Some("REVERSED"));
+
+    let participants_req = Request::builder()
+        .uri("/events/ev-undo/participants")
+        .body(Body::empty())
+        .unwrap();
+    let participants_res = app.clone().oneshot(participants_req).await.unwrap();
+    assert_eq!(participants_res.status(), StatusCode::OK);
+    let participants_body = body_bytes(participants_res.into_body()).await;
+    let participants_json: Vec<serde_json::Value> =
+        serde_json::from_slice(&participants_body).unwrap();
+    assert_eq!(participants_json.len(), 1);
+    assert_eq!(
+        participants_json[0]
+            .get("checkinDone")
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+
+    let audit_req = Request::builder()
+        .uri("/audit?eventId=ev-undo")
+        .body(Body::empty())
+        .unwrap();
+    let audit_res = app.oneshot(audit_req).await.unwrap();
+    assert_eq!(audit_res.status(), StatusCode::OK);
+    let audit_body = body_bytes(audit_res.into_body()).await;
+    let audit_json: Vec<serde_json::Value> = serde_json::from_slice(&audit_body).unwrap();
+    let statuses: Vec<String> = audit_json
+        .iter()
+        .filter_map(|item| item.get("status").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+    assert!(statuses.contains(&"CONFIRMED".to_string()));
+    assert!(statuses.contains(&"REVERSED".to_string()));
+}
+
+#[tokio::test]
+async fn takeout_undo_legacy_reverts_checkin_and_keeps_audit() {
+    let (app, pool, _ws) = app_with_seeded_pool_and_registry();
+    {
+        let conn = pool.conn.lock().unwrap();
+        conn.execute(
+      "INSERT INTO legacy_participants (id, event_id, bib_number, full_name, sex, cpf_digits, birth_date_iso, modality, shirt_size, team, raw_json, created_at, updated_at, is_manual)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+      rusqlite::params![
+        "legacy-1",
+        "ev1",
+        1,
+        "Pessoa Legado",
+        "F",
+        "11122233344",
+        "1990-01-01",
+        "5KM",
+        "M",
+        "Equipe",
+        "{}",
+        "2026-03-01T00:00:00Z",
+        "2026-03-01T00:00:00Z",
+        0
+      ],
+    )
+    .unwrap();
+    }
+
+    let confirm_req = Request::builder()
+        .uri("/takeout/confirm/legacy")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": "req-legacy-confirm",
+              "event_id": "ev1",
+              "participant_id": "legacy-1",
+              "device_id": "desk"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let confirm_res = app.clone().oneshot(confirm_req).await.unwrap();
+    assert_eq!(confirm_res.status(), StatusCode::OK);
+
+    let undo_req = Request::builder()
+        .uri("/takeout/undo/legacy")
+        .method("POST")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+              "request_id": "req-legacy-undo",
+              "event_id": "ev1",
+              "participant_id": "legacy-1",
+              "device_id": "desk"
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let undo_res = app.clone().oneshot(undo_req).await.unwrap();
+    assert_eq!(undo_res.status(), StatusCode::OK);
+    let undo_body = body_bytes(undo_res.into_body()).await;
+    let undo_json: serde_json::Value = serde_json::from_slice(&undo_body).unwrap();
+    assert_eq!(undo_json.get("status").and_then(|v| v.as_str()), Some("REVERSED"));
+
+    let participants_req = Request::builder()
+        .uri("/events/ev1/legacy-participants")
+        .body(Body::empty())
+        .unwrap();
+    let participants_res = app.clone().oneshot(participants_req).await.unwrap();
+    assert_eq!(participants_res.status(), StatusCode::OK);
+    let participants_body = body_bytes(participants_res.into_body()).await;
+    let participants_json: Vec<serde_json::Value> =
+        serde_json::from_slice(&participants_body).unwrap();
+    assert_eq!(participants_json.len(), 1);
+    assert_eq!(
+        participants_json[0]
+            .get("checkinDone")
+            .and_then(|v| v.as_bool()),
+        Some(false)
+    );
+
+    let audit_req = Request::builder()
+        .uri("/audit?eventId=ev1")
+        .body(Body::empty())
+        .unwrap();
+    let audit_res = app.oneshot(audit_req).await.unwrap();
+    assert_eq!(audit_res.status(), StatusCode::OK);
+    let audit_body = body_bytes(audit_res.into_body()).await;
+    let audit_json: Vec<serde_json::Value> = serde_json::from_slice(&audit_body).unwrap();
+    let statuses: Vec<String> = audit_json
+        .iter()
+        .filter_map(|item| item.get("status").and_then(|v| v.as_str()).map(String::from))
+        .collect();
+    assert!(statuses.contains(&"CONFIRMED".to_string()));
+    assert!(statuses.contains(&"REVERSED".to_string()));
+}
+
+#[tokio::test]
 async fn events_archive_then_unarchive_restores_event_in_list() {
     let (app, _pool) = app_with_seeded_pool();
 

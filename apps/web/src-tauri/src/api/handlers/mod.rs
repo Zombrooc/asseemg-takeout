@@ -18,7 +18,7 @@ use crate::api::repository::{
     ParticipantSearchMode, ParticipantsRepository, TakeoutRepository, UpdateLegacyParticipantError,
     UpdateParticipantError,
 };
-use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
+use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService, UndoError};
 use crate::api::services::{PairingError, PairingService};
 use crate::api::thevent;
 use crate::api::ws::WsRegistry;
@@ -105,6 +105,8 @@ pub fn router(state: AppState) -> Router {
             "/events/:event_id/checkins/reset",
             post(events_checkins_reset),
         )
+        .route("/takeout/undo", post(takeout_undo))
+        .route("/takeout/undo/legacy", post(takeout_undo_legacy))
         .route("/events/:event_id/archive", post(events_archive))
         .route("/events/:event_id/unarchive", post(events_unarchive))
         .route("/events/:event_id", delete(events_delete))
@@ -440,6 +442,36 @@ fn broadcast_participant_checked_in(
     );
     let msg = serde_json::json!({
       "type": "participant_checked_in",
+      "event_id": event_id,
+      "ticket_id": ticket_id,
+      "request_id": request_id,
+      "participant_id": participant_id,
+      "device_id": device_id,
+      "source_type": source_type
+    })
+    .to_string();
+    state.ws_registry.broadcast(event_id, &msg);
+}
+
+fn broadcast_participant_checkin_reverted(
+    state: &AppState,
+    event_id: &str,
+    ticket_id: Option<&str>,
+    request_id: Option<&str>,
+    participant_id: Option<&str>,
+    device_id: Option<&str>,
+    source_type: &str,
+) {
+    println!(
+        "[ws.broadcast] type=participant_checkin_reverted event_id={} participant_id={} ticket_id={} source_type={} ws_channel={} broadcast_ok=true",
+        event_id,
+        participant_id.unwrap_or_default(),
+        ticket_id.unwrap_or_default(),
+        source_type,
+        event_id
+    );
+    let msg = serde_json::json!({
+      "type": "participant_checkin_reverted",
       "event_id": event_id,
       "ticket_id": ticket_id,
       "request_id": request_id,
@@ -993,6 +1025,62 @@ async fn takeout_confirm(
     }
 }
 
+async fn takeout_undo(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<crate::api::services::takeout::UndoTakeoutPayload>,
+) -> impl IntoResponse {
+    let (device_id, operator_alias) =
+        resolve_operator_identity(&state.pool, &headers, &payload.device_id);
+    match TakeoutService::undo(state.pool.clone(), device_id, operator_alias, payload.clone()) {
+        Ok(r) => {
+            if r.status == "REVERSED" {
+                if let Ok(Some(ev_id)) = ParticipantsRepository::get_event_id_by_ticket_id(
+                    &state.pool,
+                    &payload.ticket_id,
+                ) {
+                    let payload_json = serde_json::json!({
+                      "ticket_id": payload.ticket_id.clone(),
+                      "request_id": payload.request_id.clone(),
+                      "event_id": ev_id,
+                      "source_type": "json_sync"
+                    })
+                    .to_string();
+                    let _ = EventLogRepository::insert(
+                        &state.pool,
+                        &ev_id,
+                        "participant_checkin_reverted",
+                        Some(&payload_json),
+                    );
+                    broadcast_participant_checkin_reverted(
+                        &state,
+                        &ev_id,
+                        Some(&payload.ticket_id),
+                        Some(&payload.request_id),
+                        None,
+                        None,
+                        "json_sync",
+                    );
+                }
+            }
+            (StatusCode::OK, Json(r)).into_response()
+        }
+        Err(UndoError::NotCheckedIn) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({
+              "error": "ticket not checked in",
+              "status": "FAILED"
+            })),
+        )
+            .into_response(),
+        Err(UndoError::Validation(e)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": e, "status": "FAILED" })),
+        )
+            .into_response(),
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct AuditQuery {
     #[serde(rename = "eventId")]
@@ -1538,6 +1626,97 @@ async fn takeout_confirm_legacy(
               "existing_request_id": existing_request_id,
               "participant_id": payload.participant_id
             })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Clone, serde::Deserialize)]
+struct LegacyUndoPayload {
+    request_id: String,
+    event_id: String,
+    participant_id: String,
+    device_id: String,
+    #[serde(default)]
+    payload_json: Option<String>,
+}
+
+async fn takeout_undo_legacy(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<LegacyUndoPayload>,
+) -> impl IntoResponse {
+    if payload.request_id.trim().is_empty()
+        || payload.event_id.trim().is_empty()
+        || payload.participant_id.trim().is_empty()
+    {
+        return (
+      StatusCode::BAD_REQUEST,
+      Json(serde_json::json!({ "error": "request_id, event_id and participant_id are required" })),
+    )
+      .into_response();
+    }
+    let (device_id, operator_alias) =
+        resolve_operator_identity(&state.pool, &headers, &payload.device_id);
+    match LegacyRepository::undo_atomic(
+        &state.pool,
+        &payload.request_id,
+        &payload.event_id,
+        &payload.participant_id,
+        &device_id,
+        operator_alias.as_deref(),
+        payload.payload_json.as_deref(),
+    ) {
+        Ok(crate::api::repository::UndoAtomicResult::Reversed) => {
+            println!(
+                "[participant.undo] source_type=legacy_csv event_id={} participant_id={} ticket_id={} ws_channel={}",
+                payload.event_id,
+                payload.participant_id,
+                payload.participant_id,
+                payload.event_id
+            );
+            let payload_json = serde_json::json!({
+              "participant_id": payload.participant_id.clone(),
+              "request_id": payload.request_id.clone(),
+              "event_id": payload.event_id.clone(),
+              "device_id": device_id.clone(),
+              "source_type": "legacy_csv"
+            })
+            .to_string();
+            let _ = EventLogRepository::insert(
+                &state.pool,
+                &payload.event_id,
+                "participant_checkin_reverted",
+                Some(&payload_json),
+            );
+            broadcast_participant_checkin_reverted(
+                &state,
+                &payload.event_id,
+                Some(&payload.participant_id),
+                Some(&payload.request_id),
+                Some(&payload.participant_id),
+                Some(&device_id),
+                "legacy_csv",
+            );
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "status": "REVERSED" })),
+            )
+                .into_response()
+        }
+        Ok(crate::api::repository::UndoAtomicResult::Duplicate) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "DUPLICATE" })),
+        )
+            .into_response(),
+        Ok(crate::api::repository::UndoAtomicResult::NotCheckedIn) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "participant not checked in", "status": "FAILED" })),
         )
             .into_response(),
         Err(e) => (

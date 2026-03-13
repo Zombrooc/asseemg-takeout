@@ -11,11 +11,15 @@ import type {
   LegacyReserveNumbersResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
+  LegacyTakeoutUndoPayload,
+  LegacyTakeoutUndoResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   CreateLegacyParticipantPayload,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  TakeoutUndoPayload,
+  TakeoutUndoResponse,
   UpdateEventParticipantPayload,
   UpdateLegacyParticipantPayload,
 } from "@pickup/api/takeout-contracts";
@@ -37,11 +41,15 @@ export type {
   LegacyReserveNumbersResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
+  LegacyTakeoutUndoPayload,
+  LegacyTakeoutUndoResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   CreateLegacyParticipantPayload,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  TakeoutUndoPayload,
+  TakeoutUndoResponse,
   UpdateEventParticipantPayload,
   UpdateLegacyParticipantPayload,
 };
@@ -192,6 +200,16 @@ export async function postTakeoutConfirm(payload: TakeoutConfirmPayload): Promis
   return res.json() as Promise<TakeoutConfirmResponse>;
 }
 
+export async function postTakeoutUndo(payload: TakeoutUndoPayload): Promise<TakeoutUndoResponse> {
+  const res = await fetch(`${BASE_URL}/takeout/undo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<TakeoutUndoResponse>;
+}
+
 export async function putEventParticipant(
   eventId: string,
   participantId: string,
@@ -211,6 +229,18 @@ export async function putEventParticipant(
 
 export async function getLegacyEventParticipants(eventId: string): Promise<LegacyEventParticipant[]> {
   return request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`);
+}
+
+export async function postLegacyTakeoutUndo(
+  payload: LegacyTakeoutUndoPayload
+): Promise<LegacyTakeoutUndoResponse> {
+  const res = await fetch(`${BASE_URL}/takeout/undo/legacy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<LegacyTakeoutUndoResponse>;
 }
 
 export async function getLegacyReservedNumbers(

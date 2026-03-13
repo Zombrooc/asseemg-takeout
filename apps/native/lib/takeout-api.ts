@@ -16,6 +16,10 @@ import type {
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  TakeoutUndoPayload,
+  TakeoutUndoResponse,
+  LegacyTakeoutUndoPayload,
+  LegacyTakeoutUndoResponse,
   CreateLegacyParticipantPayload,
 } from "./takeout-api-types";
 
@@ -34,6 +38,10 @@ export type {
   TakeoutConfirmResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
+  TakeoutUndoPayload,
+  TakeoutUndoResponse,
+  LegacyTakeoutUndoPayload,
+  LegacyTakeoutUndoResponse,
   CreateLegacyParticipantPayload,
 };
 

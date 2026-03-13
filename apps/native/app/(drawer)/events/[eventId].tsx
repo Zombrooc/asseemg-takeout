@@ -219,28 +219,37 @@ export default function EventScreen() {
     [participants, searchQuery],
   );
 
-  const auditConfirmedTicketIds = useMemo(
-    () =>
-      new Set(
-        (auditQuery.data ?? [])
-          .filter((a) => a.status === "CONFIRMED" || a.status === "DUPLICATE")
-          .map((a) => a.ticket_id),
-      ),
-    [auditQuery.data],
-  );
+  const auditStatusByTicket = useMemo(() => {
+    const map = new Map<string, string>();
+    (auditQuery.data ?? []).forEach((a) => {
+      if (!map.has(a.ticket_id)) map.set(a.ticket_id, a.status);
+    });
+    return map;
+  }, [auditQuery.data]);
+
+  const auditConfirmedTicketIds = useMemo(() => {
+    const confirmed = new Set<string>();
+    auditStatusByTicket.forEach((status, ticketId) => {
+      if (status === "CONFIRMED" || status === "DUPLICATE") {
+        confirmed.add(ticketId);
+      }
+    });
+    return confirmed;
+  }, [auditStatusByTicket]);
 
   useEffect(() => {
     if (!auditQuery.data?.length) return;
     if (sourceType === "legacy_csv") return;
     setConflictTicketIds((prev) => {
       const next = new Set(prev);
-      auditQuery.data?.forEach((a) => {
-        if (a.status === "CONFIRMED" || a.status === "DUPLICATE")
-          next.delete(a.ticket_id);
+      auditStatusByTicket.forEach((status, ticketId) => {
+        if (status === "CONFIRMED" || status === "DUPLICATE") {
+          next.delete(ticketId);
+        }
       });
       return next;
     });
-  }, [auditQuery.data, sourceType]);
+  }, [auditQuery.data, auditStatusByTicket, sourceType]);
 
   const total = participants.length;
   const confirmed = participants.filter((p) =>

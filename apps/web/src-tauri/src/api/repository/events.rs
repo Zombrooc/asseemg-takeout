@@ -213,7 +213,7 @@ impl EventsRepository {
             .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
         let mut stmt = conn.prepare(
       "SELECT p.id, p.name, p.cpf, p.birth_date, t.id AS ticket_id, t.code AS qr_code, t.raw_json AS ticket_raw, p.raw_json AS participant_raw,
-       EXISTS (SELECT 1 FROM takeout_events te WHERE te.ticket_id = t.id AND te.status IN ('CONFIRMED', 'DUPLICATE')) AS checkin_done_db
+       EXISTS (SELECT 1 FROM check_ins ci WHERE ci.ticket_id = t.id) AS checkin_done_db
        FROM participants p
        JOIN tickets t ON t.participant_id = p.id
        WHERE p.event_id = ?1

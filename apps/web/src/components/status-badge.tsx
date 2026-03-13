@@ -2,7 +2,7 @@ import { cn } from "@/lib/utils";
 import { AlertCircle, CheckCircle, XCircle } from "lucide-react";
 
 export interface StatusBadgeProps {
-  status: "confirmed" | "pending" | "duplicate" | "failed";
+  status: "confirmed" | "pending" | "duplicate" | "failed" | "reversed";
   label?: string;
 }
 
@@ -34,6 +34,13 @@ const statusConfig = {
     borderColor: "border-red-200 dark:border-red-800",
     icon: XCircle,
     defaultLabel: "Falho",
+  },
+  reversed: {
+    bgColor: "bg-slate-50 dark:bg-slate-950/30",
+    textColor: "text-slate-700 dark:text-slate-300",
+    borderColor: "border-slate-200 dark:border-slate-800",
+    icon: XCircle,
+    defaultLabel: "Desfeito",
   },
 };
 

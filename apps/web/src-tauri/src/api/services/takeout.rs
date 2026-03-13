@@ -1,5 +1,5 @@
 use crate::api::db::DbPool;
-use crate::api::repository::{ConfirmAtomicResult, TakeoutEventRow, TakeoutRepository};
+use crate::api::repository::{ConfirmAtomicResult, TakeoutEventRow, TakeoutRepository, UndoAtomicResult};
 use std::sync::Arc;
 
 pub struct TakeoutService;
@@ -13,8 +13,22 @@ pub struct ConfirmTakeoutPayload {
     pub payload_json: Option<String>,
 }
 
+#[derive(Clone, serde::Deserialize)]
+pub struct UndoTakeoutPayload {
+    pub request_id: String,
+    pub ticket_id: String,
+    pub device_id: String,
+    #[serde(default)]
+    pub payload_json: Option<String>,
+}
+
 #[derive(Debug, serde::Serialize)]
 pub struct ConfirmTakeoutResponse {
+    pub status: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct UndoTakeoutResponse {
     pub status: String,
 }
 
@@ -33,6 +47,12 @@ pub enum ConfirmError {
         existing_request_id: String,
         ticket_id: String,
     },
+}
+
+#[derive(Debug)]
+pub enum UndoError {
+    Validation(String),
+    NotCheckedIn,
 }
 
 impl TakeoutService {
@@ -69,6 +89,44 @@ impl TakeoutService {
                 existing_request_id,
                 ticket_id: payload.ticket_id,
             }),
+        }
+    }
+
+    pub fn undo(
+        pool: Arc<DbPool>,
+        device_id: String,
+        operator_alias: Option<String>,
+        payload: UndoTakeoutPayload,
+    ) -> Result<UndoTakeoutResponse, UndoError> {
+        if payload.request_id.is_empty() {
+            return Err(UndoError::Validation(
+                "request_id is required".to_string(),
+            ));
+        }
+        if payload.ticket_id.is_empty() {
+            return Err(UndoError::Validation(
+                "ticket_id is required".to_string(),
+            ));
+        }
+
+        let r = TakeoutRepository::undo_atomic(
+            &pool,
+            &payload.request_id,
+            &payload.ticket_id,
+            &device_id,
+            operator_alias.as_deref(),
+            payload.payload_json.as_deref(),
+        )
+        .map_err(|e| UndoError::Validation(e.to_string()))?;
+
+        match r {
+            UndoAtomicResult::Reversed => Ok(UndoTakeoutResponse {
+                status: "REVERSED".to_string(),
+            }),
+            UndoAtomicResult::Duplicate => Ok(UndoTakeoutResponse {
+                status: "DUPLICATE".to_string(),
+            }),
+            UndoAtomicResult::NotCheckedIn => Err(UndoError::NotCheckedIn),
         }
     }
 
@@ -146,6 +204,51 @@ mod tests {
         match &err {
             ConfirmError::Conflict { ticket_id, .. } => assert_eq!(ticket_id, "T1"),
             _ => panic!("expected Conflict"),
+        }
+    }
+
+    #[test]
+    fn undo_requires_ticket_id_and_unsets_checkin() {
+        let pool = mem_pool();
+        let confirm_payload = ConfirmTakeoutPayload {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            ticket_id: "T1".to_string(),
+            device_id: "d1".to_string(),
+            payload_json: None,
+        };
+        let _ = TakeoutService::confirm(
+            pool.clone(),
+            "d1".to_string(),
+            None,
+            confirm_payload,
+        )
+        .unwrap();
+
+        let undo_payload = UndoTakeoutPayload {
+            request_id: uuid::Uuid::new_v4().to_string(),
+            ticket_id: "T1".to_string(),
+            device_id: "d1".to_string(),
+            payload_json: None,
+        };
+        let res = TakeoutService::undo(pool.clone(), "d1".to_string(), None, undo_payload)
+            .unwrap();
+        assert_eq!(res.status, "REVERSED");
+
+        let err = TakeoutService::undo(
+            pool,
+            "d1".to_string(),
+            None,
+            UndoTakeoutPayload {
+                request_id: uuid::Uuid::new_v4().to_string(),
+                ticket_id: "T1".to_string(),
+                device_id: "d1".to_string(),
+                payload_json: None,
+            },
+        )
+        .unwrap_err();
+        match err {
+            UndoError::NotCheckedIn => {}
+            _ => panic!("expected NotCheckedIn"),
         }
     }
 }

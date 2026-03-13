@@ -1,7 +1,7 @@
 import { Pressable } from "react-native";
 import { Text, XStack } from "tamagui";
 
-const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED"] as const;
+const OPTIONS = ["ALL", "CONFIRMED", "DUPLICATE", "FAILED", "REVERSED"] as const;
 
 export type StatusFilter = (typeof OPTIONS)[number];
 
