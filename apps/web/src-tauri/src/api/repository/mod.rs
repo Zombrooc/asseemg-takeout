@@ -10,8 +10,9 @@ mod takeout;
 pub use event_log::{EventLogRepository, EventLogRow};
 pub use events::{EventParticipantRow, EventRow, EventsRepository};
 pub use legacy::{
-    LegacyCheckinRow, LegacyImportResult, LegacyParticipantRow, LegacyParticipantSearchMode,
-    LegacyRepository, UpdateLegacyParticipantError,
+    CreateLegacyParticipantError, LegacyCheckinRow, LegacyImportResult, LegacyParticipantRow,
+    LegacyParticipantSearchMode, LegacyRepository, LegacyReserveNumbersResult,
+    LegacyReservedNumberRow, UpdateLegacyParticipantError,
 };
 pub use locks::{AcquireResult, LocksRepository};
 pub use pairing::{PairingRepository, PairingTokenState};

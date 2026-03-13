@@ -83,6 +83,26 @@ export type LegacyImportResponse = {
   errors: string[];
 };
 
+export type LegacyReservedNumber = {
+  eventId: string;
+  bibNumber: number;
+  label?: string | null;
+  status: "available" | "used";
+  createdAt: string;
+  usedAt?: string | null;
+  usedByParticipantId?: string | null;
+};
+
+export type LegacyReserveNumbersPayload = {
+  numbers: { bibNumber: number; label?: string | null }[];
+};
+
+export type LegacyReserveNumbersResponse = {
+  created: number;
+  skipped: number;
+  errors: string[];
+};
+
 export type LegacyEventParticipant = {
   id: string;
   bibNumber: number;
@@ -103,6 +123,17 @@ export type LegacyTakeoutConfirmPayload = {
   participant_id: string;
   device_id: string;
   payload_json?: string;
+};
+
+export type CreateLegacyParticipantPayload = {
+  reservationId: number;
+  name: string;
+  cpf: string;
+  birthDate: string;
+  ticketType: string;
+  shirtSize?: string | null;
+  team?: string | null;
+  sex?: string | null;
 };
 
 export type LegacyTakeoutConfirmResponse = {

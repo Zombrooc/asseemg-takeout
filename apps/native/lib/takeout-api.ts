@@ -5,6 +5,9 @@ import type {
   EventSummary,
   HealthResponse,
   LegacyEventParticipant,
+  LegacyReservedNumber,
+  LegacyReserveNumbersPayload,
+  LegacyReserveNumbersResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
   NetworkAddressesResponse,
@@ -13,6 +16,7 @@ import type {
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
+  CreateLegacyParticipantPayload,
 } from "./takeout-api-types";
 
 export type {
@@ -20,6 +24,9 @@ export type {
   EventParticipant,
   EventSummary,
   LegacyEventParticipant,
+  LegacyReservedNumber,
+  LegacyReserveNumbersPayload,
+  LegacyReserveNumbersResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
   TakeoutConfirmConflictResponse,
@@ -27,6 +34,7 @@ export type {
   TakeoutConfirmResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
+  CreateLegacyParticipantPayload,
 };
 
 function ensureSlash(url: string): string {
@@ -73,6 +81,22 @@ export function createTakeoutClient(config: {
       request<EventParticipant[]>(`/events/${encodeURIComponent(eventId)}/participants`),
     getLegacyEventParticipants: (eventId: string) =>
       request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`),
+    getLegacyReservedNumbers: (eventId: string, includeUsed = false) => {
+      const q = includeUsed ? "?includeUsed=true" : "";
+      return request<LegacyReservedNumber[]>(
+        `/events/${encodeURIComponent(eventId)}/legacy-reservations${q}`
+      );
+    },
+    postLegacyReserveNumbers: (eventId: string, payload: LegacyReserveNumbersPayload) =>
+      request<LegacyReserveNumbersResponse>(`/events/${encodeURIComponent(eventId)}/legacy-reservations`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    postLegacyCreateParticipant: (eventId: string, payload: CreateLegacyParticipantPayload) =>
+      request<LegacyEventParticipant>(`/events/${encodeURIComponent(eventId)}/legacy-participants`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
     searchEventParticipants: (eventId: string, q: string, mode: ParticipantSearchMode) => {
       const params = new URLSearchParams({ q, mode });
       return request<EventParticipant[]>(

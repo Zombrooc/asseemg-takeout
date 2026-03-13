@@ -1,9 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
-import type { EventParticipant, LegacyEventParticipant } from "@/lib/takeout-api-types";
+import type {
+  CreateLegacyParticipantPayload,
+  EventParticipant,
+  LegacyEventParticipant,
+  LegacyReservedNumber,
+} from "@/lib/takeout-api-types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, BackHandler } from "react-native";
 
@@ -15,6 +20,7 @@ import {
   SearchBar,
   SummaryStats,
 } from "@/components/mobile-tamagui/event";
+import { LegacyCreateParticipantModal } from "@/components/mobile-tamagui/event/legacy-create-participant-modal";
 import { ConfirmTakeoutModal } from "@/components/mobile/audit/confirm-takeout-modal";
 import { ParticipantListItem } from "@/components/mobile-tamagui/participant-list-item";
 import { Banner, Button, ScreenContainer, Spinner } from "@/components/ui-tamagui";
@@ -126,6 +132,7 @@ export default function EventScreen() {
     useState<DisplayParticipant | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [offlineNoticeVisible, setOfflineNoticeVisible] = useState(false);
   const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(
@@ -157,6 +164,16 @@ export default function EventScreen() {
         : Promise.reject(new Error("No API")),
     enabled: !!api && !!eventId && isReachable,
   });
+
+  const reservedNumbersQuery = useQuery<LegacyReservedNumber[]>({
+    queryKey: ["takeout-legacy-reservations", eventId],
+    queryFn: () =>
+      api && eventId
+        ? api.getLegacyReservedNumbers(eventId)
+        : Promise.reject(new Error("No API")),
+    enabled: !!api && !!eventId && isReachable && sourceType === "legacy_csv",
+  });
+  const reservedNumbers = reservedNumbersQuery.data ?? [];
 
   const auditQuery = useQuery({
     queryKey: ["takeout-audit", eventId],
@@ -320,6 +337,34 @@ export default function EventScreen() {
       setResetLoading(false);
     }
   }, [api, eventId, auditQuery, participantsQuery, sourceType]);
+
+  const handleCreateReservation = useCallback(() => {
+    if (!isReachable) {
+      Alert.alert("Offline", "Conecte-se ao desktop para cadastrar participante.");
+      return;
+    }
+    if (reservedNumbers.length === 0) {
+      Alert.alert("Sem reservas", "Não há números reservados disponíveis.");
+      return;
+    }
+    setShowCreateModal(true);
+  }, [isReachable, reservedNumbers.length]);
+
+  const createParticipantMutation = useMutation({
+    mutationFn: async (payload: CreateLegacyParticipantPayload) => {
+      if (!api || !eventId) throw new Error("Sem conexão com a API.");
+      return api.postLegacyCreateParticipant(eventId, payload);
+    },
+    onSuccess: () => {
+      setShowCreateModal(false);
+      participantsQuery.refetch();
+      reservedNumbersQuery.refetch();
+    },
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : "Falha ao cadastrar participante.";
+      Alert.alert("Erro", message);
+    },
+  });
 
   const handlePrimaryAction = useCallback(
     (participantId: string) => {
@@ -498,6 +543,10 @@ export default function EventScreen() {
             onReset={handleResetCheckins}
             resetLoading={resetLoading}
             undoCount={confirmed}
+            onCreateReservation={
+              sourceType === "legacy_csv" ? handleCreateReservation : undefined
+            }
+            createDisabled={!isReachable || reservedNumbers.length === 0}
           />
         </View>
 
@@ -548,6 +597,14 @@ export default function EventScreen() {
         onConfirmed={handleConfirmed}
         onQueuedOffline={handleQueuedOffline}
         onConflict={handleConflict}
+      />
+
+      <LegacyCreateParticipantModal
+        visible={showCreateModal}
+        reservations={reservedNumbers}
+        submitting={createParticipantMutation.isPending}
+        onClose={() => setShowCreateModal(false)}
+        onSubmit={(payload) => createParticipantMutation.mutate(payload)}
       />
     </>
   );

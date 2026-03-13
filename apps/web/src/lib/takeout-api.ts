@@ -6,10 +6,14 @@ import type {
   HealthResponse,
   LegacyEventParticipant,
   LegacyImportResponse,
+  LegacyReservedNumber,
+  LegacyReserveNumbersPayload,
+  LegacyReserveNumbersResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
+  CreateLegacyParticipantPayload,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
   UpdateEventParticipantPayload,
@@ -28,10 +32,14 @@ export type {
   HealthResponse,
   LegacyEventParticipant,
   LegacyImportResponse,
+  LegacyReservedNumber,
+  LegacyReserveNumbersPayload,
+  LegacyReserveNumbersResponse,
   LegacyTakeoutConfirmPayload,
   LegacyTakeoutConfirmResponse,
   NetworkAddressesResponse,
   ParticipantSearchMode,
+  CreateLegacyParticipantPayload,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,
   UpdateEventParticipantPayload,
@@ -203,6 +211,48 @@ export async function putEventParticipant(
 
 export async function getLegacyEventParticipants(eventId: string): Promise<LegacyEventParticipant[]> {
   return request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`);
+}
+
+export async function getLegacyReservedNumbers(
+  eventId: string,
+  includeUsed = false
+): Promise<LegacyReservedNumber[]> {
+  const q = includeUsed ? "?includeUsed=true" : "";
+  return request<LegacyReservedNumber[]>(
+    `/events/${encodeURIComponent(eventId)}/legacy-reservations${q}`
+  );
+}
+
+export async function postLegacyReserveNumbers(
+  eventId: string,
+  payload: LegacyReserveNumbersPayload
+): Promise<LegacyReserveNumbersResponse> {
+  const res = await fetch(
+    `${BASE_URL}/events/${encodeURIComponent(eventId)}/legacy-reservations`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<LegacyReserveNumbersResponse>;
+}
+
+export async function postLegacyCreateParticipant(
+  eventId: string,
+  payload: CreateLegacyParticipantPayload
+): Promise<LegacyEventParticipant> {
+  const res = await fetch(
+    `${BASE_URL}/events/${encodeURIComponent(eventId)}/legacy-participants`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<LegacyEventParticipant>;
 }
 
 export async function searchLegacyEventParticipants(

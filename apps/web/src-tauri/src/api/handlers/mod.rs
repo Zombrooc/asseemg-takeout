@@ -13,10 +13,10 @@ use tower_http::cors::{Any, CorsLayer};
 
 use crate::api::db::DbPool;
 use crate::api::repository::{
-    EventLogRepository, EventsRepository, LegacyParticipantSearchMode, LegacyRepository,
-    LocksRepository, PairingRepository, ParticipantSearchMode, ParticipantsRepository,
-    TakeoutRepository,
-    UpdateLegacyParticipantError, UpdateParticipantError,
+    CreateLegacyParticipantError, EventLogRepository, EventsRepository,
+    LegacyParticipantSearchMode, LegacyRepository, LocksRepository, PairingRepository,
+    ParticipantSearchMode, ParticipantsRepository, TakeoutRepository, UpdateLegacyParticipantError,
+    UpdateParticipantError,
 };
 use crate::api::services::takeout::{ConfirmConflictBody, ConfirmError, TakeoutService};
 use crate::api::services::{PairingError, PairingService};
@@ -125,7 +125,7 @@ pub fn router(state: AppState) -> Router {
         .route("/sync/push", post(sync_push))
         .route(
             "/events/:event_id/legacy-participants",
-            get(events_legacy_participants),
+            get(events_legacy_participants).post(events_legacy_participants_create),
         )
         .route(
             "/events/:event_id/legacy-participants/:participant_id",
@@ -134,6 +134,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/events/:event_id/legacy-participants/search",
             get(events_legacy_participants_search),
+        )
+        .route(
+            "/events/:event_id/legacy-reservations",
+            get(events_legacy_reservations).post(events_legacy_reservations_create),
         )
         .route("/takeout/confirm/legacy", post(takeout_confirm_legacy))
         .route("/audit/legacy", get(audit_legacy))
@@ -1143,6 +1147,196 @@ async fn events_legacy_participants(
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyReserveNumberItem {
+    bib_number: i64,
+    #[serde(default)]
+    label: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyReserveNumbersPayload {
+    numbers: Vec<LegacyReserveNumberItem>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyReservationsQuery {
+    include_used: Option<bool>,
+}
+
+async fn events_legacy_reservations(
+    State(state): State<AppState>,
+    Path(event_id): Path<String>,
+    Query(q): Query<LegacyReservationsQuery>,
+) -> impl IntoResponse {
+    let include_used = q.include_used.unwrap_or(false);
+    match LegacyRepository::list_reserved_numbers(&state.pool, &event_id, include_used) {
+        Ok(reservations) => (StatusCode::OK, Json(reservations)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+async fn events_legacy_reservations_create(
+    State(state): State<AppState>,
+    Path(event_id): Path<String>,
+    Json(payload): Json<LegacyReserveNumbersPayload>,
+) -> impl IntoResponse {
+    if payload.numbers.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "numbers is required" })),
+        )
+            .into_response();
+    }
+    let items = payload
+        .numbers
+        .into_iter()
+        .map(|item| (item.bib_number, item.label.filter(|v| !v.trim().is_empty())))
+        .collect::<Vec<_>>();
+    match LegacyRepository::reserve_numbers(&state.pool, &event_id, &items) {
+        Ok(result) => (StatusCode::OK, Json(result)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyCreateParticipantPayload {
+    reservation_id: i64,
+    name: String,
+    cpf: String,
+    birth_date: String,
+    ticket_type: String,
+    #[serde(default)]
+    shirt_size: Option<String>,
+    #[serde(default)]
+    team: Option<String>,
+    #[serde(default)]
+    sex: Option<String>,
+}
+
+async fn events_legacy_participants_create(
+    State(state): State<AppState>,
+    Path(event_id): Path<String>,
+    Json(payload): Json<LegacyCreateParticipantPayload>,
+) -> impl IntoResponse {
+    if payload.name.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "name is required" })),
+        )
+            .into_response();
+    }
+    if payload.cpf.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "cpf is required" })),
+        )
+            .into_response();
+    }
+    if payload.birth_date.trim().is_empty() || !is_valid_birth_date(payload.birth_date.trim()) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "birthDate must be YYYY-MM-DD" })),
+        )
+            .into_response();
+    }
+    if payload.ticket_type.trim().is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "ticketType is required" })),
+        )
+            .into_response();
+    }
+    if payload.reservation_id <= 0 {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "reservationId is required" })),
+        )
+            .into_response();
+    }
+
+    match LegacyRepository::create_manual_participant(
+        &state.pool,
+        &event_id,
+        payload.reservation_id,
+        payload.name.trim(),
+        payload.cpf.trim(),
+        payload.birth_date.trim(),
+        payload.ticket_type.trim(),
+        payload.shirt_size.as_deref().unwrap_or("").trim(),
+        payload.team.as_deref().unwrap_or("").trim(),
+        payload
+            .sex
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty()),
+    ) {
+        Ok(created) => {
+            println!(
+                "[participant.update] source_type=legacy_csv event_id={} participant_id={} ticket_id={} ws_channel={}",
+                event_id, created.id, created.id, event_id
+            );
+            let payload_json = serde_json::json!({
+              "participant_id": created.id.clone(),
+              "ticket_id": created.id.clone(),
+              "source_type": "legacy_csv"
+            })
+            .to_string();
+            let _ = EventLogRepository::insert(
+                &state.pool,
+                &event_id,
+                "participant_updated",
+                Some(&payload_json),
+            );
+            broadcast_participant_updated(
+                &state,
+                &event_id,
+                &created.id,
+                Some(&created.id),
+                "legacy_csv",
+            );
+            (StatusCode::OK, Json(created)).into_response()
+        }
+        Err(CreateLegacyParticipantError::ReservationNotFound) => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "reservation not found" })),
+        )
+            .into_response(),
+        Err(CreateLegacyParticipantError::ReservationUnavailable) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "reservation unavailable" })),
+        )
+            .into_response(),
+        Err(CreateLegacyParticipantError::BibAlreadyUsed) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "bib already used" })),
+        )
+            .into_response(),
+        Err(CreateLegacyParticipantError::ParticipantExists) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": "participant already exists" })),
+        )
+            .into_response(),
+        Err(CreateLegacyParticipantError::Db(e)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 async fn events_legacy_participants_update(
     State(state): State<AppState>,
     Path((event_id, participant_id)): Path<(String, String)>,
@@ -1562,4 +1756,3 @@ async fn sync_push(Json(body): Json<thevent::SyncPushBody>) -> impl IntoResponse
             .into_response(),
     }
 }
-

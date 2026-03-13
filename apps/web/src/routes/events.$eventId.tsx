@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EventSummary } from "@/components/event-summary";
@@ -12,12 +13,17 @@ import {
   getEventParticipants,
   getEvents,
   getLegacyEventParticipants,
+  getLegacyReservedNumbers,
   postLegacyTakeoutConfirm,
+  postLegacyCreateParticipant,
+  postLegacyReserveNumbers,
   postTakeoutConfirm,
   putEventParticipant,
   putLegacyEventParticipant,
+  type CreateLegacyParticipantPayload,
   type EventParticipant,
   type LegacyEventParticipant,
+  type LegacyReservedNumber,
 } from "@/lib/takeout-api";
 import { useTakeoutWs } from "@/lib/use-takeout-ws";
 import { toast } from "sonner";
@@ -120,6 +126,18 @@ function EventDetailPage() {
   const [editTicketType, setEditTicketType] = useState("");
   const [editShirtSize, setEditShirtSize] = useState("");
   const [editTeam, setEditTeam] = useState("");
+  const [reserveStart, setReserveStart] = useState("");
+  const [reserveEnd, setReserveEnd] = useState("");
+  const [reserveLabel, setReserveLabel] = useState("");
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createReservationId, setCreateReservationId] = useState<number | null>(null);
+  const [createName, setCreateName] = useState("");
+  const [createCpf, setCreateCpf] = useState("");
+  const [createBirthDate, setCreateBirthDate] = useState("");
+  const [createTicketType, setCreateTicketType] = useState("");
+  const [createShirtSize, setCreateShirtSize] = useState("");
+  const [createTeam, setCreateTeam] = useState("");
+  const [createSex, setCreateSex] = useState("");
   const minBirthDate = "1900-01-01";
   const maxBirthDate = useMemo(() => getTodayIsoDate(), []);
 
@@ -141,6 +159,13 @@ function EventDetailPage() {
       }
       return getEventParticipants(eventId);
     },
+    refetchInterval: 10_000,
+  });
+
+  const { data: reservedNumbers = [], isLoading: reservedLoading } = useQuery<LegacyReservedNumber[]>({
+    queryKey: ["takeout", "events", eventId, "legacy-reservations"],
+    queryFn: () => getLegacyReservedNumbers(eventId),
+    enabled: eventSummary?.sourceType === "legacy_csv",
     refetchInterval: 10_000,
   });
 
@@ -201,6 +226,76 @@ function EventDetailPage() {
     },
   });
 
+  const reserveMutation = useMutation({
+    mutationFn: async () => {
+      const start = Number(reserveStart);
+      const end = Number(reserveEnd || reserveStart);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        throw new Error("Informe números válidos para a reserva.");
+      }
+      if (start <= 0 || end <= 0) {
+        throw new Error("Os números devem ser maiores que zero.");
+      }
+      if (end < start) {
+        throw new Error("O número final não pode ser menor que o inicial.");
+      }
+      const label = reserveLabel.trim() || null;
+      const numbers = [];
+      for (let i = start; i <= end; i += 1) {
+        numbers.push({ bibNumber: i, label });
+      }
+      return postLegacyReserveNumbers(eventId, { numbers });
+    },
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events", eventId, "legacy-reservations"] });
+      const created = res.created ?? 0;
+      const skipped = res.skipped ?? 0;
+      toast.success(`Reservas criadas: ${created}${skipped ? ` (puladas: ${skipped})` : ""}`);
+      setReserveStart("");
+      setReserveEnd("");
+      setReserveLabel("");
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao criar reservas"),
+  });
+
+  const createParticipantMutation = useMutation({
+    mutationFn: async () => {
+      if (createReservationId == null) {
+        throw new Error("Selecione um número reservado.");
+      }
+      if (!createName.trim()) {
+        throw new Error("Nome é obrigatório.");
+      }
+      if (!createCpf.trim()) {
+        throw new Error("CPF é obrigatório.");
+      }
+      if (!isBirthDateInAllowedRange(createBirthDate, minBirthDate, maxBirthDate)) {
+        throw new Error(`Data de nascimento inválida. Use uma data entre ${minBirthDate} e ${maxBirthDate}.`);
+      }
+      if (!createTicketType.trim()) {
+        throw new Error("Tipo de ingresso é obrigatório.");
+      }
+      const payload: CreateLegacyParticipantPayload = {
+        reservationId: createReservationId,
+        name: createName.trim(),
+        cpf: createCpf.trim(),
+        birthDate: createBirthDate.trim(),
+        ticketType: createTicketType.trim(),
+        shirtSize: createShirtSize.trim() ? createShirtSize.trim() : null,
+        team: createTeam.trim() ? createTeam.trim() : null,
+        sex: createSex.trim() ? createSex.trim() : null,
+      };
+      return postLegacyCreateParticipant(eventId, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events", eventId, "participants"] });
+      queryClient.invalidateQueries({ queryKey: ["takeout", "events", eventId, "legacy-reservations"] });
+      toast.success("Participante criado");
+      setCreateModalOpen(false);
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Erro ao criar participante"),
+  });
+
   const ticketTypeOptions = useMemo(() => getTicketTypeOptions(participants), [participants]);
 
   useEffect(() => {
@@ -212,6 +307,18 @@ function EventDetailPage() {
     setEditShirtSize(editingParticipant.shirtSize ?? "");
     setEditTeam(editingParticipant.team ?? "");
   }, [editingParticipant, ticketTypeOptions]);
+
+  useEffect(() => {
+    if (!createModalOpen) return;
+    setCreateReservationId(reservedNumbers[0]?.bibNumber ?? null);
+    setCreateName("");
+    setCreateCpf("");
+    setCreateBirthDate("");
+    setCreateTicketType(ticketTypeOptions[0] ?? "");
+    setCreateShirtSize("");
+    setCreateTeam("");
+    setCreateSex("");
+  }, [createModalOpen, reservedNumbers, ticketTypeOptions]);
 
   const filteredParticipants = useMemo(
     () => participants.filter((participant) => participantMatchesSearch(participant, searchQuery)),
@@ -254,16 +361,23 @@ function EventDetailPage() {
           </Link>
           <h1 className="text-2xl font-bold">{eventName}</h1>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isLoading}
-          aria-label="Atualizar lista"
-        >
-          <RefreshCw className={cn("size-4", isLoading && "animate-spin")} aria-hidden />
-          Atualizar
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {eventSummary?.sourceType === "legacy_csv" ? (
+            <Button size="sm" onClick={() => setCreateModalOpen(true)}>
+              Cadastrar participante
+            </Button>
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isLoading}
+            aria-label="Atualizar lista"
+          >
+            <RefreshCw className={cn("size-4", isLoading && "animate-spin")} aria-hidden />
+            Atualizar
+          </Button>
+        </div>
       </div>
 
       <div className="relative max-w-md">
@@ -297,6 +411,85 @@ function EventDetailPage() {
             pendingCount={realStats.pending}
             rateBaseTotal={realStats.total}
           />
+          {eventSummary?.sourceType === "legacy_csv" ? (
+            <div className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Reservas de número</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="reserve-start">Número inicial</Label>
+                      <Input
+                        id="reserve-start"
+                        type="number"
+                        inputMode="numeric"
+                        value={reserveStart}
+                        onChange={(e) => setReserveStart(e.target.value)}
+                        placeholder="Ex.: 16"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reserve-end">Número final</Label>
+                      <Input
+                        id="reserve-end"
+                        type="number"
+                        inputMode="numeric"
+                        value={reserveEnd}
+                        onChange={(e) => setReserveEnd(e.target.value)}
+                        placeholder="Ex.: 75"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reserve-label">Etiqueta / Equipe (opcional)</Label>
+                      <Input
+                        id="reserve-label"
+                        value={reserveLabel}
+                        onChange={(e) => setReserveLabel(e.target.value)}
+                        placeholder="Ex.: TIA GLEIDA"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      onClick={() => reserveMutation.mutate()}
+                      disabled={reserveMutation.isPending}
+                    >
+                      {reserveMutation.isPending ? "Salvando..." : "Adicionar reservas"}
+                    </Button>
+                    <p className="text-sm text-muted-foreground">
+                      {reservedLoading ? "Carregando reservas..." : `${reservedNumbers.length} disponíveis`}
+                    </p>
+                  </div>
+                  {reservedNumbers.length > 0 ? (
+                    <div className="rounded-md border">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b text-left text-muted-foreground">
+                            <th className="px-3 py-2 font-medium">Número</th>
+                            <th className="px-3 py-2 font-medium">Etiqueta</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reservedNumbers.map((item) => (
+                            <tr key={item.bibNumber} className="border-b last:border-0">
+                              <td className="px-3 py-2 font-mono">#{item.bibNumber}</td>
+                              <td className="px-3 py-2">{item.label ?? "-"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      Nenhuma reserva disponível. Adicione uma faixa para liberar números.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
           <ParticipantsTable
             eventName={eventName}
             participants={filteredParticipants}
@@ -393,6 +586,127 @@ function EventDetailPage() {
                 disabled={editMutation.isPending}
               >
                 {editMutation.isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {createModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-lg space-y-4 rounded-lg bg-background p-6 shadow-xl">
+            <h2 className="text-lg font-semibold">Cadastrar participante (reserva)</h2>
+            <div className="space-y-2">
+              <Label htmlFor="create-reservation">Número reservado</Label>
+              <select
+                id="create-reservation"
+                className="h-10 w-full rounded-md border bg-background px-3"
+                value={createReservationId == null ? "" : String(createReservationId)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCreateReservationId(value ? Number(value) : null);
+                }}
+              >
+                <option value="">Selecione um número</option>
+                {reservedNumbers.map((item) => (
+                  <option key={item.bibNumber} value={String(item.bibNumber)}>
+                    #{item.bibNumber} {item.label ? `— ${item.label}` : ""}
+                  </option>
+                ))}
+              </select>
+              {reservedNumbers.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Nenhuma reserva disponível. Crie uma faixa antes de cadastrar.
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-name">Nome</Label>
+              <Input
+                id="create-name"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+                placeholder="Nome do participante"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-birth-date">Data de nascimento</Label>
+              <Input
+                id="create-birth-date"
+                type="date"
+                value={createBirthDate}
+                onChange={(e) => setCreateBirthDate(e.target.value)}
+                min={minBirthDate}
+                max={maxBirthDate}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-cpf">CPF</Label>
+              <Input
+                id="create-cpf"
+                value={createCpf}
+                onChange={(e) => setCreateCpf(e.target.value)}
+                placeholder="CPF"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-ticket-type">Tipo de ingresso</Label>
+              <Input
+                id="create-ticket-type"
+                value={createTicketType}
+                onChange={(e) => setCreateTicketType(e.target.value)}
+                placeholder="Ex.: 5KM, 10KM, Kids..."
+                list="create-ticket-type-options"
+              />
+              <datalist id="create-ticket-type-options">
+                {ticketTypeOptions.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-shirt-size">Tamanho da camisa</Label>
+              <Input
+                id="create-shirt-size"
+                value={createShirtSize}
+                onChange={(e) => setCreateShirtSize(e.target.value)}
+                placeholder="Ex.: P, M, G, GG"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-team">Equipe</Label>
+              <Input
+                id="create-team"
+                value={createTeam}
+                onChange={(e) => setCreateTeam(e.target.value)}
+                placeholder="Nome da equipe"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-sex">Sexo (opcional)</Label>
+              <Input
+                id="create-sex"
+                value={createSex}
+                onChange={(e) => setCreateSex(e.target.value)}
+                placeholder="Ex.: Feminino, Masculino"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setCreateModalOpen(false)}
+                disabled={createParticipantMutation.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => createParticipantMutation.mutate()}
+                disabled={createParticipantMutation.isPending || reservedNumbers.length === 0}
+              >
+                {createParticipantMutation.isPending ? "Salvando..." : "Cadastrar"}
               </Button>
             </div>
           </div>

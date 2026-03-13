@@ -38,6 +38,26 @@ pub struct LegacyParticipantRow {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyReservedNumberRow {
+    pub event_id: String,
+    pub bib_number: i64,
+    pub label: Option<String>,
+    pub status: String,
+    pub created_at: String,
+    pub used_at: Option<String>,
+    pub used_by_participant_id: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LegacyReserveNumbersResult {
+    pub created: i32,
+    pub skipped: i32,
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct LegacyCheckinRow {
     pub request_id: String,
@@ -162,6 +182,21 @@ impl From<rusqlite::Error> for UpdateLegacyParticipantError {
     }
 }
 
+#[derive(Debug)]
+pub enum CreateLegacyParticipantError {
+    ReservationNotFound,
+    ReservationUnavailable,
+    BibAlreadyUsed,
+    ParticipantExists,
+    Db(rusqlite::Error),
+}
+
+impl From<rusqlite::Error> for CreateLegacyParticipantError {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::Db(value)
+    }
+}
+
 impl LegacyRepository {
     fn compute_age_at_checkin(birth_date: Option<&str>, checked_in_at: &str) -> Option<i64> {
         let birth = birth_date
@@ -269,19 +304,47 @@ impl LegacyRepository {
 
             let existing_id: Option<String> = if raw_cpf.is_empty() {
                 conn.query_row(
-                    "SELECT id FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2",
+                    "SELECT id FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2 AND is_manual = 0",
                     params![event_id, bib_number],
                     |r| r.get(0),
                 )
                 .ok()
             } else {
                 conn.query_row(
-                    "SELECT id FROM legacy_participants WHERE event_id = ?1 AND cpf_digits = ?2 AND birth_date_iso = ?3",
+                    "SELECT id FROM legacy_participants WHERE event_id = ?1 AND cpf_digits = ?2 AND birth_date_iso = ?3 AND is_manual = 0",
                     params![event_id, raw_cpf, birth_date_iso],
                     |r| r.get(0),
                 )
                 .ok()
             };
+            if existing_id.is_none() {
+                let manual_by_bib = conn
+                    .query_row(
+                        "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2 AND is_manual = 1",
+                        params![event_id, bib_number],
+                        |r| r.get::<_, i32>(0),
+                    )
+                    .ok()
+                    .is_some();
+                let manual_by_cpf_birth = if raw_cpf.is_empty() {
+                    false
+                } else {
+                    conn.query_row(
+                        "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND cpf_digits = ?2 AND birth_date_iso = ?3 AND is_manual = 1",
+                        params![event_id, raw_cpf, birth_date_iso],
+                        |r| r.get::<_, i32>(0),
+                    )
+                    .ok()
+                    .is_some()
+                };
+                if manual_by_bib || manual_by_cpf_birth {
+                    errors.push(format!(
+                        "linha {}: conflita com participante manual existente",
+                        line_no
+                    ));
+                    continue;
+                }
+            }
             if let Some(id) = existing_id {
                 conn
           .execute(
@@ -330,7 +393,7 @@ impl LegacyRepository {
 
         // Snapshot semantics: keep only participants present in the latest CSV for this event.
         let mut stale_stmt = conn
-            .prepare("SELECT id FROM legacy_participants WHERE event_id = ?1")
+            .prepare("SELECT id FROM legacy_participants WHERE event_id = ?1 AND is_manual = 0")
             .map_err(|e| e.to_string())?;
         let stale_rows = stale_stmt
             .query_map([event_id], |row| row.get::<_, String>(0))
@@ -349,6 +412,235 @@ impl LegacyRepository {
         }
 
         Ok(LegacyImportResult { imported, errors })
+    }
+
+    pub fn list_reserved_numbers(
+        pool: &DbPool,
+        event_id: &str,
+        include_used: bool,
+    ) -> Result<Vec<LegacyReservedNumberRow>, rusqlite::Error> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        let mut stmt = if include_used {
+            conn.prepare(
+                "SELECT event_id, bib_number, label, status, created_at, used_at, used_by_participant_id
+                 FROM legacy_reserved_numbers
+                 WHERE event_id = ?1
+                 ORDER BY bib_number",
+            )?
+        } else {
+            conn.prepare(
+                "SELECT event_id, bib_number, label, status, created_at, used_at, used_by_participant_id
+                 FROM legacy_reserved_numbers
+                 WHERE event_id = ?1 AND status = 'available'
+                 ORDER BY bib_number",
+            )?
+        };
+        let rows = stmt.query_map([event_id], |row| {
+            Ok(LegacyReservedNumberRow {
+                event_id: row.get(0)?,
+                bib_number: row.get(1)?,
+                label: row.get(2)?,
+                status: row.get(3)?,
+                created_at: row.get(4)?,
+                used_at: row.get(5)?,
+                used_by_participant_id: row.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn reserve_numbers(
+        pool: &DbPool,
+        event_id: &str,
+        items: &[(i64, Option<String>)],
+    ) -> Result<LegacyReserveNumbersResult, rusqlite::Error> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let mut created = 0i32;
+        let mut skipped = 0i32;
+        let mut errors = Vec::<String>::new();
+
+        for (bib_number, label) in items {
+            if *bib_number <= 0 {
+                skipped += 1;
+                errors.push(format!("numero invalido: {}", bib_number));
+                continue;
+            }
+            let exists_reserved = conn
+                .query_row(
+                    "SELECT 1 FROM legacy_reserved_numbers WHERE event_id = ?1 AND bib_number = ?2",
+                    params![event_id, bib_number],
+                    |r| r.get::<_, i32>(0),
+                )
+                .ok()
+                .is_some();
+            if exists_reserved {
+                skipped += 1;
+                continue;
+            }
+            let exists_participant = conn
+                .query_row(
+                    "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2",
+                    params![event_id, bib_number],
+                    |r| r.get::<_, i32>(0),
+                )
+                .ok()
+                .is_some();
+            if exists_participant {
+                skipped += 1;
+                continue;
+            }
+            conn.execute(
+                "INSERT INTO legacy_reserved_numbers (event_id, bib_number, label, status, created_at)
+                 VALUES (?1, ?2, ?3, 'available', ?4)",
+                params![event_id, bib_number, label, now],
+            )?;
+            created += 1;
+        }
+
+        Ok(LegacyReserveNumbersResult {
+            created,
+            skipped,
+            errors,
+        })
+    }
+
+    pub fn create_manual_participant(
+        pool: &DbPool,
+        event_id: &str,
+        bib_number: i64,
+        name: &str,
+        cpf: &str,
+        birth_date: &str,
+        ticket_type: &str,
+        shirt_size: &str,
+        team: &str,
+        sex: Option<&str>,
+    ) -> Result<LegacyParticipantRow, CreateLegacyParticipantError> {
+        let conn = pool
+            .conn
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidParameterName("lock".into()))?;
+
+        conn.execute("BEGIN IMMEDIATE", [])?;
+
+        let reservation = conn.query_row(
+            "SELECT status FROM legacy_reserved_numbers WHERE event_id = ?1 AND bib_number = ?2",
+            params![event_id, bib_number],
+            |row| row.get::<_, String>(0),
+        );
+        let status = match reservation {
+            Ok(value) => value,
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(CreateLegacyParticipantError::ReservationNotFound);
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", []);
+                return Err(CreateLegacyParticipantError::Db(e));
+            }
+        };
+        if status != "available" {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(CreateLegacyParticipantError::ReservationUnavailable);
+        }
+
+        let exists_bib = conn
+            .query_row(
+                "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2",
+                params![event_id, bib_number],
+                |r| r.get::<_, i32>(0),
+            )
+            .ok()
+            .is_some();
+        if exists_bib {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(CreateLegacyParticipantError::BibAlreadyUsed);
+        }
+
+        let exists_participant = conn
+            .query_row(
+                "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND cpf_digits = ?2 AND birth_date_iso = ?3",
+                params![event_id, cpf, birth_date],
+                |r| r.get::<_, i32>(0),
+            )
+            .ok()
+            .is_some();
+        if exists_participant {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(CreateLegacyParticipantError::ParticipantExists);
+        }
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let id = uuid::Uuid::new_v4().to_string();
+        let shirt_size_opt = normalize_optional_text(shirt_size);
+        let team_opt = normalize_optional_text(team);
+        let raw_json = serde_json::json!({
+          "numero": bib_number,
+          "nomeCompleto": name,
+          "sexo": sex,
+          "cpf": cpf,
+          "dataNascimento": birth_date,
+          "modalidade": ticket_type,
+          "tamanhoCamisa": shirt_size_opt,
+          "equipe": team_opt
+        })
+        .to_string();
+
+        if let Err(e) = conn.execute(
+            "INSERT INTO legacy_participants (id, event_id, bib_number, full_name, sex, cpf_digits, birth_date_iso, modality, shirt_size, team, raw_json, created_at, updated_at, is_manual)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 1)",
+            params![
+                id,
+                event_id,
+                bib_number,
+                name,
+                sex,
+                cpf,
+                birth_date,
+                ticket_type,
+                shirt_size_opt,
+                team_opt,
+                raw_json,
+                now,
+                now
+            ],
+        ) {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(CreateLegacyParticipantError::Db(e));
+        }
+
+        if let Err(e) = conn.execute(
+            "UPDATE legacy_reserved_numbers
+             SET status = 'used', used_at = ?3, used_by_participant_id = ?4
+             WHERE event_id = ?1 AND bib_number = ?2",
+            params![event_id, bib_number, now, id],
+        ) {
+            let _ = conn.execute("ROLLBACK", []);
+            return Err(CreateLegacyParticipantError::Db(e));
+        }
+
+        conn.execute("COMMIT", [])?;
+
+        Ok(LegacyParticipantRow {
+            id,
+            bib_number,
+            name: name.to_string(),
+            sex: sex.map(|v| v.to_string()),
+            cpf: cpf.to_string(),
+            cpf_inconsistent: false,
+            birth_date: birth_date.to_string(),
+            modality: Some(ticket_type.to_string()),
+            shirt_size: shirt_size_opt,
+            team: team_opt,
+            checkin_done: false,
+        })
     }
 
     pub fn list_participants_by_event(
@@ -1002,5 +1294,103 @@ mod tests {
         assert_eq!(updated.cpf, "ABC-123-45");
         assert!(!updated.cpf_inconsistent);
     }
-}
 
+    #[test]
+    fn reserve_numbers_and_consume_on_manual_create() {
+        let pool = DbPool::open_in_memory().unwrap();
+        {
+            let conn = pool.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO events (event_id, name, start_date, imported_at, source_type)
+       VALUES (?1, ?2, ?3, ?4, 'legacy_csv')",
+                params!["ev-legacy", "Evento", "2026-05-15", "2026-05-15T00:00:00Z"],
+            )
+            .unwrap();
+        }
+        let reserve = LegacyRepository::reserve_numbers(
+            &pool,
+            "ev-legacy",
+            &[(16, Some("TIA GLEIDA".to_string()))],
+        )
+        .unwrap();
+        assert_eq!(reserve.created, 1);
+        let available =
+            LegacyRepository::list_reserved_numbers(&pool, "ev-legacy", false).unwrap();
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0].bib_number, 16);
+
+        let created = LegacyRepository::create_manual_participant(
+            &pool,
+            "ev-legacy",
+            16,
+            "Participante Manual",
+            "12345678900",
+            "2000-01-01",
+            "5KM",
+            "M",
+            "Equipe X",
+            Some("Feminino"),
+        )
+        .unwrap();
+        assert_eq!(created.bib_number, 16);
+
+        let all =
+            LegacyRepository::list_reserved_numbers(&pool, "ev-legacy", true).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].status, "used");
+        assert_eq!(all[0].used_by_participant_id.as_deref(), Some(created.id.as_str()));
+    }
+
+    #[test]
+    fn import_keeps_manual_participants() {
+        let pool = DbPool::open_in_memory().unwrap();
+        {
+            let conn = pool.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO events (event_id, name, start_date, imported_at, source_type)
+       VALUES (?1, ?2, ?3, ?4, 'legacy_csv')",
+                params!["ev-legacy", "Evento", "2026-05-15", "2026-05-15T00:00:00Z"],
+            )
+            .unwrap();
+            conn.execute(
+      "INSERT INTO legacy_participants (id, event_id, bib_number, full_name, sex, cpf_digits, birth_date_iso, modality, shirt_size, team, raw_json, created_at, updated_at, is_manual)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, 1)",
+      params![
+        "manual-1",
+        "ev-legacy",
+        99,
+        "Manual",
+        "Masculino",
+        "99999999999",
+        "1990-01-01",
+        "5KM",
+        "G",
+        Option::<String>::None,
+        serde_json::json!({
+          "numero": 99,
+          "nomeCompleto": "Manual",
+          "sexo": "Masculino",
+          "cpf": "99999999999",
+          "dataNascimento": "1990-01-01",
+          "modalidade": "5KM",
+          "tamanhoCamisa": "G",
+          "equipe": null
+        })
+        .to_string(),
+        "2026-05-15T00:00:00Z",
+        "2026-05-15T00:00:00Z"
+      ],
+    )
+    .unwrap();
+        }
+
+        let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Ana,Feminino,111,08/03/2000,5KM,P,\n";
+        let out =
+            LegacyRepository::import_csv(&pool, "ev-legacy", "Evento", "2026-05-15", csv).unwrap();
+        assert_eq!(out.imported, 1);
+        let participants =
+            LegacyRepository::list_participants_by_event(&pool, "ev-legacy").unwrap();
+        assert_eq!(participants.len(), 2);
+        assert!(participants.iter().any(|p| p.bib_number == 99));
+    }
+}

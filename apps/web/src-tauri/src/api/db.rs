@@ -94,7 +94,18 @@ CREATE TABLE IF NOT EXISTS legacy_participants (
   raw_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  is_manual INTEGER NOT NULL DEFAULT 0,
   UNIQUE(event_id, cpf_digits, birth_date_iso)
+);
+CREATE TABLE IF NOT EXISTS legacy_reserved_numbers (
+  event_id TEXT NOT NULL,
+  bib_number INTEGER NOT NULL,
+  label TEXT,
+  status TEXT NOT NULL DEFAULT 'available',
+  created_at TEXT NOT NULL,
+  used_at TEXT,
+  used_by_participant_id TEXT,
+  UNIQUE(event_id, bib_number)
 );
 CREATE TABLE IF NOT EXISTS legacy_checkins (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,6 +137,8 @@ CREATE INDEX IF NOT EXISTS idx_tickets_code ON tickets(code);
 CREATE INDEX IF NOT EXISTS idx_tickets_participant_id ON tickets(participant_id);
 CREATE INDEX IF NOT EXISTS idx_legacy_participants_event_id ON legacy_participants(event_id);
 CREATE INDEX IF NOT EXISTS idx_legacy_participants_cpf ON legacy_participants(cpf_digits);
+CREATE INDEX IF NOT EXISTS idx_legacy_reserved_numbers_event_id ON legacy_reserved_numbers(event_id);
+CREATE INDEX IF NOT EXISTS idx_legacy_reserved_numbers_status ON legacy_reserved_numbers(status);
 CREATE INDEX IF NOT EXISTS idx_legacy_checkins_event_id ON legacy_checkins(event_id);
 CREATE INDEX IF NOT EXISTS idx_legacy_checkins_participant_id ON legacy_checkins(participant_id);
 ";
@@ -164,10 +177,26 @@ impl DbPool {
             "ALTER TABLE legacy_checkins ADD COLUMN operator_alias TEXT",
             "ALTER TABLE legacy_checkins ADD COLUMN operator_device_id TEXT",
             "ALTER TABLE legacy_checkins ADD COLUMN checked_in_at TEXT",
+            "ALTER TABLE legacy_participants ADD COLUMN is_manual INTEGER NOT NULL DEFAULT 0",
         ];
         for sql in alter_statements {
             let _ = conn.execute(sql, []);
         }
+
+        let _ = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS legacy_reserved_numbers (
+                event_id TEXT NOT NULL,
+                bib_number INTEGER NOT NULL,
+                label TEXT,
+                status TEXT NOT NULL DEFAULT 'available',
+                created_at TEXT NOT NULL,
+                used_at TEXT,
+                used_by_participant_id TEXT,
+                UNIQUE(event_id, bib_number)
+            );
+            CREATE INDEX IF NOT EXISTS idx_legacy_reserved_numbers_event_id ON legacy_reserved_numbers(event_id);
+            CREATE INDEX IF NOT EXISTS idx_legacy_reserved_numbers_status ON legacy_reserved_numbers(status);",
+        );
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {

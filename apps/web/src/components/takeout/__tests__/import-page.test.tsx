@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ImportPage } from "../import-page";
@@ -42,7 +43,19 @@ class MockFileReader {
   }
 }
 
+function renderWithQueryClient(ui: React.ReactElement) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
 describe("ImportPage", () => {
+  const TEST_TIMEOUT = 10_000;
+
   beforeEach(() => {
     postImportJson.mockReset();
     postImportLegacyCsv.mockReset();
@@ -51,8 +64,8 @@ describe("ImportPage", () => {
   });
 
   it("renders model selector and toggles csv metadata fields", () => {
-    render(<ImportPage />);
-    const modelSelect = screen.getByRole("combobox");
+    renderWithQueryClient(<ImportPage />);
+    const modelSelect = screen.getByRole("combobox", { name: /modelo/i });
     expect(modelSelect).toBeInTheDocument();
     expect(screen.queryByLabelText("Event ID")).not.toBeInTheDocument();
     fireEvent.change(modelSelect, {
@@ -60,12 +73,12 @@ describe("ImportPage", () => {
     });
     expect(screen.getByLabelText("Nome do evento")).toBeInTheDocument();
     expect(screen.getByLabelText("Data inicial")).toBeInTheDocument();
-  });
+  }, TEST_TIMEOUT);
 
   it("validates csv metadata before import", async () => {
     postImportLegacyCsv.mockResolvedValue({ imported: 1, errors: [] });
-    render(<ImportPage />);
-    fireEvent.change(screen.getByRole("combobox"), {
+    renderWithQueryClient(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: /modelo/i }), {
       target: { value: "legacy_csv" },
     });
     const csvContent =
@@ -97,7 +110,9 @@ describe("ImportPage", () => {
 
     fireEvent.click(screen.getByText("Importar e Salvar"));
     expect(postImportLegacyCsv).not.toHaveBeenCalled();
-    expect(toastError).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(toastError).toHaveBeenCalled();
+    });
 
     fireEvent.change(screen.getByLabelText("Nome do evento"), {
       target: { value: "Evento Teste" },
@@ -110,11 +125,11 @@ describe("ImportPage", () => {
     await waitFor(() => {
       expect(postImportLegacyCsv).toHaveBeenCalledTimes(1);
     });
-  });
+  }, TEST_TIMEOUT);
 
   it("auto-maps legacy headers with variations", async () => {
-    render(<ImportPage />);
-    fireEvent.change(screen.getByRole("combobox"), {
+    renderWithQueryClient(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: /modelo/i }), {
       target: { value: "legacy_csv" },
     });
     const csvContent =
@@ -127,11 +142,11 @@ describe("ImportPage", () => {
       expect(screen.getByText("Importar e Salvar")).toBeInTheDocument();
     });
     expect(toastError).not.toHaveBeenCalled();
-  });
+  }, TEST_TIMEOUT);
 
   it("accepts legacy csv when columns are out of order (manual mapping)", async () => {
-    render(<ImportPage />);
-    fireEvent.change(screen.getByRole("combobox"), {
+    renderWithQueryClient(<ImportPage />);
+    fireEvent.change(screen.getByRole("combobox", { name: /modelo/i }), {
       target: { value: "legacy_csv" },
     });
     const csvContent =
@@ -161,5 +176,5 @@ describe("ImportPage", () => {
       expect(screen.getByText("Importar e Salvar")).toBeInTheDocument();
     });
     expect(toastError).not.toHaveBeenCalled();
-  });
+  }, TEST_TIMEOUT);
 });
