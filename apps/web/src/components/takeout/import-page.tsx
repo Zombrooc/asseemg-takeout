@@ -267,7 +267,7 @@ export function ImportPage() {
               throw new Error("JSON inválido");
             }
             setParsedJson(data);
-            setLegacyRows(null);
+            setLegacyCsv(null);
             return;
           }
           if (!(reader.result instanceof ArrayBuffer)) {

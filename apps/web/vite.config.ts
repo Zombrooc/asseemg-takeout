@@ -10,7 +10,10 @@ export default defineConfig(({ command }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      react: path.resolve(__dirname, "./node_modules/react"),
+      "react-dom": path.resolve(__dirname, "./node_modules/react-dom"),
     },
+    dedupe: ["react", "react-dom"],
   },
   build: {
     outDir: path.resolve(__dirname, "dist"),

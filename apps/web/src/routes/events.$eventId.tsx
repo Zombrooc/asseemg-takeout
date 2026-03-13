@@ -331,8 +331,7 @@ function EventDetailPage() {
     setEditTeam(editingParticipant.team ?? "");
   }, [editingParticipant, ticketTypeOptions]);
 
-  useEffect(() => {
-    if (!createModalOpen) return;
+  const openCreateModal = () => {
     setCreateReservationId(reservedNumbers[0]?.bibNumber ?? null);
     setCreateName("");
     setCreateCpf("");
@@ -341,7 +340,8 @@ function EventDetailPage() {
     setCreateShirtSize("");
     setCreateTeam("");
     setCreateSex("");
-  }, [createModalOpen, reservedNumbers, ticketTypeOptions]);
+    setCreateModalOpen(true);
+  };
 
   const filteredParticipants = useMemo(
     () => participants.filter((participant) => participantMatchesSearch(participant, searchQuery)),
@@ -386,7 +386,7 @@ function EventDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {eventSummary?.sourceType === "legacy_csv" ? (
-            <Button size="sm" onClick={() => setCreateModalOpen(true)}>
+            <Button size="sm" onClick={openCreateModal}>
               Cadastrar participante
             </Button>
           ) : null}
@@ -767,3 +767,4 @@ export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): Eve
     customFormResponses,
   };
 }
+

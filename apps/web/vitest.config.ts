@@ -2,15 +2,44 @@ import { defineConfig } from "vitest/config";
 import path from "node:path";
 import react from "@vitejs/plugin-react";
 
+const appReact = path.resolve(__dirname, "./node_modules/react");
+const appReactDom = path.resolve(__dirname, "./node_modules/react-dom");
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      { find: /^react$/, replacement: appReact },
+      { find: /^react-dom$/, replacement: appReactDom },
+      {
+        find: /[\\/]node_modules[\\/]@testing-library[\\/]react[\\/]node_modules[\\/]react(?:[\\/](.*))?$/,
+        replacement: `${appReact}/$1`,
+      },
+      {
+        find: /[\\/]node_modules[\\/]@testing-library[\\/]react[\\/]node_modules[\\/]react-dom(?:[\\/](.*))?$/,
+        replacement: `${appReactDom}/$1`,
+      },
+      {
+        find: /[\\/]node_modules[\\/]@base-ui[\\/]react[\\/]node_modules[\\/]react(?:[\\/](.*))?$/,
+        replacement: `${appReact}/$1`,
+      },
+      {
+        find: /[\\/]node_modules[\\/]@base-ui[\\/]react[\\/]node_modules[\\/]react-dom(?:[\\/](.*))?$/,
+        replacement: `${appReactDom}/$1`,
+      },
+    ],
+    dedupe: ["react", "react-dom"],
   },
   test: {
     environment: "jsdom",
     globals: false,
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    server: {
+      deps: {
+        inline: ["@base-ui/react", "@testing-library/react", "@tanstack/react-query"],
+      },
+    },
   },
 });
