@@ -76,7 +76,7 @@ export function ParticipantsTable({
               <TableHead scope="col">Ingresso</TableHead>
               {showQrColumn && <TableHead scope="col">QR Code</TableHead>}
               <TableHead scope="col">Status</TableHead>
-              <TableHead scope="col" className="w-[220px]">
+              <TableHead scope="col" className="w-[155px]">
                 Acao
               </TableHead>
             </TableRow>
@@ -94,9 +94,9 @@ export function ParticipantsTable({
                   key={p.id}
                   className={cn(p.checkinDone && "bg-green-50/50 dark:bg-green-950/20")}
                 >
-                  <TableCell>{p.name ?? "-"}</TableCell>
+                  <TableCell className="whitespace-normal">{p.name ?? "-"}</TableCell>
                   <TableCell className="font-mono text-xs">{formatCpf(p.cpf)}</TableCell>
-                  <TableCell>{resolveDisplayTicket(p)}</TableCell>
+                  <TableCell className="whitespace-normal">{resolveDisplayTicket(p)}</TableCell>
                   {showQrColumn && (
                     <TableCell>
                       {p.qrCode ? (
