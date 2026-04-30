@@ -49,6 +49,7 @@ export type EventParticipant = {
   ticketName?: string | null;
   qrCode: string;
   checkinDone: boolean;
+  bibNumber?: number | null;
   customFormResponses?: CustomFormResponse[];
 };
 

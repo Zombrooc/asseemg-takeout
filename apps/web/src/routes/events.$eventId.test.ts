@@ -29,6 +29,7 @@ describe("mapLegacyToEventParticipant", () => {
     const mapped = mapLegacyToEventParticipant(legacy);
     expect(mapped.sourceTicketId).toBeUndefined();
     expect(resolveDisplayTicket(mapped)).toBe("5KM");
+    expect(mapped.bibNumber).toBe(12);
   });
 
   it("does not add cpf inconsistency marker in legacy mapping", () => {
@@ -74,6 +75,18 @@ describe("participant search helpers", () => {
     expect(participantMatchesSearch(participant, "5km")).toBe(true);
     expect(participantMatchesSearch(participant, "orig-5k")).toBe(true);
     expect(participantMatchesSearch(participant, "not-found")).toBe(false);
+  });
+
+  it("matches CPF digits without formatting punctuation", () => {
+    expect(participantMatchesSearch(participant, "123456789")).toBe(true);
+    expect(participantMatchesSearch(participant, "999999999")).toBe(false);
+  });
+
+  it("matches by bib number", () => {
+    const withBib: EventParticipant = { ...participant, bibNumber: 42 };
+    expect(participantMatchesSearch(withBib, "42")).toBe(true);
+    // "77" does not appear in any other field of the fixture
+    expect(participantMatchesSearch(withBib, "77")).toBe(false);
   });
 });
 

@@ -6,10 +6,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { EventSummary } from "@/components/event-summary";
-import { ParticipantsTable } from "@/components/participants-table";
+import { ParticipantsTable, resolveDisplayTicket, formatCpf } from "@/components/participants-table";
 import { ReservedNumbersCollapsible } from "@/components/takeout/reserved-numbers-collapsible";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { cn } from "@/lib/utils";
+import { formatBirthDateBR } from "@/lib/format-date";
+import Fuse from "fuse.js";
 import {
   getEventParticipants,
   getEvents,
@@ -50,6 +52,13 @@ export function participantMatchesSearch(participant: EventParticipant, query: s
   const normalizedQuery = normalizeSearchValue(query);
   if (!normalizedQuery) return true;
 
+  // Busca por CPF apenas com dígitos (ex: usuário digita "12345678" sem pontos/traços)
+  const queryDigits = query.replace(/\D/g, "");
+  if (queryDigits.length >= 3 && participant.cpf) {
+    const cpfDigits = participant.cpf.replace(/\D/g, "");
+    if (cpfDigits.includes(queryDigits)) return true;
+  }
+
   const values = [
     participant.name,
     participant.cpf,
@@ -58,6 +67,7 @@ export function participantMatchesSearch(participant: EventParticipant, query: s
     participant.sourceTicketId,
     participant.qrCode,
     participant.ticketName,
+    participant.bibNumber != null ? String(participant.bibNumber) : null,
   ];
 
   return values.some((value) => {
@@ -122,6 +132,7 @@ function EventDetailPage() {
   const { eventId } = Route.useParams();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
+  const [confirmingParticipant, setConfirmingParticipant] = useState<EventParticipant | null>(null);
   const [editingParticipant, setEditingParticipant] = useState<EventParticipant | null>(null);
   const [editName, setEditName] = useState("");
   const [editCpf, setEditCpf] = useState("");
@@ -345,10 +356,30 @@ function EventDetailPage() {
     setCreateModalOpen(true);
   };
 
-  const filteredParticipants = useMemo(
-    () => participants.filter((participant) => participantMatchesSearch(participant, searchQuery)),
-    [participants, searchQuery]
+  const fuse = useMemo(
+    () =>
+      new Fuse(participants, {
+        keys: ["name"],
+        threshold: 0.4,
+        includeScore: false,
+      }),
+    [participants]
   );
+
+  const filteredParticipants = useMemo(() => {
+    if (!searchQuery.trim()) return participants;
+
+    // Passo rápido: match exato/parcial (CPF, número de peito, ingresso, etc.)
+    const exactMatches = participants.filter((p) => participantMatchesSearch(p, searchQuery));
+    if (exactMatches.length > 0) return exactMatches;
+
+    // Fallback: busca fuzzy por nome (tolera typos), mínimo 3 chars
+    if (normalizeSearchValue(searchQuery).length >= 3) {
+      return fuse.search(searchQuery).map((r) => r.item);
+    }
+
+    return [];
+  }, [participants, searchQuery, fuse]);
 
   const realStats = useMemo(() => getParticipantStats(participants), [participants]);
 
@@ -505,7 +536,7 @@ function EventDetailPage() {
           <ParticipantsTable
             eventName={eventName}
             participants={filteredParticipants}
-            onConfirm={(p) => confirmMutation.mutate(p)}
+            onConfirm={(p) => setConfirmingParticipant(p)}
             onUndo={(p) => {
               const label = p.name ?? p.ticketId;
               if (!window.confirm(`Desfazer check-in de "${label}"?`)) return;
@@ -604,6 +635,64 @@ function EventDetailPage() {
                 disabled={editMutation.isPending}
               >
                 {editMutation.isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmingParticipant ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-modal-title"
+        >
+          <div className="w-full max-w-lg space-y-4 rounded-lg bg-background p-6 shadow-xl">
+            <h2 id="confirm-modal-title" className="text-lg font-semibold">
+              Confirmar retirada
+            </h2>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Nome</dt>
+                <dd className="font-medium">{confirmingParticipant.name ?? "-"}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">CPF</dt>
+                <dd className="font-mono">{formatCpf(confirmingParticipant.cpf)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Data de Nascimento</dt>
+                <dd className="font-mono">{formatBirthDateBR(confirmingParticipant.birthDate)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Número de Peito</dt>
+                <dd className="font-mono tabular-nums">
+                  {confirmingParticipant.bibNumber != null ? confirmingParticipant.bibNumber : "-"}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Ingresso</dt>
+                <dd>{resolveDisplayTicket(confirmingParticipant)}</dd>
+              </div>
+            </dl>
+            <div className="flex items-center justify-end gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setConfirmingParticipant(null)}
+                disabled={confirmMutation.isPending}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => {
+                  confirmMutation.mutate(confirmingParticipant, {
+                    onSettled: () => setConfirmingParticipant(null),
+                  });
+                }}
+                disabled={confirmMutation.isPending}
+              >
+                {confirmMutation.isPending ? "Confirmando..." : "Confirmar"}
               </Button>
             </div>
           </div>
@@ -753,6 +842,7 @@ export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): Eve
     ticketName: legacy.modality ?? "Legado CSV",
     qrCode: legacy.id,
     checkinDone: legacy.checkinDone,
+    bibNumber: legacy.bibNumber,
     customFormResponses,
   };
 }
