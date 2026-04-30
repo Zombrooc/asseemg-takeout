@@ -23,3 +23,11 @@ export function formatDateTimeBR(value: string | Date | null | undefined): strin
   const time = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   return `${datePart}, ${time}`;
 }
+
+/** Formata data ISO (YYYY-MM-DD) para o formato curto brasileiro (DD/MM/YYYY) sem usar new Date() */
+export function formatBirthDateBR(value: string | null | undefined): string {
+  if (value == null || value === "") return "-";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return value;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}

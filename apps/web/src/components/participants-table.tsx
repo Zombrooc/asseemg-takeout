@@ -11,10 +11,11 @@ import { StatusBadge } from "@/components/status-badge";
 import { cn } from "@/lib/utils";
 import type { EventParticipant } from "@/lib/takeout-api";
 import { QRCodeSVG } from "qrcode.react";
+import { formatBirthDateBR } from "@/lib/format-date";
 
 const QR_SIZE = 160;
 
-function formatCpf(cpf: string | null | undefined): string {
+export function formatCpf(cpf: string | null | undefined): string {
   if (cpf == null || cpf === "") return "-";
   const digits = cpf.replace(/\D/g, "").slice(0, 11);
   if (digits.length < 11) return cpf;
@@ -73,6 +74,8 @@ export function ParticipantsTable({
             <TableRow>
               <TableHead scope="col">Nome</TableHead>
               <TableHead scope="col">CPF</TableHead>
+              <TableHead scope="col">Dt. Nasc.</TableHead>
+              <TableHead scope="col">Peito</TableHead>
               <TableHead scope="col">Ingresso</TableHead>
               {showQrColumn && <TableHead scope="col">QR Code</TableHead>}
               <TableHead scope="col">Status</TableHead>
@@ -84,7 +87,7 @@ export function ParticipantsTable({
           <TableBody>
             {participants.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showQrColumn ? 6 : 5} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={showQrColumn ? 8 : 7} className="py-8 text-center text-muted-foreground">
                   Nenhum participante encontrado.
                 </TableCell>
               </TableRow>
@@ -96,6 +99,10 @@ export function ParticipantsTable({
                 >
                   <TableCell>{p.name ?? "-"}</TableCell>
                   <TableCell className="font-mono text-xs">{formatCpf(p.cpf)}</TableCell>
+                  <TableCell className="font-mono text-xs">{formatBirthDateBR(p.birthDate)}</TableCell>
+                  <TableCell className="font-mono tabular-nums">
+                    {p.bibNumber != null ? p.bibNumber : "-"}
+                  </TableCell>
                   <TableCell>{resolveDisplayTicket(p)}</TableCell>
                   {showQrColumn && (
                     <TableCell>

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install:*)",
+      "Bash(pnpm run:*)",
+      "Bash(WORKTREE=\"C:/Users/ASSEEMG Design/Dev/asseemg-takeout/.claude/worktrees/dreamy-dhawan\")",
+      "Bash(MAIN=\"C:/Users/ASSEEMG Design/Dev/asseemg-takeout\")",
+      "Bash(__NEW_LINE_ed8214311b9043ff__ cp:*)",
+      "Bash(cp \"$WORKTREE/apps/web/package.json\" \"$MAIN/apps/web/package.json\")",
+      "Bash(cp \"$WORKTREE/apps/web/src/lib/format-date.ts\" \"$MAIN/apps/web/src/lib/format-date.ts\")"
+    ]
+  }
+}
