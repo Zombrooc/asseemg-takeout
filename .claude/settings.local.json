@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\ASSEEMG Design\\\\Dev\\\\asseemg-takeout\" -Directory -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object Name)",
+      "Bash(cargo test *)"
+    ]
+  }
+}

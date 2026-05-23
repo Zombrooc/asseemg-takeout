@@ -672,6 +672,14 @@ function EventDetailPage() {
                 </dd>
               </div>
               <div className="flex justify-between">
+                <dt className="text-muted-foreground">Equipe</dt>
+                <dd>{confirmingParticipant.team ?? "-"}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">Camisa</dt>
+                <dd>{confirmingParticipant.shirtSize ?? "-"}</dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-muted-foreground">Ingresso</dt>
                 <dd>{resolveDisplayTicket(confirmingParticipant)}</dd>
               </div>
