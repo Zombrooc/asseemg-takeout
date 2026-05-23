@@ -197,6 +197,52 @@ impl DbPool {
             CREATE INDEX IF NOT EXISTS idx_legacy_reserved_numbers_event_id ON legacy_reserved_numbers(event_id);
             CREATE INDEX IF NOT EXISTS idx_legacy_reserved_numbers_status ON legacy_reserved_numbers(status);",
         );
+
+        // Remove the UNIQUE(event_id, cpf_digits, birth_date_iso) constraint from legacy_participants.
+        // This constraint caused HTTP 422 errors when multiple participants in the same CSV had empty
+        // CPF or the same CPF+birthdate combination. All rows should be imported without validation.
+        let needs_unique_constraint_removal = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='legacy_participants'",
+                [],
+                |row| {
+                    let sql: String = row.get(0)?;
+                    Ok(sql.contains("UNIQUE(event_id, cpf_digits, birth_date_iso)"))
+                },
+            )
+            .unwrap_or(false);
+
+        if needs_unique_constraint_removal {
+            let _ = conn.execute("DROP TABLE IF EXISTS legacy_participants_new", []);
+            let _ = conn.execute_batch(
+                "CREATE TABLE legacy_participants_new (
+                    id TEXT PRIMARY KEY,
+                    event_id TEXT NOT NULL,
+                    bib_number INTEGER NOT NULL,
+                    full_name TEXT NOT NULL,
+                    sex TEXT,
+                    cpf_digits TEXT NOT NULL,
+                    birth_date_iso TEXT NOT NULL,
+                    modality TEXT,
+                    shirt_size TEXT,
+                    team TEXT,
+                    raw_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    is_manual INTEGER NOT NULL DEFAULT 0
+                );",
+            );
+            let _ = conn.execute(
+                "INSERT INTO legacy_participants_new SELECT * FROM legacy_participants",
+                [],
+            );
+            let _ = conn.execute("DROP TABLE legacy_participants", []);
+            let _ = conn.execute_batch(
+                "ALTER TABLE legacy_participants_new RENAME TO legacy_participants;
+                 CREATE INDEX IF NOT EXISTS idx_legacy_participants_event_id ON legacy_participants(event_id);
+                 CREATE INDEX IF NOT EXISTS idx_legacy_participants_cpf ON legacy_participants(cpf_digits);",
+            );
+        }
     }
 
     pub fn open(path: impl AsRef<Path>) -> Result<Self, rusqlite::Error> {

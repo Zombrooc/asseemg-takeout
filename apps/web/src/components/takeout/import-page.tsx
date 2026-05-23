@@ -50,8 +50,8 @@ type LegacyField = {
 const LEGACY_FIELDS: LegacyField[] = [
   { key: "number", label: "Número", required: true },
   { key: "fullName", label: "Nome Completo", required: true },
-  { key: "cpf", label: "CPF", required: true },
-  { key: "birthDate", label: "Data de Nascimento", required: true },
+  { key: "cpf", label: "CPF", required: false },
+  { key: "birthDate", label: "Data de Nascimento", required: false },
   { key: "sex", label: "Sexo", required: false },
   { key: "modality", label: "Modalidade", required: false },
   { key: "shirtSize", label: "Tamanho da Camisa", required: false },

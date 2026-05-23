@@ -319,27 +319,18 @@ impl LegacyRepository {
                 continue;
             }
 
-            let bib_number = match values.first().map(String::as_str).unwrap_or_default().parse::<i64>() {
-                Ok(v) if v > 0 => v,
-                _ => {
-                    errors.push(format!("linha {}: número inválido", line_no));
-                    continue;
-                }
-            };
+            let bib_number = values
+                .first()
+                .map(String::as_str)
+                .unwrap_or_default()
+                .parse::<i64>()
+                .unwrap_or(0);
             let name = values.get(1).cloned().unwrap_or_default();
-            if name.is_empty() {
-                errors.push(format!("linha {}: nome vazio", line_no));
-                continue;
-            }
             let sex = normalize_optional(values.get(2).map(String::as_str));
             let raw_cpf = values.get(3).cloned().unwrap_or_default();
-            let birth_date_iso = match parse_birth_date(values.get(4).map(String::as_str).unwrap_or_default()) {
-                Ok(v) => v,
-                Err(_) => {
-                    errors.push(format!("linha {}: data de nascimento inválida", line_no));
-                    continue;
-                }
-            };
+            let birth_date_raw = values.get(4).map(String::as_str).unwrap_or_default();
+            let birth_date_iso = parse_birth_date(birth_date_raw)
+                .unwrap_or_else(|_| birth_date_raw.to_string());
             let modality = normalize_optional(values.get(5).map(String::as_str));
             let shirt_size = normalize_optional(values.get(6).map(String::as_str));
             let team = normalize_optional(values.get(7).map(String::as_str));
@@ -356,7 +347,7 @@ impl LegacyRepository {
             })
             .to_string();
 
-            let existing_id: Option<String> = if raw_cpf.is_empty() {
+            let existing_id: Option<String> = if bib_number != 0 {
                 conn.query_row(
                     "SELECT id FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2 AND is_manual = 0",
                     params![event_id, bib_number],
@@ -364,41 +355,8 @@ impl LegacyRepository {
                 )
                 .ok()
             } else {
-                conn.query_row(
-                    "SELECT id FROM legacy_participants WHERE event_id = ?1 AND cpf_digits = ?2 AND birth_date_iso = ?3 AND is_manual = 0",
-                    params![event_id, raw_cpf, birth_date_iso],
-                    |r| r.get(0),
-                )
-                .ok()
+                None
             };
-            if existing_id.is_none() {
-                let manual_by_bib = conn
-                    .query_row(
-                        "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND bib_number = ?2 AND is_manual = 1",
-                        params![event_id, bib_number],
-                        |r| r.get::<_, i32>(0),
-                    )
-                    .ok()
-                    .is_some();
-                let manual_by_cpf_birth = if raw_cpf.is_empty() {
-                    false
-                } else {
-                    conn.query_row(
-                        "SELECT 1 FROM legacy_participants WHERE event_id = ?1 AND cpf_digits = ?2 AND birth_date_iso = ?3 AND is_manual = 1",
-                        params![event_id, raw_cpf, birth_date_iso],
-                        |r| r.get::<_, i32>(0),
-                    )
-                    .ok()
-                    .is_some()
-                };
-                if manual_by_bib || manual_by_cpf_birth {
-                    errors.push(format!(
-                        "linha {}: conflita com participante manual existente",
-                        line_no
-                    ));
-                    continue;
-                }
-            }
             if let Some(id) = existing_id {
                 conn
           .execute(
@@ -1269,14 +1227,16 @@ mod tests {
     }
 
     #[test]
-    fn import_rejects_invalid_birth_date() {
-
+    fn import_accepts_invalid_birth_date_as_raw_value() {
         let pool = DbPool::open_in_memory().unwrap();
         let csv = "N\u{00FA}mero,Nome Completo,Sexo,CPF,Data de Nascimento,\"Modalidade (5km, 10km, Caminhada ou Kids)\",Tamanho da Camisa,Equipe\n1,Ana,Feminino,17979086937,2000-03-08,5KM,P,\n";
         let out =
             LegacyRepository::import_csv(&pool, "ev-legacy", "Evento", "2026-05-15", csv).unwrap();
-        assert_eq!(out.imported, 0);
-        assert_eq!(out.errors.len(), 1);
+        assert_eq!(out.imported, 1);
+        assert!(out.errors.is_empty());
+        let participants =
+            LegacyRepository::list_participants_by_event(&pool, "ev-legacy").unwrap();
+        assert_eq!(participants[0].birth_date, "2000-03-08");
     }
 
     #[test]
