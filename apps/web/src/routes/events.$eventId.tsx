@@ -8,10 +8,12 @@ import { Label } from "@/components/ui/label";
 import { EventSummary } from "@/components/event-summary";
 import { ParticipantsTable, resolveDisplayTicket, formatCpf } from "@/components/participants-table";
 import { ReservedNumbersCollapsible } from "@/components/takeout/reserved-numbers-collapsible";
+import { ExportEventParticipantsButton } from "@/components/takeout/export-event-participants-button";
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { cn } from "@/lib/utils";
 import { formatBirthDateBR } from "@/lib/format-date";
 import Fuse from "fuse.js";
+import { buildLegacyParticipantAlertMap } from "@pickup/api/legacy-participant-alerts";
 import {
   getEventParticipants,
   getEvents,
@@ -32,7 +34,7 @@ import {
 } from "@/lib/takeout-api";
 import { useTakeoutWs } from "@/lib/use-takeout-ws";
 import { toast } from "sonner";
-import { ArrowLeft, RefreshCw, Search, X } from "lucide-react";
+import { ArrowLeft, RefreshCw, Search, TriangleAlert, X } from "lucide-react";
 
 const isDev = import.meta.env.DEV;
 
@@ -382,6 +384,11 @@ function EventDetailPage() {
   }, [participants, searchQuery, fuse]);
 
   const realStats = useMemo(() => getParticipantStats(participants), [participants]);
+  const participantAlertMap = useMemo(
+    () => (eventSummary?.sourceType === "legacy_csv" ? buildLegacyParticipantAlertMap(participants) : {}),
+    [eventSummary?.sourceType, participants]
+  );
+  const confirmingParticipantAlerts = confirmingParticipant ? participantAlertMap[confirmingParticipant.id] ?? [] : [];
 
   const handleSaveEdit = () => {
     if (!editingParticipant) return;
@@ -423,6 +430,13 @@ function EventDetailPage() {
               Cadastrar participante
             </Button>
           ) : null}
+          <ExportEventParticipantsButton
+            eventId={eventId}
+            eventName={eventName}
+            participants={participants}
+            sourceType={eventSummary?.sourceType ?? "json_sync"}
+            disabled={isLoading}
+          />
           <Button
             variant="outline"
             size="sm"
@@ -536,6 +550,7 @@ function EventDetailPage() {
           <ParticipantsTable
             eventName={eventName}
             participants={filteredParticipants}
+            participantAlerts={participantAlertMap}
             onConfirm={(p) => setConfirmingParticipant(p)}
             onUndo={(p) => {
               const label = p.name ?? p.ticketId;
@@ -652,6 +667,19 @@ function EventDetailPage() {
             <h2 id="confirm-modal-title" className="text-lg font-semibold">
               Confirmar retirada
             </h2>
+            {confirmingParticipantAlerts.length > 0 ? (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                <div className="mb-2 flex items-center gap-2 font-medium">
+                  <TriangleAlert className="size-4" aria-hidden />
+                  Alertas para este participante
+                </div>
+                <ul className="space-y-1">
+                  {confirmingParticipantAlerts.map((alert) => (
+                    <li key={`${confirmingParticipant.id}-${alert.code}-${alert.message}`}>{alert.message}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <dl className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Nome</dt>
@@ -843,6 +871,7 @@ export function mapLegacyToEventParticipant(legacy: LegacyEventParticipant): Eve
     name: legacy.name,
     cpf: legacy.cpf,
     birthDate: legacy.birthDate,
+    sex: legacy.sex ?? null,
     shirtSize: legacy.shirtSize ?? null,
     team: legacy.team ?? null,
     ticketId: legacy.id,

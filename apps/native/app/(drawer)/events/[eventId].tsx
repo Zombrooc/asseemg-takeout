@@ -1,10 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { buildLegacyParticipantAlertMap } from "@pickup/api/legacy-participant-alerts";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import type {
   CreateLegacyParticipantPayload,
   EventParticipant,
   LegacyEventParticipant,
   LegacyReservedNumber,
+  ParticipantAlert,
 } from "@/lib/takeout-api-types";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useNavigation } from "@react-navigation/native";
@@ -218,6 +220,13 @@ export default function EventScreen() {
     () => participants.filter((p) => matchesSearch(p, searchQuery)),
     [participants, searchQuery],
   );
+  const participantAlertMap = useMemo<Record<string, ParticipantAlert[]>>(
+    () =>
+      sourceType === "legacy_csv"
+        ? buildLegacyParticipantAlertMap(participants as LegacyEventParticipant[])
+        : {},
+    [participants, sourceType],
+  );
 
   const auditStatusByTicket = useMemo(() => {
     const map = new Map<string, string>();
@@ -420,6 +429,7 @@ export default function EventScreen() {
         deviceId != null &&
         lockMap[item.id] != null &&
         lockMap[item.id] !== deviceId;
+      const alerts = participantAlertMap[item.id] ?? [];
 
       return (
         <ParticipantListItem
@@ -435,6 +445,7 @@ export default function EventScreen() {
           isPendingSync={isPendingSync}
           isConflict={isConflict}
           lockedByOther={lockedByOther}
+          alerts={alerts}
           onPrimaryAction={handlePrimaryAction}
           onDismissConflict={handleDismissConflict}
         />
@@ -445,6 +456,7 @@ export default function EventScreen() {
       pendingTicketIds,
       conflictTicketIds,
       lockMap,
+      participantAlertMap,
       deviceId,
       handlePrimaryAction,
       handleDismissConflict,
@@ -600,6 +612,7 @@ export default function EventScreen() {
       <ConfirmTakeoutModal
         visible={!!selectedParticipant}
         participant={selectedParticipant}
+        alerts={selectedParticipant ? participantAlertMap[selectedParticipant.id] ?? [] : []}
         sourceType={sourceType}
         eventId={eventId}
         onClose={() => setSelectedParticipant(null)}

@@ -42,6 +42,7 @@ export type EventParticipant = {
   name: string | null;
   cpf: string | null;
   birthDate?: string | null;
+  sex?: string | null;
   shirtSize?: string | null;
   team?: string | null;
   ticketId: string;

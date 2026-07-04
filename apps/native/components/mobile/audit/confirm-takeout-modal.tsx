@@ -6,6 +6,7 @@ import type {
   CustomFormResponseItem,
   EventParticipant,
   LegacyEventParticipant,
+  ParticipantAlert,
 } from "@/lib/takeout-api-types";
 import {
   buildTakeoutRetirantePayload,
@@ -38,6 +39,7 @@ type ModalParticipant = EventParticipant | LegacyEventParticipant;
 type Props = {
   visible: boolean;
   participant: ModalParticipant | null;
+  alerts?: ParticipantAlert[];
   sourceType?: SourceType;
   eventId?: string;
   onClose: () => void;
@@ -81,6 +83,7 @@ function buildTicketConflictKey(participant: ModalParticipant, sourceType: Sourc
 export function ConfirmTakeoutModal({
   visible,
   participant,
+  alerts = [],
   sourceType = "json_sync",
   eventId,
   onClose,
@@ -342,6 +345,34 @@ export function ConfirmTakeoutModal({
                 <Text fontSize={18} fontWeight="600" color="$foreground">
                   Confirmar check-in
                 </Text>
+                {alerts.length > 0 ? (
+                  <YStack
+                    testID="takeout-confirm-modal-alerts"
+                    gap="$2"
+                    style={{
+                      marginTop: 12,
+                      marginBottom: 16,
+                      padding: 12,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: "#fecaca",
+                      backgroundColor: "#fef2f2",
+                    }}
+                  >
+                    <Text color="#b91c1c" fontSize={14} fontWeight="600">
+                      Alertas para este participante
+                    </Text>
+                    {alerts.map((alert) => (
+                      <Text
+                        key={`${participant.id}-${alert.code}-${alert.message}`}
+                        color="#b91c1c"
+                        fontSize={13}
+                      >
+                        {alert.message}
+                      </Text>
+                    ))}
+                  </YStack>
+                ) : null}
                 {lockState === "heldByMe" ? (
                   <Text color="$textSecondary" fontSize={14}>
                     Em atendimento por voce

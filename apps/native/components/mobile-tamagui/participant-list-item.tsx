@@ -1,7 +1,9 @@
 import { memo } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Text, View } from "react-native";
 import { Button, Card } from "@/components/ui-tamagui";
 import { getParticipantListState } from "@/lib/participant-list-state";
+import type { ParticipantAlert } from "@/lib/takeout-api-types";
 
 export type ParticipantListItemProps = {
   id: string;
@@ -12,6 +14,7 @@ export type ParticipantListItemProps = {
   isPendingSync: boolean;
   isConflict: boolean;
   lockedByOther: boolean;
+  alerts?: ParticipantAlert[];
   onPrimaryAction: (participantId: string) => void;
   onDismissConflict: (ticketId: string) => void;
 };
@@ -31,6 +34,7 @@ function ParticipantListItemComponent({
   isPendingSync,
   isConflict,
   lockedByOther,
+  alerts = [],
   onPrimaryAction,
   onDismissConflict,
 }: ParticipantListItemProps) {
@@ -64,11 +68,27 @@ function ParticipantListItemComponent({
     !state.showDismissConflict &&
     state.primaryActionLabel === "Fazer check-in" &&
     !state.primaryActionDisabled;
+  const hasAlerts = alerts.length > 0;
 
   return (
     <Card style={{ marginBottom: 8, marginHorizontal: 16, overflow: "hidden" }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        {showInitials ? (
+        {hasAlerts ? (
+          <View
+            testID={`participant-alert-icon-${id}`}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 9999,
+              backgroundColor: "rgba(220,38,38,0.12)",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Ionicons name="alert-circle" size={20} color="#dc2626" />
+          </View>
+        ) : showInitials ? (
           <View
             style={{
               width: 40,
@@ -101,6 +121,14 @@ function ParticipantListItemComponent({
           {state.statusLabel ? (
             <Text style={{ color: statusColor, fontSize: 12, marginTop: 4 }}>{state.statusLabel}</Text>
           ) : null}
+          {alerts.map((alert) => (
+            <Text
+              key={`${id}-${alert.code}-${alert.message}`}
+              style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}
+            >
+              {alert.message}
+            </Text>
+          ))}
         </View>
         {state.showDismissConflict ? (
           <Button

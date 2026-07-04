@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils";
 import type { EventParticipant } from "@/lib/takeout-api";
 import { QRCodeSVG } from "qrcode.react";
 import { formatBirthDateBR } from "@/lib/format-date";
+import { TriangleAlert } from "lucide-react";
+import type { ParticipantAlert } from "@pickup/api/legacy-participant-alerts";
 
 const QR_SIZE = 160;
 
@@ -25,6 +27,7 @@ export function formatCpf(cpf: string | null | undefined): string {
 export interface ParticipantsTableProps {
   eventName: string;
   participants: EventParticipant[];
+  participantAlerts?: Record<string, ParticipantAlert[]>;
   onConfirm?: (participant: EventParticipant) => void;
   onUndo?: (participant: EventParticipant) => void;
   onEdit?: (participant: EventParticipant) => void;
@@ -49,6 +52,7 @@ export function resolveDisplayTicket(participant: EventParticipant): string {
 export function ParticipantsTable({
   eventName,
   participants,
+  participantAlerts = {},
   onConfirm,
   onUndo,
   onEdit,
@@ -72,6 +76,9 @@ export function ParticipantsTable({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead scope="col" className="w-12">
+                Alerta
+              </TableHead>
               <TableHead scope="col">Nome</TableHead>
               <TableHead scope="col">CPF</TableHead>
               <TableHead scope="col">Dt. Nasc.</TableHead>
@@ -87,71 +94,86 @@ export function ParticipantsTable({
           <TableBody>
             {participants.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={showQrColumn ? 8 : 7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={showQrColumn ? 9 : 8} className="py-8 text-center text-muted-foreground">
                   Nenhum participante encontrado.
                 </TableCell>
               </TableRow>
             ) : (
-              participants.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className={cn(p.checkinDone && "bg-green-50/50 dark:bg-green-950/20")}
-                >
-                  <TableCell className="whitespace-normal">{p.name ?? "-"}</TableCell>
-                  <TableCell className="font-mono text-xs">{formatCpf(p.cpf)}</TableCell>
-                  <TableCell className="font-mono text-xs">{formatBirthDateBR(p.birthDate)}</TableCell>
-                  <TableCell className="font-mono tabular-nums">
-                    {p.bibNumber != null ? p.bibNumber : "-"}
-                  </TableCell>
-                  <TableCell className="whitespace-normal">{resolveDisplayTicket(p)}</TableCell>
-                  {showQrColumn && (
+              participants.map((p) => {
+                const alerts = participantAlerts[p.id] ?? [];
+                const alertMessage = alerts.map((item) => item.message).join("\n");
+                return (
+                  <TableRow
+                    key={p.id}
+                    className={cn(p.checkinDone && "bg-green-50/50 dark:bg-green-950/20")}
+                  >
                     <TableCell>
-                      {p.qrCode ? (
-                        <QRCodeSVG value={p.qrCode} size={QR_SIZE} level="M" aria-label="QR do ingresso" />
-                      ) : (
-                        "-"
-                      )}
+                      {alerts.length > 0 ? (
+                        <span
+                          className="inline-flex items-center text-red-600"
+                          title={alertMessage}
+                          aria-label={alertMessage}
+                        >
+                          <TriangleAlert className="size-4" aria-hidden />
+                        </span>
+                      ) : null}
                     </TableCell>
-                  )}
-                  <TableCell>
-                    <StatusBadge status={p.checkinDone ? "confirmed" : "pending"} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {!p.checkinDone && onEdit != null && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={isEditing}
-                          onClick={() => onEdit(p)}
-                        >
-                          {isEditing ? "..." : "Editar"}
-                        </Button>
-                      )}
-                      {!p.checkinDone && onConfirm != null && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={isConfirming}
-                          onClick={() => onConfirm(p)}
-                        >
-                          {isConfirming ? "..." : "Confirmar"}
-                        </Button>
-                      )}
-                      {p.checkinDone && onUndo != null && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={isUndoing}
-                          onClick={() => onUndo(p)}
-                        >
-                          {isUndoing ? "..." : "Desfazer"}
-                        </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))
+                    <TableCell className="whitespace-normal">{p.name ?? "-"}</TableCell>
+                    <TableCell className="font-mono text-xs">{formatCpf(p.cpf)}</TableCell>
+                    <TableCell className="font-mono text-xs">{formatBirthDateBR(p.birthDate)}</TableCell>
+                    <TableCell className="font-mono tabular-nums">
+                      {p.bibNumber != null ? p.bibNumber : "-"}
+                    </TableCell>
+                    <TableCell className="whitespace-normal">{resolveDisplayTicket(p)}</TableCell>
+                    {showQrColumn && (
+                      <TableCell>
+                        {p.qrCode ? (
+                          <QRCodeSVG value={p.qrCode} size={QR_SIZE} level="M" aria-label="QR do ingresso" />
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
+                    )}
+                    <TableCell>
+                      <StatusBadge status={p.checkinDone ? "confirmed" : "pending"} />
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {!p.checkinDone && onEdit != null && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isEditing}
+                            onClick={() => onEdit(p)}
+                          >
+                            {isEditing ? "..." : "Editar"}
+                          </Button>
+                        )}
+                        {!p.checkinDone && onConfirm != null && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isConfirming}
+                            onClick={() => onConfirm(p)}
+                          >
+                            {isConfirming ? "..." : "Confirmar"}
+                          </Button>
+                        )}
+                        {p.checkinDone && onUndo != null && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isUndoing}
+                            onClick={() => onUndo(p)}
+                          >
+                            {isUndoing ? "..." : "Desfazer"}
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

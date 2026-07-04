@@ -26,6 +26,11 @@ export type {
   TakeoutRetirantePayload,
   WsTakeoutMessage,
 } from "@pickup/api/takeout-contracts";
+export type {
+  LegacyParticipantAlertSubject,
+  ParticipantAlert,
+  ParticipantAlertCode,
+} from "@pickup/api/legacy-participant-alerts";
 
 // Compatibility alias used by existing native code.
 export type { CustomFormResponse as CustomFormResponseItem } from "@pickup/api/takeout-contracts";

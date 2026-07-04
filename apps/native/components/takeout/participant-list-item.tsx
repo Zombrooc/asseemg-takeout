@@ -1,7 +1,9 @@
 import { memo } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { Button, Surface } from "heroui-native";
 
 import { getParticipantListState } from "@/lib/participant-list-state";
+import type { ParticipantAlert } from "@/lib/takeout-api-types";
 import { Text, View } from "@/lib/primitives";
 import { useResponsiveScale } from "@/utils/responsive";
 
@@ -14,6 +16,7 @@ export type ParticipantListItemProps = {
   isPendingSync: boolean;
   isConflict: boolean;
   lockedByOther: boolean;
+  alerts?: ParticipantAlert[];
   onPrimaryAction: (participantId: string) => void;
   onDismissConflict: (ticketId: string) => void;
 };
@@ -27,6 +30,7 @@ function ParticipantListItemComponent({
   isPendingSync,
   isConflict,
   lockedByOther,
+  alerts = [],
   onPrimaryAction,
   onDismissConflict,
 }: ParticipantListItemProps) {
@@ -51,6 +55,7 @@ function ParticipantListItemComponent({
     !state.showDismissConflict &&
     state.primaryActionLabel === "Fazer check-in" &&
     !state.primaryActionDisabled;
+  const hasAlerts = alerts.length > 0;
   const initials =
     name != null && name.trim()
       ? name
@@ -68,7 +73,15 @@ function ParticipantListItemComponent({
       style={{ marginHorizontal: scale(16), padding: scale(16) }}
     >
       <View className="flex-row justify-between items-center gap-3">
-        {isDefaultState ? (
+        {hasAlerts ? (
+          <View
+            testID={`participant-alert-icon-${id}`}
+            className="w-10 h-10 rounded-full items-center justify-center shrink-0"
+            style={{ backgroundColor: "rgba(220,38,38,0.12)" }}
+          >
+            <Ionicons name="alert-circle" size={20} color="#dc2626" />
+          </View>
+        ) : isDefaultState ? (
           <View className="w-10 h-10 rounded-full bg-muted/20 items-center justify-center shrink-0">
             <Text className="text-foreground font-semibold text-sm leading-none">
               {initials}
@@ -93,6 +106,14 @@ function ParticipantListItemComponent({
           {state.statusLabel ? (
             <Text className={statusClassName}>{state.statusLabel}</Text>
           ) : null}
+          {alerts.map((alert) => (
+            <Text
+              key={`${id}-${alert.code}-${alert.message}`}
+              className="text-danger text-xs mt-1 leading-snug"
+            >
+              {alert.message}
+            </Text>
+          ))}
         </View>
         {state.showDismissConflict ? (
           <Button

@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import type { ButtonHTMLAttributes } from "react";
 import { ParticipantsTable } from "../participants-table";
 import type { EventParticipant } from "@/lib/takeout-api";
+import type { ParticipantAlert } from "@pickup/api/legacy-participant-alerts";
 
 vi.mock("@/components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
@@ -28,6 +29,14 @@ const mockParticipants: EventParticipant[] = [
     checkinDone: true,
   },
 ];
+const participantAlerts: Record<string, ParticipantAlert[]> = {
+  p1: [
+    {
+      code: "invalid_cpf",
+      message: "CPF inválido.",
+    },
+  ],
+};
 
 describe("ParticipantsTable", () => {
   it("renders event name and participant count", () => {
@@ -78,5 +87,24 @@ describe("ParticipantsTable", () => {
   it("renders empty state when no participants are available", () => {
     render(<ParticipantsTable eventName="Evento" participants={[]} />);
     expect(screen.getByText(/nenhum participante encontrado/i)).toBeInTheDocument();
+  });
+
+  it("renders alert icon on the left with native tooltip details", () => {
+    render(
+      <ParticipantsTable
+        eventName="Evento"
+        participants={mockParticipants}
+        participantAlerts={participantAlerts}
+      />,
+    );
+
+    expect(screen.getByRole("columnheader", { name: "Alerta" })).toBeInTheDocument();
+    const icon = screen.getByLabelText("CPF inválido.");
+    expect(icon).toHaveAttribute("title", "CPF inválido.");
+  });
+
+  it("does not render alert icon for participants without alerts", () => {
+    render(<ParticipantsTable eventName="Evento" participants={mockParticipants} />);
+    expect(screen.queryByLabelText("CPF inválido.")).not.toBeInTheDocument();
   });
 });
