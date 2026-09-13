@@ -95,6 +95,9 @@ importers:
       ws:
         specifier: ^8.18.3
         version: 8.19.0
+      zod:
+        specifier: 'catalog:'
+        version: 4.3.6
     devDependencies:
       '@electron-toolkit/tsconfig':
         specifier: ^1.0.1

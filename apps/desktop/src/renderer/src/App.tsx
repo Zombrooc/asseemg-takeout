@@ -31,6 +31,7 @@ import type {
 import { api, wsUrl } from "./api";
 import { autoMap, buildMappedCsv, decodeCsv, LEGACY_FIELDS, mappingIsValid, mapRows, parseCsv, type Mapping, type ParsedCsv } from "./import-utils";
 import { ASSEEMGLogo } from "./AsseemgLogo";
+import { getEventMetadataErrors } from "./event-validation";
 
 type Page = "dashboard" | "event" | "new-event" | "import" | "audit";
 type Notice = { kind: "success" | "error"; message: string } | null;
@@ -797,6 +798,7 @@ function ImportPage({
 	const [json, setJson] = useState<Record<string, unknown> | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [step, setStep] = useState<1 | 2 | 3>(1);
+	const steps = mode === "csv" ? ["Dados do evento", "Upload do arquivo", "Mapeamento"] : ["Dados do evento", "Upload do arquivo"];
 	const metadataValid = eventName.trim().length > 0 && eventStartDate.length > 0;
 	const uploadValid = file !== null && (mode === "csv" ? csv !== null : json !== null);
 	const mappingValid = mode === "json" || (mapping !== null && mappingIsValid(mapping));
@@ -877,7 +879,7 @@ function ImportPage({
 				subtitle="Revise os dados antes de salvar e operar as retiradas sem internet."
 			/>
 			{isNewEvent ? <div className="stepper" aria-label="Etapas da criação do evento">{["Dados do evento", "Upload do arquivo", "Mapeamento"].map((label, index) => <div key={label} className={`step ${step === index + 1 ? "active" : ""} ${step > index + 1 ? "complete" : ""}`}><span>{index + 1}</span>{label}</div>)}</div> : null}
-			<div className="import-tabs">
+			{(!isNewEvent || step === 1) && <div className="import-tabs">
 				<button
 					type="button"
 					className={mode === "csv" ? "selected" : ""}
@@ -892,7 +894,7 @@ function ImportPage({
 				>
 					<Upload size={17} /> JSON sincronizado
 				</button>
-			</div>
+			</div>}
 			<section className="form-card">
 				{!isNewEvent || step === 1 ? <>
 				{mode === "csv" ? (
@@ -943,9 +945,9 @@ function ImportPage({
 				</> : null}
 				<div className="form-actions">
 					{isNewEvent && step > 1 ? <button type="button" className="button outline" onClick={previousStep} disabled={busy}>Voltar</button> : null}
-					{isNewEvent && step < 3 && (step !== 2 || file) ? <button type="button" className="button primary" onClick={nextStep} disabled={busy}>{step === 1 ? "Avançar para upload" : "Avançar para mapeamento"} <ArrowLeft size={15} style={{ transform: "rotate(180deg)" }} /></button> : null}
+					{isNewEvent && mode === "csv" && step < 3 && (step !== 2 || file) ? <button type="button" className="button primary" onClick={nextStep} disabled={busy}>{step === 1 ? "Avançar para upload" : "Avançar para mapeamento"} <ArrowLeft size={15} style={{ transform: "rotate(180deg)" }} /></button> : null}
 					{isNewEvent && step === 2 && !file ? <button type="button" className="button primary" disabled={busy} onClick={() => void submit()}><CalendarPlus size={16} /> Criar evento sem participantes</button> : null}
-					{(!isNewEvent || step === 3) && <button
+					{(!isNewEvent || step === 3 || (isNewEvent && step === 2 && mode === "json" && file)) && <button
 						type="button"
 						className="button primary"
 						disabled={busy}
@@ -969,14 +971,19 @@ function ImportPage({
 function Field({
 	label,
 	children,
+	error,
+	errorId,
 }: {
 	label: string;
 	children: React.ReactNode;
+	error?: string;
+	errorId?: string;
 }) {
 	return (
 		<div className="field">
 			<span>{label}</span>
 			{children}
+			{error ? <p id={errorId} role="alert" className="validation-error">{error}</p> : null}
 		</div>
 	);
 }
@@ -1094,11 +1101,14 @@ function NewEventPage({
 	const [startTime, setStartTime] = useState("");
 	const [file, setFile] = useState<File | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [fieldErrors, setFieldErrors] = useState<{ name?: string; startDate?: string }>({});
 	const submit = async () => {
-		if (!name.trim() || !startDate) {
-			notify({ kind: "error", message: "Informe o nome e a data inicial do evento" });
+		const nextFieldErrors = getEventMetadataErrors({ name, startDate });
+		if (Object.keys(nextFieldErrors).length > 0) {
+			setFieldErrors(nextFieldErrors);
 			return;
 		}
+		setFieldErrors({});
 		setBusy(true);
 		try {
 			const extension = file?.name.toLowerCase().split(".").pop();
@@ -1153,9 +1163,31 @@ function NewEventPage({
 		<div className="page narrow">
 			<PageHeader eyebrow="Base de eventos" title="Novo Evento" subtitle="Cadastre o evento para iniciar a operação de retirada." />
 			<section className="form-card">
-				<Field label="Nome do evento"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Corrida ASSEEMG 2026" /></Field>
+				<Field label="Nome do evento" error={fieldErrors.name} errorId="new-event-name-error">
+					<input
+						value={name}
+						onChange={(event) => {
+							setName(event.target.value);
+							setFieldErrors((current) => ({ ...current, name: undefined }));
+						}}
+						aria-invalid={fieldErrors.name ? true : undefined}
+						aria-describedby={fieldErrors.name ? "new-event-name-error" : undefined}
+						placeholder="Ex.: Corrida ASSEEMG 2026"
+					/>
+				</Field>
 				<div className="form-grid">
-					<Field label="Data inicial"><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
+					<Field label="Data inicial" error={fieldErrors.startDate} errorId="new-event-start-date-error">
+						<input
+							type="date"
+							value={startDate}
+							onChange={(event) => {
+								setStartDate(event.target.value);
+								setFieldErrors((current) => ({ ...current, startDate: undefined }));
+							}}
+							aria-invalid={fieldErrors.startDate ? true : undefined}
+							aria-describedby={fieldErrors.startDate ? "new-event-start-date-error" : undefined}
+						/>
+					</Field>
 					<Field label="Data final (opcional)"><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></Field>
 				</div>
 				<Field label="Horário (opcional)"><input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></Field>
