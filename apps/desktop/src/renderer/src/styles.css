@@ -156,6 +156,10 @@ td small { margin-top: 4px; color: var(--qz-color-neutral-smoke); }
 .detail-list { display: grid; grid-template-columns: 150px 1fr; gap: 10px; margin: 0; font-size: 13px; }
 .detail-list dt { color: var(--qz-color-neutral-bone-muted); }
 .detail-list dd { margin: 0; color: var(--qz-color-neutral-bone); font-weight: 700; }
+.third-party-section { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--qz-color-neutral-divider); color: var(--qz-color-neutral-bone); font-size: 13px; }
+.third-party-section label { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.third-party-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+.third-party-fields .field { margin-bottom: 0; }
 .filter-row select { max-width: 330px; color: var(--qz-color-neutral-bone); }
 .participant-qr-cell { width: 92px; vertical-align: middle; }
 .participant-qr-cell svg { display: block; padding: 4px; border-radius: 4px; background: white; }

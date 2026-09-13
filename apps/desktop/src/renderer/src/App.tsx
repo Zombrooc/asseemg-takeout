@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
 	Archive,
@@ -38,6 +38,26 @@ type Page = "dashboard" | "event" | "new-event" | "import" | "audit" | "settings
 type Notice = { kind: "success" | "error"; message: string } | null;
 
 export const SHOW_PARTICIPANT_QR_STORAGE_KEY = "desktop.showParticipantQr";
+
+function formatBirthDate(value: string | null | undefined): string {
+	if (!value) return "-";
+	const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+	return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+}
+
+function getAge(value: string | null | undefined, today = new Date()): string {
+	if (!value) return "-";
+	const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+	if (!match) return "-";
+	let age = today.getFullYear() - Number(match[1]);
+	if (today.getMonth() + 1 < Number(match[2]) || (today.getMonth() + 1 === Number(match[2]) && today.getDate() < Number(match[3]))) age--;
+	return age >= 0 ? String(age) : "-";
+}
+
+function getParticipantField(item: EventParticipant | LegacyEventParticipant, field: string): string {
+	const value = (item as unknown as Record<string, unknown>)[field];
+	return value == null || value === "" ? "-" : String(value);
+}
 
 export function readShowParticipantQr(storage: Pick<Storage, "getItem"> = localStorage): boolean {
 	return storage.getItem(SHOW_PARTICIPANT_QR_STORAGE_KEY) === "true";
@@ -685,8 +705,14 @@ function EventPage({
 	const [editTicketType, setEditTicketType] = useState("");
 	const [editShirtSize, setEditShirtSize] = useState("");
 	const [editTeam, setEditTeam] = useState("");
+	const [isProxyTakeout, setIsProxyTakeout] = useState(false);
+	const [retiranteNome, setRetiranteNome] = useState("");
+	const [retiranteCpf, setRetiranteCpf] = useState("");
 	useEffect(() => {
 		if (!confirming) return;
+		setIsProxyTakeout(false);
+		setRetiranteNome("");
+		setRetiranteCpf("");
 		let active = true;
 		void api.acquireLock(confirming.id).catch(() => {});
 		const timer = window.setInterval(() => { if (active) void api.renewLock(confirming.id).catch(() => {}); }, 15000);
@@ -704,6 +730,10 @@ function EventPage({
 		);
 	}, [participants.data, search]);
 	const confirm = async (item: EventParticipant | LegacyEventParticipant) => {
+		if (isProxyTakeout && !retiranteNome.trim()) {
+			notify({ kind: "error", message: "Informe o nome do retirante" });
+			return;
+		}
 		setBusyId(item.id);
 		try {
 			const lock = await api.acquireLock(item.id);
@@ -715,12 +745,14 @@ function EventPage({
 					event_id: event.eventId,
 					participant_id: item.id,
 					device_id: "desktop",
+					payload_json: isProxyTakeout ? JSON.stringify({ retirada_por_terceiro: true, retirante_nome: retiranteNome.trim(), ...(retiranteCpf.trim() ? { retirante_cpf: retiranteCpf.trim() } : {}) }) : undefined,
 				});
 			else
 				await api.confirm({
 					request_id: requestId,
 					ticket_id: (item as EventParticipant).ticketId,
 					device_id: "desktop",
+					payload_json: isProxyTakeout ? JSON.stringify({ retirada_por_terceiro: true, retirante_nome: retiranteNome.trim(), ...(retiranteCpf.trim() ? { retirante_cpf: retiranteCpf.trim() } : {}) }) : undefined,
 				});
 			participants.patch((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, checkinDone: true } : candidate));
 			await api.releaseLock(item.id);
@@ -906,7 +938,7 @@ function EventPage({
 					</table>
 			</div>
 			)}
-			{confirming ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Confirmar retirada</h2><dl className="detail-list"><dt>Nome</dt><dd>{"name" in confirming ? confirming.name : "-"}</dd><dt>CPF</dt><dd>{confirming.cpf || "-"}</dd><dt>Data de nascimento</dt><dd>{confirming.birthDate || "-"}</dd><dt>{legacy ? "Número" : "Ticket"}</dt><dd>{legacy ? (confirming as LegacyEventParticipant).bibNumber : (confirming as EventParticipant).ticketId}</dd><dt>Categoria</dt><dd>{legacy ? (confirming as LegacyEventParticipant).modality : (confirming as EventParticipant).ticketName}</dd></dl><div className="form-actions"><button type="button" className="button ghost" onClick={() => setConfirming(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === confirming.id} onClick={() => { void confirm(confirming).finally(() => setConfirming(null)); }}>Confirmar retirada</button></div></div></div> : null}
+			{confirming ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Confirmar retirada</h2><dl className="detail-list"><dt>Nome</dt><dd>{getParticipantField(confirming, "name")}</dd><dt>CPF</dt><dd>{getParticipantField(confirming, "cpf")}</dd><dt>Data de nascimento</dt><dd>{formatBirthDate(confirming.birthDate)}</dd><dt>Idade</dt><dd>{getAge(confirming.birthDate)}</dd><dt>Sexo</dt><dd>{getParticipantField(confirming, "sex")}</dd><dt>Tamanho da camisa</dt><dd>{getParticipantField(confirming, "shirtSize")}</dd><dt>Equipe</dt><dd>{getParticipantField(confirming, "team")}</dd><dt>{legacy ? "Número" : "Ingresso"}</dt><dd>{legacy ? getParticipantField(confirming, "bibNumber") : getParticipantField(confirming, "ticketId")}</dd><dt>Código do ingresso</dt><dd>{getParticipantField(confirming, "sourceTicketId")}</dd><dt>Categoria</dt><dd>{legacy ? getParticipantField(confirming, "modality") : getParticipantField(confirming, "ticketName")}</dd><dt>QR Code</dt><dd>{getParticipantField(confirming, "qrCode")}</dd>{!legacy && (confirming as EventParticipant).customFormResponses?.map((field, index) => <React.Fragment key={`${field.name}-${index}`}><dt>{field.label || field.name}</dt><dd>{String(field.response ?? "-")}</dd></React.Fragment>)}</dl><section className="third-party-section"><label><input type="checkbox" checked={isProxyTakeout} onChange={(event) => setIsProxyTakeout(event.target.checked)} disabled={busyId === confirming.id} /> Retirada por terceiros</label>{isProxyTakeout ? <div className="third-party-fields"><Field label="Nome do retirante"><input value={retiranteNome} onChange={(event) => setRetiranteNome(event.target.value)} placeholder="Nome completo" /></Field><Field label="CPF do retirante (opcional)"><input value={retiranteCpf} onChange={(event) => setRetiranteCpf(event.target.value)} inputMode="numeric" /></Field></div> : null}</section><div className="form-actions"><button type="button" className="button ghost" onClick={() => setConfirming(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === confirming.id || (isProxyTakeout && !retiranteNome.trim())} onClick={() => { void confirm(confirming).finally(() => setConfirming(null)); }}>Confirmar retirada</button></div></div></div> : null}
 			{editing ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Editar participante</h2><Field label="Nome"><input value={editName} onChange={(e) => setEditName(e.target.value)} /></Field><Field label="CPF"><input value={editCpf} onChange={(e) => setEditCpf(e.target.value)} /></Field><Field label="Data de nascimento"><input type="date" value={editBirthDate} onChange={(e) => setEditBirthDate(e.target.value)} min="1900-01-01" /></Field><Field label="Tipo de ingresso"><input value={editTicketType} onChange={(e) => setEditTicketType(e.target.value)} /></Field><Field label="Tamanho da camisa"><input value={editShirtSize} onChange={(e) => setEditShirtSize(e.target.value)} /></Field><Field label="Equipe"><input value={editTeam} onChange={(e) => setEditTeam(e.target.value)} /></Field><div className="form-actions"><button type="button" className="button ghost" onClick={() => setEditing(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === editing.id} onClick={() => void saveEdit()}>{busyId === editing.id ? "Salvando..." : "Salvar"}</button></div></div></div> : null}
 		</div>
 	);
