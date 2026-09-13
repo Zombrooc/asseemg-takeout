@@ -52,9 +52,9 @@
     "appId": "mg.asseemg.retira.desktop",
     "productName": "ASSEEMG Retira",
     "directories": { "output": "release" },
-    "files": ["out/**/*", "package.json"],
+    "files": ["out/**/*", "assets/**/*", "package.json"],
     "asar": true,
-    "win": { "target": "nsis", "artifactName": "ASSEEMG-Retira-${version}-Setup.${ext}" },
+    "win": { "target": "nsis", "icon": "assets/icon.ico", "artifactName": "ASSEEMG-Retira-${version}-Setup.${ext}" },
     "nsis": { "oneClick": false, "perMachine": true, "allowElevation": true, "allowToChangeInstallationDirectory": true },
     "npmRebuild": true
   }

@@ -34,6 +34,7 @@ async function createMainWindow(): Promise<void> {
 		frame: false,
 		titleBarStyle: "hidden",
 		backgroundColor: "#f7f4ef",
+		icon: join(app.getAppPath(), "assets/icon.png"),
 		show: false,
 		webPreferences: {
 			preload: join(__dirname, "../preload/index.mjs"),
