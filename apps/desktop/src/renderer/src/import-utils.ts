@@ -1,5 +1,11 @@
 export type ImportMode = "csv" | "json";
 
+export function getImportSteps(mode: ImportMode): string[] {
+	return mode === "csv"
+		? ["Dados do evento", "Upload do arquivo", "Mapeamento"]
+		: ["Dados do evento", "Upload do arquivo"];
+}
+
 export type ParsedCsv = { headers: string[]; rows: string[][] };
 export type LegacyFieldKey =
 	| "number"

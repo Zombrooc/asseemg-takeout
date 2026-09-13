@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { autoMap, buildMappedCsv, mappingIsValid, mapRows, parseCsv } from "../src/renderer/src/import-utils";
+import { autoMap, buildMappedCsv, getImportSteps, mappingIsValid, mapRows, parseCsv } from "../src/renderer/src/import-utils";
 
 describe("desktop import utils", () => {
+	it("uses a mapping step only for CSV imports", () => {
+		expect(getImportSteps("csv")).toHaveLength(3);
+		expect(getImportSteps("json")).toEqual(["Dados do evento", "Upload do arquivo"]);
+	});
+
 	it("parses semicolon CSV and auto-maps accented headers", () => {
 		const parsed = parseCsv("N\u00famero;Nome Completo;CPF\n12;Ana;123\n");
 		const mapping = autoMap(parsed.headers);

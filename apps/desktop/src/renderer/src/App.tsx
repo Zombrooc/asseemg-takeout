@@ -29,7 +29,7 @@ import type {
 	LegacyEventParticipant,
 } from "./api";
 import { api, wsUrl } from "./api";
-import { autoMap, buildMappedCsv, decodeCsv, LEGACY_FIELDS, mappingIsValid, mapRows, parseCsv, type Mapping, type ParsedCsv } from "./import-utils";
+import { autoMap, buildMappedCsv, decodeCsv, getImportSteps, LEGACY_FIELDS, mappingIsValid, mapRows, parseCsv, type Mapping, type ParsedCsv } from "./import-utils";
 import { ASSEEMGLogo } from "./AsseemgLogo";
 import { getEventMetadataErrors } from "./event-validation";
 
@@ -798,7 +798,7 @@ function ImportPage({
 	const [json, setJson] = useState<Record<string, unknown> | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [step, setStep] = useState<1 | 2 | 3>(1);
-	const steps = mode === "csv" ? ["Dados do evento", "Upload do arquivo", "Mapeamento"] : ["Dados do evento", "Upload do arquivo"];
+	const steps = getImportSteps(mode);
 	const metadataValid = eventName.trim().length > 0 && eventStartDate.length > 0;
 	const uploadValid = file !== null && (mode === "csv" ? csv !== null : json !== null);
 	const mappingValid = mode === "json" || (mapping !== null && mappingIsValid(mapping));
@@ -867,8 +867,8 @@ function ImportPage({
 	const nextStep = () => {
 		if (step === 1 && !metadataValid) { notify({ kind: "error", message: "Informe o nome e a data inicial do evento" }); return; }
 		if (step === 2 && !uploadValid) { notify({ kind: "error", message: "Selecione um arquivo válido antes de avançar" }); return; }
-		if (step === 3 && !mappingValid) { notify({ kind: "error", message: "Mapeie as colunas obrigatórias antes de avançar" }); return; }
-		setStep((current) => Math.min(3, current + 1) as 1 | 2 | 3);
+		if (step === 3 && mode === "csv" && !mappingValid) { notify({ kind: "error", message: "Mapeie as colunas obrigatórias antes de avançar" }); return; }
+		setStep((current) => Math.min(steps.length, current + 1) as 1 | 2 | 3);
 	};
 	const previousStep = () => setStep((current) => Math.max(1, current - 1) as 1 | 2 | 3);
 	return (
@@ -878,7 +878,7 @@ function ImportPage({
 				 title={isNewEvent ? "Novo evento" : "Importar evento"}
 				subtitle="Revise os dados antes de salvar e operar as retiradas sem internet."
 			/>
-			{isNewEvent ? <div className="stepper" aria-label="Etapas da criação do evento">{["Dados do evento", "Upload do arquivo", "Mapeamento"].map((label, index) => <div key={label} className={`step ${step === index + 1 ? "active" : ""} ${step > index + 1 ? "complete" : ""}`}><span>{index + 1}</span>{label}</div>)}</div> : null}
+			{isNewEvent ? <div className="stepper" style={{ gridTemplateColumns: `repeat(${steps.length}, 1fr)` }} aria-label="Etapas da criação do evento">{steps.map((label, index) => <div key={label} className={`step ${step === index + 1 ? "active" : ""} ${step > index + 1 ? "complete" : ""}`}><span>{index + 1}</span>{label}</div>)}</div> : null}
 			{(!isNewEvent || step === 1) && <div className="import-tabs">
 				<button
 					type="button"
