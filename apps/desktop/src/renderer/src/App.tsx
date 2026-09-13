@@ -796,6 +796,10 @@ function ImportPage({
 	const [mapping, setMapping] = useState<Mapping | null>(null);
 	const [json, setJson] = useState<Record<string, unknown> | null>(null);
 	const [busy, setBusy] = useState(false);
+	const [step, setStep] = useState<1 | 2 | 3>(1);
+	const metadataValid = eventName.trim().length > 0 && eventStartDate.length > 0;
+	const uploadValid = file !== null && (mode === "csv" ? csv !== null : json !== null);
+	const mappingValid = mode === "json" || (mapping !== null && mappingIsValid(mapping));
 	const selectFile = async (next: File | null) => {
 		setFile(next); setCsv(null); setMapping(null); setJson(null);
 		if (!next) return;
@@ -858,13 +862,21 @@ function ImportPage({
 			setBusy(false);
 		}
 	};
+	const nextStep = () => {
+		if (step === 1 && !metadataValid) { notify({ kind: "error", message: "Informe o nome e a data inicial do evento" }); return; }
+		if (step === 2 && !uploadValid) { notify({ kind: "error", message: "Selecione um arquivo válido antes de avançar" }); return; }
+		if (step === 3 && !mappingValid) { notify({ kind: "error", message: "Mapeie as colunas obrigatórias antes de avançar" }); return; }
+		setStep((current) => Math.min(3, current + 1) as 1 | 2 | 3);
+	};
+	const previousStep = () => setStep((current) => Math.max(1, current - 1) as 1 | 2 | 3);
 	return (
 		<div className="page narrow">
 			<PageHeader
 				eyebrow="Base de eventos"
-				title={isNewEvent ? "Novo evento" : "Importar evento"}
+				 title={isNewEvent ? "Novo evento" : "Importar evento"}
 				subtitle="Revise os dados antes de salvar e operar as retiradas sem internet."
 			/>
+			{isNewEvent ? <div className="stepper" aria-label="Etapas da criação do evento">{["Dados do evento", "Upload do arquivo", "Mapeamento"].map((label, index) => <div key={label} className={`step ${step === index + 1 ? "active" : ""} ${step > index + 1 ? "complete" : ""}`}><span>{index + 1}</span>{label}</div>)}</div> : null}
 			<div className="import-tabs">
 				<button
 					type="button"
@@ -882,6 +894,7 @@ function ImportPage({
 				</button>
 			</div>
 			<section className="form-card">
+				{!isNewEvent || step === 1 ? <>
 				{mode === "csv" ? (
 					<>
 						<Field label="Nome do evento">
@@ -907,6 +920,8 @@ function ImportPage({
 				)}
 				<Field label="Data final (opcional)"><input type="date" value={eventEndDate} onChange={(event) => setEventEndDate(event.target.value)} /></Field>
 				<Field label="Horário (opcional)"><input type="time" value={eventStartTime} onChange={(event) => setEventStartTime(event.target.value)} /></Field>
+				</> : null}
+				{!isNewEvent || step === 2 ? <>
 				<label className="dropzone">
 					<Upload size={24} />
 					<strong>{file ? file.name : "Escolha um arquivo"}</strong>
@@ -921,10 +936,16 @@ function ImportPage({
 						onChange={(event) => void selectFile(event.target.files?.[0] ?? null)}
 					/>
 				</label>
+				</> : null}
+				{!isNewEvent || step === 3 ? <>
 				{mode === "csv" && csv && mapping ? <section className="mapping-card"><h2>Mapeamento das colunas</h2>{LEGACY_FIELDS.map((field) => <Field key={field.key} label={`${field.label}${field.required ? " *" : ""}`}><select value={mapping[field.key] == null ? "" : String(mapping[field.key])} onChange={(event) => setMapping({ ...mapping, [field.key]: event.target.value === "" ? null : Number(event.target.value) })}><option value="">{field.required ? "Selecione a coluna" : "Não usar"}</option>{csv.headers.map((header, index) => <option key={`${header}-${index}`} value={index}>{header || `Coluna ${index + 1}`}</option>)}</select></Field>)}{!mappingIsValid(mapping) && <p className="validation-error">Selecione as colunas obrigatórias sem repetir.</p>}<div className="info-box">Preview: {mapRows(csv.rows, mapping).length} participantes válidos.</div><div className="table-card import-preview"><table><thead><tr>{LEGACY_FIELDS.map((field) => <th key={field.key}>{field.label}</th>)}</tr></thead><tbody>{mapRows(csv.rows, mapping).slice(0, 10).map((row, index) => <tr key={index}>{LEGACY_FIELDS.map((field) => <td key={field.key}>{row[field.key] || "—"}</td>)}</tr>)}</tbody></table></div></section> : null}
 				{mode === "json" && json ? <div className="info-box">Preview carregado: {Array.isArray(json.participants) ? json.participants.length : 0} participantes.</div> : null}
+				</> : null}
 				<div className="form-actions">
-					<button
+					{isNewEvent && step > 1 ? <button type="button" className="button outline" onClick={previousStep} disabled={busy}>Voltar</button> : null}
+					{isNewEvent && step < 3 && (step !== 2 || file) ? <button type="button" className="button primary" onClick={nextStep} disabled={busy}>{step === 1 ? "Avançar para upload" : "Avançar para mapeamento"} <ArrowLeft size={15} style={{ transform: "rotate(180deg)" }} /></button> : null}
+					{isNewEvent && step === 2 && !file ? <button type="button" className="button primary" disabled={busy} onClick={() => void submit()}><CalendarPlus size={16} /> Criar evento sem participantes</button> : null}
+					{(!isNewEvent || step === 3) && <button
 						type="button"
 						className="button primary"
 						disabled={busy}
@@ -939,7 +960,7 @@ function ImportPage({
 								<Upload size={16} /> {isNewEvent && !file ? "Criar evento" : "Importar e salvar"}
 							</>
 						)}
-					</button>
+					</button>}
 				</div>
 			</section>
 		</div>

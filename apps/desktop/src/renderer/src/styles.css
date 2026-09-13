@@ -120,6 +120,12 @@ td small { margin-top: 4px; color: var(--qz-color-neutral-smoke); }
 .import-tabs { display: flex; gap: 6px; margin-bottom: 14px; padding: 5px; border-radius: var(--qz-radius-md); background: var(--qz-color-neutral-asphalt-dark); }
 .import-tabs button { display: flex; align-items: center; gap: 8px; flex: 1; min-height: 40px; justify-content: center; border: 0; border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone-muted); background: transparent; font-size: 12px; font-weight: 700; }
 .import-tabs button.selected { color: var(--qz-color-neutral-bone); background: var(--qz-color-neutral-asphalt-mid); }
+.stepper { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: -12px 0 20px; }
+.step { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border-bottom: 2px solid var(--qz-color-neutral-divider); color: var(--qz-color-neutral-smoke); font-size: 11px; font-weight: 700; }
+.step span { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--qz-color-neutral-asphalt-mid); font: 11px var(--qz-font-family-mono); }
+.step.active { border-color: var(--qz-color-brand-primary); color: var(--qz-color-neutral-bone); }
+.step.active span, .step.complete span { color: white; background: var(--qz-color-brand-primary); }
+.step.complete { border-color: var(--qz-color-feedback-success); color: var(--qz-color-neutral-bone-muted); }
 .form-card { padding: 25px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-lg); background: var(--qz-color-neutral-asphalt-dark); }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .field { display: block; margin-bottom: 16px; }
