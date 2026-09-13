@@ -1,6 +1,7 @@
 import cors from "cors";
 import express, { type Express, type Request, type Response } from "express";
 import { createServer, type Server as HttpServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 import multer from "multer";
@@ -75,6 +76,69 @@ function parseBool(value: unknown): boolean {
 	return value === true || value === "true" || value === "1";
 }
 
+type DefaultRoute = { interfaceName?: string; ip?: string };
+
+function getDefaultRoute(): DefaultRoute | null {
+	try {
+		if (process.platform === "win32") {
+			const output = execFileSync("route.exe", ["print", "-4"], {
+				encoding: "utf8",
+				timeout: 2_000,
+				windowsHide: true,
+			});
+			const routes = output
+				.split(/\r?\n/)
+				.map((line) =>
+					line.match(/^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)\s+(\S+)\s+(\d+)\s*$/),
+				)
+				.filter((match): match is RegExpMatchArray => match !== null)
+				.sort((a, b) => Number(a[3]) - Number(b[3]));
+			const route = routes[0];
+			return route ? { ip: route[2] } : null;
+		}
+
+		const output = execFileSync("ip", ["-4", "route", "show", "default"], {
+			encoding: "utf8",
+			timeout: 2_000,
+		});
+		const match = output.match(/(?:^|\n)default(?:\s+via\s+\S+)?\s+dev\s+(\S+)/);
+		return match ? { interfaceName: match[1] } : null;
+	} catch {
+		return null;
+	}
+}
+
+function isVirtualInterface(interfaceName: string): boolean {
+	return /virtualbox|host.only|vmware|hyper.v|vEthernet|wsl|docker|vpn|tunnel|loopback/i.test(
+		interfaceName,
+	);
+}
+
+type NetworkAddress = {
+	interfaceName: string;
+	ip: string;
+	url: string;
+	isPrimary: boolean;
+};
+
+export function selectPrimaryAddress(
+	addresses: NetworkAddress[],
+	route: DefaultRoute | null,
+): NetworkAddress | undefined {
+	const routed = route
+		? addresses.find(
+				(address) =>
+					(route.ip && address.ip === route.ip) ||
+					(route.interfaceName && address.interfaceName === route.interfaceName),
+			)
+		: undefined;
+	return (
+		routed ??
+		addresses.find((address) => !isVirtualInterface(address.interfaceName)) ??
+		addresses[0]
+	);
+}
+
 function getIpAddresses(): Array<{
 	interfaceName: string;
 	ip: string;
@@ -105,7 +169,8 @@ function getIpAddresses(): Array<{
 			a.interfaceName.localeCompare(b.interfaceName) ||
 			a.ip.localeCompare(b.ip),
 	);
-	if (addresses.length > 0) addresses[0].isPrimary = true;
+	const preferred = selectPrimaryAddress(addresses, getDefaultRoute());
+	if (preferred) preferred.isPrimary = true;
 	return addresses;
 }
 
@@ -293,15 +358,35 @@ function broadcast(
 	}
 }
 
-function logEvent(
+function emitEvent(
 	db: SqliteDatabase,
+	clients: Map<string, Set<WebSocket>>,
 	eventId: string,
 	type: string,
 	payload: object,
-): void {
-	db.prepare(
+): number {
+	const result = db.prepare(
 		"INSERT INTO event_log (event_id, type, payload_json, created_at) VALUES (?, ?, ?, ?)",
 	).run(eventId, type, JSON.stringify(payload), nowEpoch());
+	const seq = Number(result.lastInsertRowid);
+	broadcast(clients, eventId, { ...payload, type, event_id: eventId, seq });
+	return seq;
+}
+
+function participantEventId(db: SqliteDatabase, participantId: string): string | null {
+	const row = db.prepare("SELECT event_id FROM participants WHERE id=? UNION ALL SELECT event_id FROM legacy_participants WHERE id=? LIMIT 1").get(participantId, participantId) as { event_id?: string } | undefined;
+	return row?.event_id ?? null;
+}
+
+function activeLocksForEvent(db: SqliteDatabase, eventId: string) {
+	return db.prepare(`
+		SELECT l.participant_id, l.device_id, l.expires_at
+		FROM locks l
+		WHERE l.expires_at > ? AND (
+			EXISTS (SELECT 1 FROM participants p WHERE p.id=l.participant_id AND p.event_id=?)
+			OR EXISTS (SELECT 1 FROM legacy_participants p WHERE p.id=l.participant_id AND p.event_id=?)
+		)
+	`).all(nowEpoch(), eventId, eventId) as Array<{ participant_id: string; device_id: string; expires_at: number }>;
 }
 
 function parseCsvLine(line: string, delimiter: "," | ";"): string[] {
@@ -442,8 +527,10 @@ function buildLegacyRows(
 
 export function createTakeoutServer({
 	db,
-	baseUrl = pairingUrlBase(),
+	baseUrl,
 }: ServerOptions): TakeoutServer {
+	const configuredBaseUrl = baseUrl;
+	const currentBaseUrl = () => configuredBaseUrl ?? pairingUrlBase();
 	const app = express();
 	const httpServer = createServer(app);
 	const wsServer = new WebSocketServer({ noServer: true });
@@ -460,10 +547,14 @@ export function createTakeoutServer({
 
 	app.get("/health", (_req, res) => json(res, 200, { status: "ok" }));
 	app.get("/network/addresses", (_req, res) =>
-		json(res, 200, { baseUrl, port: PORT, addresses: getIpAddresses() }),
+		json(res, 200, {
+			baseUrl: currentBaseUrl(),
+			port: PORT,
+			addresses: getIpAddresses(),
+		}),
 	);
 	app.get("/pair/info", (_req, res) =>
-		json(res, 200, getPairingInfo(db, baseUrl)),
+		json(res, 200, getPairingInfo(db, currentBaseUrl())),
 	);
 	app.post("/pair/renew", (_req, res) => {
 		const generated = createPairingToken();
@@ -471,7 +562,7 @@ export function createTakeoutServer({
 			"INSERT INTO pairing_tokens (token, expires_at) VALUES (?, ?)",
 		).run(generated.token, generated.expiresAt);
 		return json(res, 200, {
-			baseUrl,
+			baseUrl: currentBaseUrl(),
 			pairingToken: generated.token,
 			expiresAt: generated.expiresAt,
 		});
@@ -560,7 +651,7 @@ export function createTakeoutServer({
 		const startTime = typeof req.body?.startTime === "string" && req.body.startTime.trim() ? req.body.startTime.trim() : null;
 		const importedAt = nowIso();
 		db.prepare("INSERT INTO events (event_id, name, start_date, end_date, start_time, imported_at, source_type) VALUES (?, ?, ?, ?, ?, ?, 'manual')").run(eventId, name, startDate, endDate, startTime, importedAt);
-		broadcast(clients, "_events", { type: "events_list_changed" });
+		emitEvent(db, clients, "_events", "events_list_changed", {});
 		return json(res, 201, { eventId, name, startDate, endDate, startTime, importedAt, sourceType: "manual", archivedAt: null });
 	});
 	app.post("/events/:eventId/archive", (req, res) => {
@@ -568,7 +659,7 @@ export function createTakeoutServer({
 			.prepare("UPDATE events SET archived_at = ? WHERE event_id = ?")
 			.run(nowIso(), req.params.eventId);
 		if (result.changes)
-			broadcast(clients, "_events", { type: "events_list_changed" });
+			emitEvent(db, clients, "_events", "events_list_changed", {});
 		return json(res, 200, { archived: result.changes > 0 });
 	});
 	app.post("/events/:eventId/unarchive", (req, res) => {
@@ -576,7 +667,7 @@ export function createTakeoutServer({
 			.prepare("UPDATE events SET archived_at = NULL WHERE event_id = ?")
 			.run(req.params.eventId);
 		if (result.changes)
-			broadcast(clients, "_events", { type: "events_list_changed" });
+			emitEvent(db, clients, "_events", "events_list_changed", {});
 		return json(res, 200, { unarchived: result.changes > 0 });
 	});
 	app.delete("/events/:eventId", (req, res) => {
@@ -614,7 +705,7 @@ export function createTakeoutServer({
 			);
 		});
 		remove();
-		broadcast(clients, "_events", { type: "events_list_changed" });
+		emitEvent(db, clients, "_events", "events_list_changed", {});
 		return json(res, 200, { deleted: true });
 	});
 	app.get("/events/:eventId/participants", (req, res) =>
@@ -671,16 +762,13 @@ export function createTakeoutServer({
 			"SELECT p.id, p.event_id, p.name, p.cpf, p.birth_date, p.raw_json participant_raw_json, t.id ticket_id, t.code ticket_code, t.raw_json ticket_raw_json, EXISTS(SELECT 1 FROM check_ins c WHERE c.ticket_id=t.id) checkin_done FROM participants p JOIN tickets t ON t.participant_id=p.id WHERE p.id=?",
 			)
 			.get(req.params.participantId) as ParticipantRow;
-		logEvent(db, req.params.eventId, "participant_updated", {
+		emitEvent(db, clients, req.params.eventId, "participant_updated", {
 			participant_id: req.params.participantId,
 			ticket_id: row.ticket_id,
-			source_type: "json_sync",
-		});
-		broadcast(clients, req.params.eventId, {
-			type: "participant_updated",
-			event_id: req.params.eventId,
-			participant_id: req.params.participantId,
-			ticket_id: row.ticket_id,
+			name: mapParticipant(row).name,
+			cpf: mapParticipant(row).cpf,
+			birthDate: mapParticipant(row).birthDate,
+			ticketName: mapParticipant(row).ticketName,
 			source_type: "json_sync",
 		});
 		return json(res, 200, mapParticipant(row));
@@ -763,21 +851,14 @@ export function createTakeoutServer({
 				timestamp,
 			);
 			if (ticket?.event_id)
-				logEvent(db, ticket.event_id, "participant_checked_in", {
+				emitEvent(db, clients, ticket.event_id, "participant_checked_in", {
 					ticket_id: ticketId,
+					participant_id: ticket.participant_id,
+					device_id: identity.deviceId,
 					request_id: requestId,
-					event_id: ticket.event_id,
 					source_type: "json_sync",
 				});
 		})();
-		if (ticket?.event_id)
-			broadcast(clients, ticket.event_id, {
-				type: "participant_checked_in",
-				event_id: ticket.event_id,
-				ticket_id: ticketId,
-				request_id: requestId,
-				source_type: "json_sync",
-			});
 		return json(res, 200, { status: "CONFIRMED" });
 	});
 	app.post("/takeout/undo", (req, res) => {
@@ -828,21 +909,14 @@ export function createTakeoutServer({
 				timestamp,
 			);
 			if (ticket?.event_id)
-				logEvent(db, ticket.event_id, "participant_checkin_reverted", {
+				emitEvent(db, clients, ticket.event_id, "participant_checkin_reverted", {
 					ticket_id: ticketId,
+					participant_id: ticket.participant_id,
+					device_id: identity.deviceId,
 					request_id: requestId,
-					event_id: ticket.event_id,
 					source_type: "json_sync",
 				});
 		})();
-		if (ticket?.event_id)
-			broadcast(clients, ticket.event_id, {
-				type: "participant_checkin_reverted",
-				event_id: ticket.event_id,
-				ticket_id: ticketId,
-				request_id: requestId,
-				source_type: "json_sync",
-			});
 		return json(res, 200, { status: "REVERSED" });
 	});
 
@@ -936,7 +1010,7 @@ export function createTakeoutServer({
 					).run(eventId, JSON.stringify(definition));
 		});
 		importData();
-		broadcast(clients, "_events", { type: "events_list_changed" });
+		emitEvent(db, clients, "_events", "events_list_changed", {});
 		return json(res, 200, pull);
 	});
 	app.post("/admin/import/legacy-csv", upload.single("file"), (req, res) => {
@@ -990,7 +1064,7 @@ export function createTakeoutServer({
 			return imported;
 		});
 		const imported = importRows();
-		broadcast(clients, "_events", { type: "events_list_changed" });
+		emitEvent(db, clients, "_events", "events_list_changed", {});
 		return json(res, 200, { imported, errors: [] });
 	});
 
@@ -1132,11 +1206,13 @@ export function createTakeoutServer({
 		const row = db
 			.prepare("SELECT * FROM legacy_participants WHERE id=?")
 			.get(id) as Record<string, unknown>;
-		broadcast(clients, req.params.eventId, {
-			type: "participant_updated",
-			event_id: req.params.eventId,
+	emitEvent(db, clients, req.params.eventId, "participant_updated", {
 			participant_id: id,
 			ticket_id: id,
+			name: mapLegacyParticipant(db, row).name,
+			cpf: mapLegacyParticipant(db, row).cpf,
+			birthDate: mapLegacyParticipant(db, row).birthDate,
+			modality: mapLegacyParticipant(db, row).modality,
 			source_type: "legacy_csv",
 		});
 		return json(res, 200, mapLegacyParticipant(db, row));
@@ -1191,6 +1267,10 @@ export function createTakeoutServer({
 		db.prepare(
 			"INSERT INTO locks (participant_id,device_id,expires_at) VALUES (?,?,?) ON CONFLICT(participant_id) DO UPDATE SET device_id=excluded.device_id,expires_at=excluded.expires_at",
 		).run(participantId, deviceId, expires);
+		const eventId = participantEventId(db, participantId);
+		if (eventId) emitEvent(db, clients, eventId, "lock_acquired", {
+			participant_id: participantId, device_id: deviceId, expires_at: expires,
+		});
 		return json(res, 200, { acquired: true });
 	});
 	app.post("/locks/renew", (req, res) => {
@@ -1203,6 +1283,15 @@ export function createTakeoutServer({
 				String(req.body?.participantId ?? ""),
 				String(req.body?.deviceId ?? ""),
 			);
+		if (result.changes) {
+			const participantId = String(req.body?.participantId ?? "");
+			const eventId = participantEventId(db, participantId);
+			if (eventId) emitEvent(db, clients, eventId, "lock_renewed", {
+				participant_id: participantId,
+				device_id: String(req.body?.deviceId ?? ""),
+				expires_at: nowEpoch() + 30,
+			});
+		}
 		return json(res, result.changes ? 200 : 409, {
 			renewed: result.changes > 0,
 		});
@@ -1222,6 +1311,7 @@ export function createTakeoutServer({
 	});
 	app.delete("/locks/:participantId", (req, res) => {
 		const deviceId = req.query.deviceId ? String(req.query.deviceId) : null;
+		const owner = db.prepare("SELECT device_id, expires_at FROM locks WHERE participant_id=?").get(req.params.participantId) as { device_id?: string; expires_at?: number } | undefined;
 		const result = deviceId
 			? db
 					.prepare("DELETE FROM locks WHERE participant_id=? AND device_id=?")
@@ -1229,6 +1319,14 @@ export function createTakeoutServer({
 			: db
 					.prepare("DELETE FROM locks WHERE participant_id=?")
 					.run(req.params.participantId);
+		if (result.changes) {
+			const eventId = participantEventId(db, req.params.participantId);
+			if (eventId) emitEvent(db, clients, eventId, "lock_released", {
+				participant_id: req.params.participantId,
+				device_id: deviceId ?? owner?.device_id ?? "unknown",
+				expires_at: owner?.expires_at ?? 0,
+			});
+		}
 		return json(res, 200, { released: result.changes > 0 });
 	});
 	app.get("/sync/events", (req, res) => {
@@ -1292,13 +1390,24 @@ export function createTakeoutServer({
 			for (const item of replay)
 				client.send(
 					JSON.stringify({
+						...safeJson(item.payload_json),
 						type: item.type,
 						event_id: item.event_id,
 						seq: item.seq,
 						created_at: item.created_at,
-						...safeJson(item.payload_json),
 					}),
 				);
+		}
+		const latest = Number((db.prepare("SELECT COALESCE(MAX(seq),0) seq FROM event_log WHERE event_id=?").get(eventId) as { seq: number }).seq);
+		for (const lock of activeLocksForEvent(db, eventId)) {
+			client.send(JSON.stringify({
+				type: "lock_snapshot",
+				event_id: eventId,
+				participant_id: lock.participant_id,
+				device_id: lock.device_id,
+				expires_at: lock.expires_at,
+				seq: latest,
+			}));
 		}
 		const heartbeat = setInterval(() => {
 			if (client.readyState === WebSocket.OPEN)
@@ -1395,25 +1504,19 @@ function legacyCheckin(
 			identity.deviceId,
 			timestamp,
 		);
-		logEvent(
-			db,
-			eventId,
+	emitEvent(
+		db,
+		clients,
+		eventId,
 			undo ? "participant_checkin_reverted" : "participant_checked_in",
 			{
 				participant_id: participantId,
+				device_id: identity.deviceId,
 				request_id: requestId,
-				event_id: eventId,
 				source_type: "legacy_csv",
 			},
 		);
 	})();
-	broadcast(clients, eventId, {
-		type: undo ? "participant_checkin_reverted" : "participant_checked_in",
-		event_id: eventId,
-		participant_id: participantId,
-		request_id: requestId,
-		source_type: "legacy_csv",
-	});
 	return json(res, 200, { status });
 }
 

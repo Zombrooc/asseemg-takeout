@@ -212,6 +212,7 @@ export type WsTakeoutMessage =
       device_id?: string;
       event_id?: string;
       source_type?: "json_sync" | "legacy_csv";
+      seq?: number;
     }
   | {
       type: "participant_checkin_reverted";
@@ -221,6 +222,7 @@ export type WsTakeoutMessage =
       device_id?: string;
       event_id?: string;
       source_type?: "json_sync" | "legacy_csv";
+      seq?: number;
     }
   | {
       type: "participant_updated";
@@ -228,19 +230,49 @@ export type WsTakeoutMessage =
       participant_id: string;
       ticket_id?: string;
       source_type?: "json_sync" | "legacy_csv";
+      name?: string | null;
+      cpf?: string | null;
+      birthDate?: string | null;
+      ticketName?: string | null;
+      modality?: string | null;
+      seq?: number;
     }
   | {
       type: "lock_acquired";
       participant_id: string;
       device_id: string;
+      event_id: string;
+      expires_at: number;
+      seq: number;
     }
   | {
       type: "lock_released";
       participant_id: string;
-      device_id?: string;
+      device_id: string;
+      event_id: string;
+      expires_at?: number;
+      seq: number;
+    }
+  | {
+      type: "lock_renewed";
+      participant_id: string;
+      device_id: string;
+      event_id: string;
+      expires_at: number;
+      seq: number;
+    }
+  | {
+      type: "lock_snapshot";
+      participant_id: string;
+      device_id: string;
+      event_id: string;
+      expires_at: number;
+      seq: number;
     }
   | {
       type: "events_list_changed";
+      event_id?: "_events";
+      seq?: number;
     }
   | {
       type: "heartbeat";

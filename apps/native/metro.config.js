@@ -16,11 +16,22 @@ const uniwindConfig = withUniwindConfig(wrapWithReanimatedMetroConfig(config), {
 });
 
 const reactNativeShimPath = path.resolve(__dirname, "react-native-shim.js");
+const reactNativePath = require.resolve("react-native");
 const originalResolveRequest = uniwindConfig.resolver.resolveRequest;
 
-/** Passo 2: shim para todo import de react-native que não venha de node_modules (app usa uniwind/components). */
+/**
+ * Passo 2: shim para imports do app. Imports internos do Uniwind precisam
+ * continuar apontando para o React Native real; caso contrário o shim entra
+ * em um ciclo: react-native -> uniwind/components -> react-native.
+ */
 uniwindConfig.resolver.resolveRequest = (context, moduleName, platform) => {
-  const fromNodeModules = context.originModulePath?.includes("node_modules") ?? false;
+  const originModulePath = context.originModulePath ?? "";
+  const fromNodeModules = originModulePath.includes("node_modules");
+  const fromUniwind = originModulePath.includes(`${path.sep}uniwind${path.sep}`);
+  const fromShim = originModulePath === reactNativeShimPath;
+  if (moduleName === "react-native" && (fromNodeModules || fromUniwind || fromShim)) {
+    return { type: "sourceFile", filePath: reactNativePath };
+  }
   if (moduleName === "react-native" && !fromNodeModules) {
     return { type: "sourceFile", filePath: reactNativeShimPath };
   }

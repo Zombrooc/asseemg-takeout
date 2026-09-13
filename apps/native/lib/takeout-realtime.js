@@ -15,6 +15,9 @@ exports.realtimeConfig = exports.EVENTS_LIST_CHANNEL = void 0;
 exports.nextReconnectDelay = nextReconnectDelay;
 exports.getRealtimeInvalidation = getRealtimeInvalidation;
 exports.parseRealtimeMessageData = parseRealtimeMessageData;
+exports.applyLockEvent = applyLockEvent;
+exports.expireLocks = expireLocks;
+exports.applyParticipantCheckinPatch = applyParticipantCheckinPatch;
 exports.useTakeoutRealtime = useTakeoutRealtime;
 exports.useEventsListRealtime = useEventsListRealtime;
 var react_query_1 = require("@tanstack/react-query");
@@ -97,13 +100,54 @@ function getMessageSeq(message) {
     }
     return null;
 }
+function applyLockEvent(locks, message, now) {
+    if (now === void 0) { now = Math.floor(Date.now() / 1000); }
+    if (!["lock_acquired", "lock_renewed", "lock_snapshot", "lock_released"].includes(message.type))
+        return locks;
+    var participantId = message.participant_id;
+    if (!participantId)
+        return locks;
+    var current = locks[participantId];
+    var seq = getMessageSeq(message) || 0;
+    if (current && seq > 0 && current.seq > seq)
+        return locks;
+    if (message.type === "lock_released") {
+        if (current && current.deviceId === message.device_id) {
+            var next = __assign({}, locks);
+            delete next[participantId];
+            return next;
+        }
+        return locks;
+    }
+    var expiresAt = Number(message.expires_at);
+    if (!message.device_id || !Number.isFinite(expiresAt) || expiresAt <= now)
+        return locks;
+    var next = __assign({}, locks);
+    next[participantId] = { deviceId: message.device_id, expiresAt: expiresAt, seq: seq };
+    return next;
+}
+function expireLocks(locks, now) {
+    if (now === void 0) { now = Math.floor(Date.now() / 1000); }
+    var next = Object.fromEntries(Object.entries(locks).filter(function (_a) { var lock = _a[1]; return lock.expiresAt > now; }));
+    return Object.keys(next).length === Object.keys(locks).length ? locks : next;
+}
+function applyParticipantCheckinPatch(participants, message, checkinDone) {
+    var isLegacy = message.source_type === "legacy_csv" || (message.ticket_id == null && message.participant_id != null);
+    var target = isLegacy ? message.participant_id : message.ticket_id;
+    if (!target)
+        return participants;
+    return participants.map(function (participant) { return (isLegacy ? participant.id === target : participant.ticketId === target)
+        ? __assign(__assign({}, participant), { checkinDone: checkinDone }) : participant; });
+}
 function useTakeoutRealtime(eventId, baseUrl, deviceId) {
     var queryClient = (0, react_query_1.useQueryClient)();
     var _a = (0, react_1.useState)({}), lockMap = _a[0], setLockMap = _a[1];
     var reconnectDelayRef = (0, react_1.useRef)(INITIAL_RECONNECT_DELAY_MS);
     var reconnectTimerRef = (0, react_1.useRef)(null);
     var heartbeatTimerRef = (0, react_1.useRef)(null);
+    var lockExpiryTimerRef = (0, react_1.useRef)(null);
     var lastSeqRef = (0, react_1.useRef)(null);
+    var lockEntriesRef = (0, react_1.useRef)({});
     var setLockMapRef = (0, react_1.useRef)(setLockMap);
     setLockMapRef.current = setLockMap;
     var updateLockMap = (0, react_1.useCallback)(function (updater) {
@@ -113,6 +157,8 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
         if (!eventId || !baseUrl || !deviceId)
             return;
         lastSeqRef.current = null;
+        lockEntriesRef.current = {};
+        setLockMap({});
         var isActive = true;
         var ws = null;
         var clearTimers = function () {
@@ -123,6 +169,10 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
             if (heartbeatTimerRef.current != null) {
                 clearTimeout(heartbeatTimerRef.current);
                 heartbeatTimerRef.current = null;
+            }
+            if (lockExpiryTimerRef.current != null) {
+                clearInterval(lockExpiryTimerRef.current);
+                lockExpiryTimerRef.current = null;
             }
         };
         var resetHeartbeatTimer = function () {
@@ -168,6 +218,8 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
                 if (data.type === "heartbeat")
                     return;
                 var seq = getMessageSeq(data);
+                if (seq != null && data.type !== "lock_snapshot" && lastSeqRef.current != null && seq <= lastSeqRef.current)
+                    return;
                 if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
                     lastSeqRef.current = seq;
                 }
@@ -178,34 +230,24 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
                         seq: seq,
                     });
                 }
+                if (["lock_acquired", "lock_renewed", "lock_snapshot", "lock_released"].includes(data.type)) {
+                    lockEntriesRef.current = expireLocks(applyLockEvent(lockEntriesRef.current, data));
+                    setLockMap(Object.fromEntries(Object.entries(lockEntriesRef.current).map(function (_a) { var id = _a[0], lock = _a[1]; return [id, lock.deviceId]; })));
+                    return;
+                }
                 var invalidation = getRealtimeInvalidation(data);
                 if (invalidation.invalidateAudit) {
                     queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
                 }
                 if (invalidation.invalidateParticipants) {
-                    queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
-                    void queryClient.refetchQueries({
-                        queryKey: ["takeout-event-participants", eventId],
-                        type: "active",
-                    });
+                    if (data.type === "participant_checked_in" || data.type === "participant_checkin_reverted")
+                        queryClient.setQueryData(["takeout-event-participants", eventId], function (participants) { return Array.isArray(participants) ? applyParticipantCheckinPatch(participants, data, data.type === "participant_checked_in") : participants; });
+                    else
+                        queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
                     if (__DEV__) {
                         console.log("[ws.mobile] invalidated participants", { eventId: eventId, type: data.type });
                     }
                     return;
-                }
-                if (data.type === "lock_acquired" && data.participant_id != null && data.device_id != null) {
-                    updateLockMap(function (prev) {
-                        var _a;
-                        return (__assign(__assign({}, prev), (_a = {}, _a[data.participant_id] = data.device_id, _a)));
-                    });
-                    return;
-                }
-                if (data.type === "lock_released" && data.participant_id != null) {
-                    updateLockMap(function (prev) {
-                        var next = __assign({}, prev);
-                        delete next[data.participant_id];
-                        return next;
-                    });
                 }
             };
             ws.onerror = function () { };
@@ -219,6 +261,10 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
             };
         };
         connect();
+        lockExpiryTimerRef.current = setInterval(function () {
+            lockEntriesRef.current = expireLocks(lockEntriesRef.current);
+            setLockMap(Object.fromEntries(Object.entries(lockEntriesRef.current).map(function (_a) { var id = _a[0], lock = _a[1]; return [id, lock.deviceId]; })));
+        }, 1000);
         return function () {
             isActive = false;
             clearTimers();

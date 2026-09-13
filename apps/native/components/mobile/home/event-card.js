@@ -30,7 +30,7 @@ function EventCard(_a) {
             </primitives_1.View>
             <primitives_1.View className="shrink-0">
               <ui_1.Chip color={isLive ? "success" : "default"} size="sm">
-                <ui_1.Chip.Label>{isLive ? "LIVE" : "OFFLINE"}</ui_1.Chip.Label>
+                <ui_1.Chip.Label>{isLive ? "Ao vivo" : "OFFLINE"}</ui_1.Chip.Label>
               </ui_1.Chip>
             </primitives_1.View>
           </primitives_1.View>

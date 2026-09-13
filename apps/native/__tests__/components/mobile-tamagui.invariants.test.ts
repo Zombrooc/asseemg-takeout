@@ -23,7 +23,7 @@ describe("mobile-tamagui invariants", () => {
 
   describe("STATUS_PILL_LABELS", () => {
     it("has live and offline labels", () => {
-      expect(STATUS_PILL_LABELS.live).toBe("LIVE");
+      expect(STATUS_PILL_LABELS.live).toBe("Ao vivo");
       expect(STATUS_PILL_LABELS.offline).toBe("OFFLINE");
     });
   });

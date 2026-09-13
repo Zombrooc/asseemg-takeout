@@ -5,7 +5,7 @@ export function StatusPill({ isReachable }: { isReachable: boolean }) {
   return (
     <View className="shrink-0">
       <Chip color={isReachable ? "success" : "danger"} size="sm">
-        <Chip.Label>{isReachable ? "LIVE" : "OFFLINE"}</Chip.Label>
+        <Chip.Label>{isReachable ? "Ao vivo" : "OFFLINE"}</Chip.Label>
       </Chip>
     </View>
   );

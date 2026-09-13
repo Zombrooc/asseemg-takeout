@@ -43,7 +43,7 @@ function EventCard(_a) {
                 </react_native_1.Text>) : null}
             </react_native_1.View>
             <ui_tamagui_1.Badge variant={isLive ? "success" : "default"}>
-              {isLive ? "LIVE" : "OFFLINE"}
+              {isLive ? "Ao vivo" : "OFFLINE"}
             </ui_tamagui_1.Badge>
           </react_native_1.View>
 

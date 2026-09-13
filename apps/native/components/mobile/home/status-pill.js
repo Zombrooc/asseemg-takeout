@@ -7,7 +7,7 @@ function StatusPill(_a) {
     var isReachable = _a.isReachable;
     return (<primitives_1.View className="shrink-0">
       <ui_1.Chip color={isReachable ? "success" : "danger"} size="sm">
-        <ui_1.Chip.Label>{isReachable ? "LIVE" : "OFFLINE"}</ui_1.Chip.Label>
+        <ui_1.Chip.Label>{isReachable ? "Ao vivo" : "OFFLINE"}</ui_1.Chip.Label>
       </ui_1.Chip>
     </primitives_1.View>);
 }

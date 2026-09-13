@@ -68,7 +68,7 @@ export function EventCard({
               ) : null}
             </View>
             <Badge variant={isLive ? "success" : "default"}>
-              {isLive ? "LIVE" : "OFFLINE"}
+              {isLive ? "Ao vivo" : "OFFLINE"}
             </Badge>
           </View>
 

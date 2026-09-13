@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { openMemoryDatabase } from "../src/main/db";
-import { createTakeoutServer, startTakeoutServer } from "../src/main/server";
+import {
+  createTakeoutServer,
+  selectPrimaryAddress,
+  startTakeoutServer,
+} from "../src/main/server";
 
 const runningServers: Array<ReturnType<typeof createTakeoutServer>> = [];
 
@@ -9,6 +13,24 @@ afterEach(async () => {
 });
 
 describe("takeout server", () => {
+  it("prefers the interface selected by the default LAN route over Host-Only adapters", () => {
+    const addresses = [
+      { interfaceName: "Ethernet 2", ip: "192.168.56.1", url: "http://192.168.56.1:5555", isPrimary: false },
+      { interfaceName: "Wi-Fi", ip: "192.168.0.128", url: "http://192.168.0.128:5555", isPrimary: false },
+    ];
+
+    expect(selectPrimaryAddress(addresses, { ip: "192.168.0.128" })?.ip).toBe("192.168.0.128");
+  });
+
+  it("avoids a virtual adapter when no default route is available", () => {
+    const addresses = [
+      { interfaceName: "Ethernet 2", ip: "192.168.56.1", url: "http://192.168.56.1:5555", isPrimary: false },
+      { interfaceName: "Wi-Fi", ip: "192.168.0.128", url: "http://192.168.0.128:5555", isPrimary: false },
+    ];
+
+    expect(selectPrimaryAddress(addresses, null)?.ip).toBe("192.168.0.128");
+  });
+
   it("binds the HTTP server to all IPv4 interfaces", async () => {
     const server = createTakeoutServer({ db: openMemoryDatabase(), baseUrl: "http://192.168.1.50:5555" });
     runningServers.push(server);

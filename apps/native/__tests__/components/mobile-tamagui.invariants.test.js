@@ -27,7 +27,7 @@ describe("mobile-tamagui invariants", function () {
     });
     describe("STATUS_PILL_LABELS", function () {
         it("has live and offline labels", function () {
-            expect(constants_1.STATUS_PILL_LABELS.live).toBe("LIVE");
+            expect(constants_1.STATUS_PILL_LABELS.live).toBe("Ao vivo");
             expect(constants_1.STATUS_PILL_LABELS.offline).toBe("OFFLINE");
         });
     });

@@ -15,6 +15,55 @@ function wsUrl(baseUrl: string, eventId: string, deviceId: string, lastSeq?: str
 
 /** participantId -> deviceId being handled */
 export type LockMap = Record<string, string>;
+export type LockEntry = { deviceId: string; expiresAt: number; seq: number };
+
+export function applyLockEvent(
+  locks: Record<string, LockEntry>,
+  message: WsTakeoutMessage,
+  now = Math.floor(Date.now() / 1000),
+): Record<string, LockEntry> {
+  if (!["lock_acquired", "lock_renewed", "lock_snapshot", "lock_released"].includes(message.type)) return locks;
+  const participantId = (message as { participant_id?: string }).participant_id;
+  if (!participantId) return locks;
+  const current = locks[participantId];
+  const seq = getMessageSeq(message) ?? 0;
+  if (current && seq > 0 && current.seq > seq) return locks;
+  const deviceId = (message as { device_id?: string }).device_id;
+  if (message.type === "lock_released") {
+    if (current && current.deviceId === deviceId) {
+      const next = { ...locks };
+      delete next[participantId];
+      return next;
+    }
+    return locks;
+  }
+  const expiresAt = Number((message as { expires_at?: unknown }).expires_at);
+  if (!deviceId || !Number.isFinite(expiresAt) || expiresAt <= now) return locks;
+  return { ...locks, [participantId]: { deviceId, expiresAt, seq } };
+}
+
+export function expireLocks(
+  locks: Record<string, LockEntry>,
+  now = Math.floor(Date.now() / 1000),
+): Record<string, LockEntry> {
+  const next = Object.fromEntries(Object.entries(locks).filter(([, lock]) => lock.expiresAt > now));
+  return Object.keys(next).length === Object.keys(locks).length ? locks : next;
+}
+
+export function applyParticipantCheckinPatch<T extends { id: string; ticketId?: string; checkinDone: boolean }>(
+  participants: T[], message: WsTakeoutMessage, checkinDone: boolean,
+): T[] {
+  const participantMessage = message as { source_type?: string; participant_id?: string; ticket_id?: string };
+  const isLegacy = participantMessage.source_type === "legacy_csv" || (participantMessage.ticket_id == null && participantMessage.participant_id != null);
+  const target = isLegacy ? participantMessage.participant_id : participantMessage.ticket_id;
+  if (!target) return participants;
+  return participants.map((participant) => {
+    const matches = isLegacy
+      ? participant.id === target
+      : participant.ticketId === target;
+    return matches ? { ...participant, checkinDone } : participant;
+  });
+}
 
 export function nextReconnectDelay(current: number): number {
   return Math.min(Math.round(current * 1.7), MAX_RECONNECT_DELAY_MS);
@@ -101,10 +150,12 @@ export function useTakeoutRealtime(
 ): { lockMap: LockMap } {
   const queryClient = useQueryClient();
   const [lockMap, setLockMap] = useState<LockMap>({});
+  const locksRef = useRef<Record<string, LockEntry>>({});
 
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lockExpiryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSeqRef = useRef<number | null>(null);
 
   const setLockMapRef = useRef(setLockMap);
@@ -117,6 +168,8 @@ export function useTakeoutRealtime(
   useEffect(() => {
     if (!eventId || !baseUrl || !deviceId) return;
     lastSeqRef.current = null;
+    locksRef.current = {};
+    setLockMap({});
 
     let isActive = true;
     let ws: WebSocket | null = null;
@@ -129,6 +182,10 @@ export function useTakeoutRealtime(
       if (heartbeatTimerRef.current != null) {
         clearTimeout(heartbeatTimerRef.current);
         heartbeatTimerRef.current = null;
+      }
+      if (lockExpiryTimerRef.current != null) {
+        clearInterval(lockExpiryTimerRef.current);
+        lockExpiryTimerRef.current = null;
       }
     };
 
@@ -175,6 +232,7 @@ export function useTakeoutRealtime(
         if (data == null) return;
         if (data.type === "heartbeat") return;
         const seq = getMessageSeq(data);
+        if (seq != null && data.type !== "lock_snapshot" && lastSeqRef.current != null && seq <= lastSeqRef.current) return;
         if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
           lastSeqRef.current = seq;
         }
@@ -187,31 +245,27 @@ export function useTakeoutRealtime(
           });
         }
 
+        if (data.type === "lock_acquired" || data.type === "lock_renewed" || data.type === "lock_snapshot" || data.type === "lock_released") {
+          locksRef.current = expireLocks(applyLockEvent(locksRef.current, data));
+          setLockMap(Object.fromEntries(Object.entries(locksRef.current).map(([id, lock]) => [id, lock.deviceId])));
+          return;
+        }
         const invalidation = getRealtimeInvalidation(data);
         if (invalidation.invalidateAudit) {
           queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
         }
         if (invalidation.invalidateParticipants) {
-          queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
-          void queryClient.refetchQueries({
-            queryKey: ["takeout-event-participants", eventId],
-            type: "active",
-          });
+          if (data.type === "participant_checked_in" || data.type === "participant_checkin_reverted") {
+            queryClient.setQueryData(["takeout-event-participants", eventId], (participants: unknown) =>
+              Array.isArray(participants) ? applyParticipantCheckinPatch(participants, data, data.type === "participant_checked_in") : participants,
+            );
+          } else {
+            queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
+          }
           if (__DEV__) {
             console.log("[ws.mobile] invalidated participants", { eventId, type: data.type });
           }
           return;
-        }
-        if (data.type === "lock_acquired" && data.participant_id != null && data.device_id != null) {
-          updateLockMap((prev) => ({ ...prev, [data.participant_id]: data.device_id }));
-          return;
-        }
-        if (data.type === "lock_released" && data.participant_id != null) {
-          updateLockMap((prev) => {
-            const next = { ...prev };
-            delete next[data.participant_id];
-            return next;
-          });
         }
       };
 
@@ -226,6 +280,10 @@ export function useTakeoutRealtime(
     };
 
     connect();
+    lockExpiryTimerRef.current = setInterval(() => {
+      locksRef.current = expireLocks(locksRef.current);
+      setLockMap(Object.fromEntries(Object.entries(locksRef.current).map(([id, lock]) => [id, lock.deviceId])));
+    }, 1000);
 
     return () => {
       isActive = false;

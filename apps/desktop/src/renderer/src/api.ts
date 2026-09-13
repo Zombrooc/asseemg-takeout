@@ -91,6 +91,9 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify(payload),
 		}),
+	acquireLock: (participantId: string, deviceId = "desktop") => request<{ acquired: boolean; heldBy?: string }>("/locks", { method: "POST", body: JSON.stringify({ participantId, deviceId }) }),
+	renewLock: (participantId: string, deviceId = "desktop") => request<{ renewed: boolean }>("/locks/renew", { method: "POST", body: JSON.stringify({ participantId, deviceId }) }),
+	releaseLock: (participantId: string, deviceId = "desktop") => request<{ released: boolean }>(`/locks/${encodeURIComponent(participantId)}?deviceId=${encodeURIComponent(deviceId)}`, { method: "DELETE" }),
 	updateParticipant: (eventId: string, participantId: string, payload: Record<string, unknown>) =>
 		request<EventParticipant>(`/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(participantId)}`, { method: "PUT", body: JSON.stringify(payload) }),
 	updateLegacyParticipant: (eventId: string, participantId: string, payload: Record<string, unknown>) =>

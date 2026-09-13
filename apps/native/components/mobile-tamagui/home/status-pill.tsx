@@ -5,7 +5,7 @@ export function StatusPill({ isReachable }: { isReachable: boolean }) {
   return (
     <View style={{ flexShrink: 0 }}>
       <Badge variant={isReachable ? "success" : "danger"}>
-        {isReachable ? "LIVE" : "OFFLINE"}
+        {isReachable ? "Ao vivo" : "OFFLINE"}
       </Badge>
     </View>
   );

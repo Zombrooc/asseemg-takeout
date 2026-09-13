@@ -381,10 +381,14 @@ export default function EventScreen() {
   }, []);
 
   const handleConfirmed = useCallback(() => {
+    if (selectedParticipant) {
+      queryClient.setQueryData<DisplayParticipant[]>(["takeout-event-participants", eventId], (current) =>
+        current?.map((item) => item.id === selectedParticipant.id ? { ...item, checkinDone: true } : item),
+      );
+    }
     setSelectedParticipant(null);
-    participantsQuery.refetch();
     auditQuery.refetch();
-  }, [participantsQuery, auditQuery]);
+  }, [selectedParticipant, queryClient, eventId, auditQuery]);
 
   const handleConflict = useCallback(
     (ticketId: string) => {

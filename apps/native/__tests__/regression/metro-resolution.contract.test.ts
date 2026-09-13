@@ -3,7 +3,7 @@
  * See docs/incidents/2025-02-23-metro-blocklist-dist-resolution.md
  */
 import path from "path";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 
 const REPO_ROOT = path.resolve(__dirname, "../../../..");
 const NATIVE_ROOT = path.resolve(REPO_ROOT, "apps/native");
@@ -33,5 +33,33 @@ describe("metro-resolution contract (non-regression)", () => {
 
   it("contract 3: obsolete SDK 54 Metro patch must not remain after the SDK upgrade", () => {
     expect(existsSync(PATCH_PATH)).toBe(false);
+  });
+
+  it("contract 4: Uniwind internal react-native imports do not resolve back to the shim", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const config = require(METRO_CONFIG_PATH) as {
+      resolver: { resolveRequest: Function };
+    };
+    const resolved = config.resolver.resolveRequest(
+      { originModulePath: path.join(NATIVE_ROOT, "node_modules/uniwind/src/components/native/View.tsx") },
+      "react-native",
+      "android",
+    ) as { filePath?: string };
+    expect(resolved.filePath).not.toBe(path.join(NATIVE_ROOT, "react-native-shim.js"));
+    expect(resolved.filePath).toMatch(/[\\/]react-native[\\/]index\.js$/);
+  });
+
+  it("contract 5: Expo Router sources must not have compiled JavaScript route duplicates", () => {
+    const routeFiles: string[] = [];
+    const visit = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const absolutePath = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(absolutePath);
+        else if (entry.name.endsWith(".js")) routeFiles.push(absolutePath);
+      }
+    };
+
+    visit(path.join(NATIVE_ROOT, "app"));
+    expect(routeFiles).toEqual([]);
   });
 });

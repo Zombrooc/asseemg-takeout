@@ -32,6 +32,7 @@ import { api, wsUrl } from "./api";
 import { autoMap, buildMappedCsv, decodeCsv, getImportSteps, LEGACY_FIELDS, mappingIsValid, mapRows, parseCsv, type Mapping, type ParsedCsv } from "./import-utils";
 import { ASSEEMGLogo } from "./AsseemgLogo";
 import { getEventMetadataErrors } from "./event-validation";
+import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
 
 type Page = "dashboard" | "event" | "new-event" | "import" | "audit";
 type Notice = { kind: "success" | "error"; message: string } | null;
@@ -40,7 +41,7 @@ function useAsync<T>(
 	loader: () => Promise<T>,
 	deps: unknown[],
 	initial: T,
-): { data: T; loading: boolean; error: string | null; reload: () => void } {
+): { data: T; loading: boolean; error: string | null; reload: () => void; patch: (updater: (current: T) => T) => void } {
 	const [data, setData] = useState(initial);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ function useAsync<T>(
 	const loaderRef = useRef(loader);
 	loaderRef.current = loader;
 	const reload = useCallback(() => setVersion((current) => current + 1), []);
+	const patch = useCallback((updater: (current: T) => T) => setData((current) => updater(current)), []);
 	useEffect(() => {
 		void version;
 		let active = true;
@@ -73,7 +75,7 @@ function useAsync<T>(
 			active = false;
 		};
 	}, [...deps, version]);
-	return { data, loading, error, reload };
+	return { data, loading, error, reload, patch };
 }
 
 export function shouldReloadParticipants(messageData: unknown): boolean {
@@ -88,6 +90,24 @@ export function shouldReloadParticipants(messageData: unknown): boolean {
 	} catch {
 		return false;
 	}
+}
+
+export function patchDesktopParticipants<T extends { id: string; ticketId?: string; checkinDone: boolean }>(participants: T[], message: WsTakeoutMessage): T[] {
+	const participantMessage = message as { source_type?: string; participant_id?: string; ticket_id?: string };
+	const isLegacy = participantMessage.source_type === "legacy_csv" || (participantMessage.ticket_id == null && participantMessage.participant_id != null);
+	const target = isLegacy ? participantMessage.participant_id : participantMessage.ticket_id;
+	if (!target) return participants;
+	if (message.type === "participant_updated") {
+		const fields = message as typeof message & { name?: string | null; cpf?: string | null; birthDate?: string | null; ticketName?: string | null; modality?: string | null };
+		return participants.map((item) => (isLegacy ? item.id === target : item.ticketId === target) ? { ...item, ...(fields.name !== undefined ? { name: fields.name } : {}), ...(fields.cpf !== undefined ? { cpf: fields.cpf } : {}), ...(fields.birthDate !== undefined ? { birthDate: fields.birthDate } : {}), ...(fields.ticketName !== undefined ? { ticketName: fields.ticketName } : {}), ...(fields.modality !== undefined ? { modality: fields.modality } : {}) } : item);
+	}
+	if (message.type !== "participant_checked_in" && message.type !== "participant_checkin_reverted") return participants;
+	const done = message.type === "participant_checked_in";
+	return participants.map((item) =>
+		(isLegacy ? item.id === target : item.ticketId === target)
+			? { ...item, checkinDone: done }
+			: item,
+	);
 }
 
 function WindowControls() {
@@ -366,6 +386,26 @@ function Dashboard({
 							Copiar URL
 						</button>
 					</div>
+					{network.data.addresses.length > 1 && (
+						<div className="network-addresses">
+							<small>Outros endereços disponíveis nesta máquina</small>
+							{network.data.addresses.map((address) => (
+								<button
+									key={`${address.interfaceName}-${address.ip}`}
+									type="button"
+									className={address.isPrimary ? "selected" : ""}
+									onClick={() => {
+										void navigator.clipboard.writeText(
+											`${address.url}?token=${encodeURIComponent(connection.data?.pairingToken ?? "")}`,
+										);
+										notify({ kind: "success", message: "URL da rede copiada" });
+									}}
+								>
+									{address.ip} · {address.interfaceName}
+								</button>
+							))}
+						</div>
+					)}
 					<button type="button" className="button outline" onClick={() => void renew()}>
 						<RefreshCw size={15} /> Renovar token
 					</button>
@@ -577,12 +617,25 @@ function EventPage({
 	useEffect(() => {
 		const socket = new WebSocket(wsUrl(event.eventId));
 		socket.onmessage = (message) => {
-			if (shouldReloadParticipants(message.data)) participants.reload();
+			try {
+				const data = JSON.parse(message.data) as WsTakeoutMessage;
+				if (data.type === "lock_acquired" || data.type === "lock_renewed" || data.type === "lock_snapshot") {
+					if (data.participant_id && data.device_id && data.expires_at) setLockMap((current) => ({ ...current, [data.participant_id!]: { deviceId: data.device_id!, expiresAt: data.expires_at! } }));
+				} else if (data.type === "lock_released" && data.participant_id) {
+					setLockMap((current) => current[data.participant_id!]?.deviceId === data.device_id ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== data.participant_id)) : current);
+				}
+				participants.patch((current) => patchDesktopParticipants(current, data));
+			} catch { /* ignore malformed messages */ }
 		};
 		return () => socket.close();
-	}, [event.eventId, participants.reload]);
+	}, [event.eventId, participants.patch]);
+	useEffect(() => {
+		const timer = window.setInterval(() => setLockMap((current) => Object.fromEntries(Object.entries(current).filter(([, lock]) => lock.expiresAt > Date.now() / 1000))), 1000);
+		return () => window.clearInterval(timer);
+	}, []);
 	const [search, setSearch] = useState("");
 	const [busyId, setBusyId] = useState<string | null>(null);
+	const [lockMap, setLockMap] = useState<Record<string, { deviceId: string; expiresAt: number }>>({});
 	const [confirming, setConfirming] = useState<EventParticipant | LegacyEventParticipant | null>(null);
 	const [editing, setEditing] = useState<EventParticipant | LegacyEventParticipant | null>(null);
 	const [editName, setEditName] = useState("");
@@ -591,6 +644,13 @@ function EventPage({
 	const [editTicketType, setEditTicketType] = useState("");
 	const [editShirtSize, setEditShirtSize] = useState("");
 	const [editTeam, setEditTeam] = useState("");
+	useEffect(() => {
+		if (!confirming) return;
+		let active = true;
+		void api.acquireLock(confirming.id).catch(() => {});
+		const timer = window.setInterval(() => { if (active) void api.renewLock(confirming.id).catch(() => {}); }, 15000);
+		return () => { active = false; window.clearInterval(timer); void api.releaseLock(confirming.id).catch(() => {}); };
+	}, [confirming]);
 	const filtered = useMemo(() => {
 		const query = search.trim().toLocaleLowerCase("pt-BR");
 		if (!query) return participants.data;
@@ -605,6 +665,8 @@ function EventPage({
 	const confirm = async (item: EventParticipant | LegacyEventParticipant) => {
 		setBusyId(item.id);
 		try {
+			const lock = await api.acquireLock(item.id);
+			if (!lock.acquired) throw new Error("Participante em atendimento por outro dispositivo");
 			const requestId = crypto.randomUUID();
 			if (legacy)
 				await api.legacyConfirm({
@@ -619,7 +681,8 @@ function EventPage({
 					ticket_id: (item as EventParticipant).ticketId,
 					device_id: "desktop",
 				});
-			participants.reload();
+			participants.patch((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, checkinDone: true } : candidate));
+			await api.releaseLock(item.id);
 			notify({ kind: "success", message: "Retirada confirmada" });
 		} catch (caught) {
 			notify({
@@ -630,6 +693,7 @@ function EventPage({
 						: "Falha ao confirmar retirada",
 			});
 		} finally {
+			await api.releaseLock(item.id).catch(() => {});
 			setBusyId(null);
 		}
 	};
@@ -650,7 +714,7 @@ function EventPage({
 					ticket_id: (item as EventParticipant).ticketId,
 					device_id: "desktop",
 				});
-			participants.reload();
+			participants.patch((current) => current.map((candidate) => candidate.id === item.id ? { ...candidate, checkinDone: false } : candidate));
 			notify({ kind: "success", message: "Retirada desfeita" });
 		} catch (caught) {
 			notify({
@@ -675,8 +739,9 @@ function EventPage({
 		setBusyId(editing.id);
 		try {
 			const payload = { name: editName.trim(), cpf: editCpf.trim(), birthDate: editBirthDate, ticketType: editTicketType.trim(), shirtSize: editShirtSize.trim() || null, team: editTeam.trim() || null };
-			if (legacy) await api.updateLegacyParticipant(event.eventId, editing.id, payload); else await api.updateParticipant(event.eventId, editing.id, payload);
-			setEditing(null); participants.reload(); notify({ kind: "success", message: "Participante atualizado" });
+			const updated = legacy ? await api.updateLegacyParticipant(event.eventId, editing.id, payload) : await api.updateParticipant(event.eventId, editing.id, payload);
+			participants.patch((current) => current.map((candidate) => candidate.id === editing.id ? updated : candidate));
+			setEditing(null); notify({ kind: "success", message: "Participante atualizado" });
 		} catch (caught) { notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao editar participante" }); }
 		finally { setBusyId(null); }
 	};
@@ -731,8 +796,9 @@ function EventPage({
 							</tr>
 						</thead>
 						<tbody>
-							{filtered.map((item) => (
-								<tr key={item.id}>
+							{filtered.map((item) => {
+								const lockedByOther = lockMap[item.id]?.deviceId != null && lockMap[item.id].deviceId !== "desktop";
+								return <tr key={item.id}>
 									<td>
 										<strong>
 											{legacy
@@ -780,15 +846,15 @@ function EventPage({
 											>
 												Desfazer
 											</button>
-												) : (
+												) : lockedByOther ? <span className="status pending">Em atendimento</span> : (
 													<>
 														<button type="button" className="button small outline" disabled={busyId === item.id} onClick={() => openEdit(item)}>Editar</button>
-														<button type="button" className="button small primary" disabled={busyId === item.id} onClick={() => setConfirming(item)}>{busyId === item.id ? "..." : "Confirmar"}</button>
+														<button type="button" className="button small primary" disabled={busyId === item.id || lockedByOther} onClick={() => setConfirming(item)}>{busyId === item.id ? "..." : "Confirmar"}</button>
 													</>
 												)}
 									</td>
-								</tr>
-							))}
+								</tr>;
+							})}
 						</tbody>
 					</table>
 			</div>
@@ -1248,11 +1314,6 @@ export default function App() {
 		setPage("event");
 	};
 	const openNewEvent = () => setPage("new-event");
-	useEffect(() => {
-		if (!event) return;
-		const socket = new WebSocket(wsUrl(event.eventId));
-		return () => socket.close();
-	}, [event]);
 	const content =
 		page === "dashboard" ? (
 			<Dashboard onOpenEvent={openEvent} onOpenNewEvent={openNewEvent} notify={notify} />

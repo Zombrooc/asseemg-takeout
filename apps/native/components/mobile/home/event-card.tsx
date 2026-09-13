@@ -55,7 +55,7 @@ export function EventCard({
             </View>
             <View className="shrink-0">
               <Chip color={isLive ? "success" : "default"} size="sm">
-                <Chip.Label>{isLive ? "LIVE" : "OFFLINE"}</Chip.Label>
+                <Chip.Label>{isLive ? "Ao vivo" : "OFFLINE"}</Chip.Label>
               </Chip>
             </View>
           </View>

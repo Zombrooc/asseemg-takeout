@@ -63,6 +63,10 @@ h3 { margin: 9px 0 7px; font-size: 18px; }
 .pairing-url { display: flex; align-items: center; gap: 10px; max-width: 650px; margin-top: 22px; padding: 7px 8px 7px 11px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone-dim); font: 11px var(--qz-font-family-mono); overflow: hidden; }
 .pairing-url:first-letter { color: var(--qz-color-brand-accent); }
 .pairing-url .button { flex-shrink: 0; margin: 0 0 0 auto; }
+.network-addresses { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; max-width: 650px; margin-top: 10px; color: var(--qz-color-neutral-smoke); font-size: 11px; }
+.network-addresses small { flex-basis: 100%; color: var(--qz-color-neutral-bone-muted); }
+.network-addresses button { padding: 4px 7px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone-muted); background: var(--qz-color-neutral-asphalt-mid); font: 10px var(--qz-font-family-mono); }
+.network-addresses button:hover, .network-addresses button.selected { border-color: var(--qz-color-brand-accent); color: var(--qz-color-brand-accent); }
 .qr-frame { display: grid; place-items: center; width: 180px; height: 180px; flex: 0 0 180px; border-radius: var(--qz-radius-lg); background: white; }
 .section { margin-top: 40px; }
 .section-heading { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; }
