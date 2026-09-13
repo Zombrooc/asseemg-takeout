@@ -40,6 +40,15 @@ export const api = {
 	renewPairing: () =>
 		request<ConnectionInfo>("/pair/renew", { method: "POST" }),
 	events: () => request<EventSummary[]>("/events?includeArchived=true"),
+	createEvent: (payload: {
+		name: string;
+		startDate: string;
+		endDate?: string | null;
+		startTime?: string | null;
+	}) => request<EventSummary>("/events", {
+		method: "POST",
+		body: JSON.stringify(payload),
+	}),
 	participants: (eventId: string) =>
 		request<EventParticipant[]>(
 			`/events/${encodeURIComponent(eventId)}/participants`,
@@ -76,6 +85,10 @@ export const api = {
 			method: "POST",
 			body: JSON.stringify(payload),
 		}),
+	updateParticipant: (eventId: string, participantId: string, payload: Record<string, unknown>) =>
+		request<EventParticipant>(`/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(participantId)}`, { method: "PUT", body: JSON.stringify(payload) }),
+	updateLegacyParticipant: (eventId: string, participantId: string, payload: Record<string, unknown>) =>
+		request<LegacyEventParticipant>(`/events/${encodeURIComponent(eventId)}/legacy-participants/${encodeURIComponent(participantId)}`, { method: "PUT", body: JSON.stringify(payload) }),
 	archive: (eventId: string) =>
 		request<{ archived: boolean }>(
 			`/events/${encodeURIComponent(eventId)}/archive`,
@@ -104,10 +117,14 @@ export const api = {
 		eventStartDate: string;
 		file: File;
 		eventId?: string;
+		endDate?: string | null;
+		startTime?: string | null;
 	}) => {
 		const form = new FormData();
 		form.append("eventName", fields.eventName);
 		form.append("eventStartDate", fields.eventStartDate);
+		if (fields.endDate) form.append("eventEndDate", fields.endDate);
+		if (fields.startTime) form.append("eventStartTime", fields.startTime);
 		if (fields.eventId) form.append("eventId", fields.eventId);
 		form.append("file", fields.file);
 		return request<{ imported: number; errors: string[] }>(

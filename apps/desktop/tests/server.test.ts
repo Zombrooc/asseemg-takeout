@@ -31,4 +31,25 @@ describe("takeout server", () => {
     const pairing = await fetch(`http://127.0.0.1:${address.port}/pair/info`);
     expect(await pairing.json()).toMatchObject({ baseUrl: "http://192.168.1.50:5555" });
   });
+
+  it("creates an empty event from the new event form", async () => {
+    const db = openMemoryDatabase();
+    const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+    runningServers.push(server);
+    await startTakeoutServer(server, 0);
+    const address = server.httpServer.address();
+    if (!address || typeof address === "string") throw new Error("server address unavailable");
+
+    const response = await fetch(`http://127.0.0.1:${address.port}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Corrida de Domingo", startDate: "2026-09-20" }),
+    });
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      name: "Corrida de Domingo",
+      startDate: "2026-09-20",
+      sourceType: "manual",
+    });
+  });
 });

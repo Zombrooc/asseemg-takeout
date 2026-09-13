@@ -26,7 +26,7 @@ export type EventSummary = {
   endDate: string | null;
   startTime: string | null;
   importedAt: string;
-  sourceType?: "json_sync" | "legacy_csv";
+  sourceType?: "json_sync" | "legacy_csv" | "manual";
   archivedAt?: string | null;
 };
 

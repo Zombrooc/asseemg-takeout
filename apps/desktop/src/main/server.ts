@@ -542,6 +542,18 @@ export function createTakeoutServer({
 			})),
 		);
 	});
+	app.post("/events", (req, res) => {
+		const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+		const startDate = typeof req.body?.startDate === "string" ? req.body.startDate.trim() : "";
+		if (!name || !startDate) return error(res, 422, "name and startDate are required");
+		const eventId = randomUUID();
+		const endDate = typeof req.body?.endDate === "string" && req.body.endDate.trim() ? req.body.endDate.trim() : null;
+		const startTime = typeof req.body?.startTime === "string" && req.body.startTime.trim() ? req.body.startTime.trim() : null;
+		const importedAt = nowIso();
+		db.prepare("INSERT INTO events (event_id, name, start_date, end_date, start_time, imported_at, source_type) VALUES (?, ?, ?, ?, ?, ?, 'manual')").run(eventId, name, startDate, endDate, startTime, importedAt);
+		broadcast(clients, "_events", { type: "events_list_changed" });
+		return json(res, 201, { eventId, name, startDate, endDate, startTime, importedAt, sourceType: "manual", archivedAt: null });
+	});
 	app.post("/events/:eventId/archive", (req, res) => {
 		const result = db
 			.prepare("UPDATE events SET archived_at = ? WHERE event_id = ?")
@@ -632,12 +644,15 @@ export function createTakeoutServer({
 		if (checked) return error(res, 409, "participant already checked in");
 		const result = db
 			.prepare(
-				"UPDATE participants SET name = ?, cpf = ?, birth_date = ?, raw_json = json_set(COALESCE(raw_json, '{}'), '$.ticketName', '$ticketName', '$.shirtSize', '$shirtSize', '$.team', '$team') WHERE id = ? AND event_id = ?",
+				"UPDATE participants SET name = ?, cpf = ?, birth_date = ?, raw_json = json_set(COALESCE(raw_json, '{}'), '$.ticketName', ?, '$.shirtSize', ?, '$.team', ?) WHERE id = ? AND event_id = ?",
 			)
 			.run(
 				name,
 				String(body.cpf ?? "").trim(),
 				birthDate,
+				ticketType,
+				body.shirtSize ?? null,
+				body.team ?? null,
 				req.params.participantId,
 				req.params.eventId,
 			);
@@ -918,6 +933,8 @@ export function createTakeoutServer({
 	app.post("/admin/import/legacy-csv", upload.single("file"), (req, res) => {
 		const eventName = String(req.body.eventName ?? "").trim();
 		const eventStartDate = String(req.body.eventStartDate ?? "").trim();
+		const eventEndDate = String(req.body.eventEndDate ?? "").trim() || null;
+		const eventStartTime = String(req.body.eventStartTime ?? "").trim() || null;
 		if (!eventName) return error(res, 400, "eventName is required");
 		if (!eventStartDate) return error(res, 400, "eventStartDate is required");
 		if (!req.file) return error(res, 400, "file is required");
@@ -935,8 +952,8 @@ export function createTakeoutServer({
 		const importRows = db.transaction(() => {
 			const timestamp = nowIso();
 			db.prepare(
-				"INSERT INTO events (event_id,name,start_date,imported_at,source_type) VALUES (?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET name=excluded.name,start_date=excluded.start_date,source_type=excluded.source_type",
-			).run(eventId, eventName, eventStartDate, timestamp, "legacy_csv");
+				"INSERT INTO events (event_id,name,start_date,end_date,start_time,imported_at,source_type) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET name=excluded.name,start_date=excluded.start_date,end_date=excluded.end_date,start_time=excluded.start_time,source_type=excluded.source_type",
+			).run(eventId, eventName, eventStartDate, eventEndDate, eventStartTime, timestamp, "legacy_csv");
 			let imported = 0;
 			for (const row of rows) {
 				if (!row.name.trim()) continue;

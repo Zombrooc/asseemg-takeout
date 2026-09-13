@@ -40,7 +40,10 @@ async function createMainWindow(): Promise<void> {
 			preload: join(__dirname, "../preload/index.mjs"),
 			contextIsolation: true,
 			nodeIntegration: false,
-			sandbox: true,
+			// electron-vite emits the preload as an ESM file. Sandboxed
+			// preloads cannot use ESM imports, so keep the renderer isolated
+			// while allowing this preload to be evaluated.
+			sandbox: false,
 		},
 	});
 

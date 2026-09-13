@@ -5,6 +5,7 @@ import {
 	ArrowLeft,
 	BarChart3,
 	Check,
+	CalendarPlus,
 	ClipboardList,
 	FileUp,
 	FolderOpen,
@@ -28,8 +29,10 @@ import type {
 	LegacyEventParticipant,
 } from "./api";
 import { api, wsUrl } from "./api";
+import { autoMap, buildMappedCsv, decodeCsv, LEGACY_FIELDS, mappingIsValid, mapRows, parseCsv, type Mapping, type ParsedCsv } from "./import-utils";
+import { ASSEEMGLogo } from "./AsseemgLogo";
 
-type Page = "dashboard" | "event" | "import" | "audit";
+type Page = "dashboard" | "event" | "new-event" | "import" | "audit";
 type Notice = { kind: "success" | "error"; message: string } | null;
 
 function useAsync<T>(
@@ -48,7 +51,8 @@ function useAsync<T>(
 		void version;
 		let active = true;
 		setLoading(true);
-		loaderRef.current()
+		Promise.resolve()
+			.then(() => loaderRef.current())
 			.then((value) => {
 				if (active) {
 					setData(value);
@@ -115,17 +119,14 @@ function Shell({
 		icon: typeof LayoutDashboard;
 	}> = [
 		{ page: "dashboard", label: "Visão geral", icon: LayoutDashboard },
-		{ page: "import", label: "Importar evento", icon: FileUp },
 		{ page: "audit", label: "Auditoria", icon: ClipboardList },
 	];
 	return (
 		<div className="app-shell">
 			<header className="titlebar">
 				<div className="brand">
-					<span className="brand-mark">A</span>
-					<span>
-						ASSEEMG <strong>Retira</strong>
-					</span>
+					<ASSEEMGLogo aria-label="ASSEEMG" />
+					<strong>Retira</strong>
 				</div>
 				<span className="titlebar-caption">Operação offline</span>
 				<WindowControls />
@@ -175,9 +176,11 @@ function Notice({ notice, onClose }: { notice: Notice; onClose: () => void }) {
 
 function Dashboard({
 	onOpenEvent,
+	onOpenNewEvent,
 	notify,
 }: {
 	onOpenEvent: (event: EventSummary) => void;
+	onOpenNewEvent: () => void;
 	notify: (notice: Exclude<Notice, null>) => void;
 }) {
 	const events = useAsync(api.events, [], [] as EventSummary[]);
@@ -273,14 +276,9 @@ function Dashboard({
 						<button
 							type="button"
 							className="button primary"
-						onClick={() =>
-							notify({
-								kind: "success",
-								message: "Use Importar evento para adicionar um evento.",
-							})
-						}
+						onClick={onOpenNewEvent}
 					>
-						<Plus size={16} /> Novo evento
+						<Plus size={16} /> Novo Evento
 					</button>
 				}
 			/>
@@ -369,7 +367,7 @@ function Dashboard({
 				<div className="section-heading">
 					<div>
 						<div className="eyebrow">Base de eventos</div>
-						<h2>Eventos importados</h2>
+						<h2>Eventos</h2>
 					</div>
 					<button type="button" className="button ghost" onClick={() => events.reload()}>
 						<RefreshCw size={15} /> Atualizar
@@ -563,6 +561,14 @@ function EventPage({
 	);
 	const [search, setSearch] = useState("");
 	const [busyId, setBusyId] = useState<string | null>(null);
+	const [confirming, setConfirming] = useState<EventParticipant | LegacyEventParticipant | null>(null);
+	const [editing, setEditing] = useState<EventParticipant | LegacyEventParticipant | null>(null);
+	const [editName, setEditName] = useState("");
+	const [editCpf, setEditCpf] = useState("");
+	const [editBirthDate, setEditBirthDate] = useState("");
+	const [editTicketType, setEditTicketType] = useState("");
+	const [editShirtSize, setEditShirtSize] = useState("");
+	const [editTeam, setEditTeam] = useState("");
 	const filtered = useMemo(() => {
 		const query = search.trim().toLocaleLowerCase("pt-BR");
 		if (!query) return participants.data;
@@ -637,6 +643,21 @@ function EventPage({
 		}
 	};
 	const checked = participants.data.filter((item) => item.checkinDone).length;
+	const openEdit = (item: EventParticipant | LegacyEventParticipant) => {
+		setEditing(item); setEditName("name" in item ? item.name ?? "" : ""); setEditCpf(item.cpf ?? "");
+		setEditBirthDate(item.birthDate ?? ""); setEditTicketType(legacy ? ((item as LegacyEventParticipant).modality ?? "") : ((item as EventParticipant).ticketName ?? ""));
+		setEditShirtSize((item as EventParticipant).shirtSize ?? (item as LegacyEventParticipant).shirtSize ?? ""); setEditTeam((item as EventParticipant).team ?? (item as LegacyEventParticipant).team ?? "");
+	};
+	const saveEdit = async () => {
+		if (!editing || !editName.trim() || !editBirthDate || !editTicketType.trim()) { notify({ kind: "error", message: "Preencha nome, data e tipo de ingresso" }); return; }
+		setBusyId(editing.id);
+		try {
+			const payload = { name: editName.trim(), cpf: editCpf.trim(), birthDate: editBirthDate, ticketType: editTicketType.trim(), shirtSize: editShirtSize.trim() || null, team: editTeam.trim() || null };
+			if (legacy) await api.updateLegacyParticipant(event.eventId, editing.id, payload); else await api.updateParticipant(event.eventId, editing.id, payload);
+			setEditing(null); participants.reload(); notify({ kind: "success", message: "Participante atualizado" });
+		} catch (caught) { notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao editar participante" }); }
+		finally { setBusyId(null); }
+	};
 	return (
 		<div className="page">
 			<button type="button" className="back-link" onClick={onBack}>
@@ -737,23 +758,21 @@ function EventPage({
 											>
 												Desfazer
 											</button>
-										) : (
-							<button
-								type="button"
-								className="button small primary"
-												disabled={busyId === item.id}
-												onClick={() => void confirm(item)}
-											>
-												{busyId === item.id ? "..." : "Confirmar"}
-											</button>
-										)}
+												) : (
+													<>
+														<button type="button" className="button small outline" disabled={busyId === item.id} onClick={() => openEdit(item)}>Editar</button>
+														<button type="button" className="button small primary" disabled={busyId === item.id} onClick={() => setConfirming(item)}>{busyId === item.id ? "..." : "Confirmar"}</button>
+													</>
+												)}
 									</td>
 								</tr>
 							))}
 						</tbody>
 					</table>
-				</div>
+			</div>
 			)}
+			{confirming ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Confirmar retirada</h2><dl className="detail-list"><dt>Nome</dt><dd>{"name" in confirming ? confirming.name : "-"}</dd><dt>CPF</dt><dd>{confirming.cpf || "-"}</dd><dt>Data de nascimento</dt><dd>{confirming.birthDate || "-"}</dd><dt>{legacy ? "Número" : "Ticket"}</dt><dd>{legacy ? (confirming as LegacyEventParticipant).bibNumber : (confirming as EventParticipant).ticketId}</dd><dt>Categoria</dt><dd>{legacy ? (confirming as LegacyEventParticipant).modality : (confirming as EventParticipant).ticketName}</dd></dl><div className="form-actions"><button type="button" className="button ghost" onClick={() => setConfirming(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === confirming.id} onClick={() => { void confirm(confirming).finally(() => setConfirming(null)); }}>Confirmar retirada</button></div></div></div> : null}
+			{editing ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Editar participante</h2><Field label="Nome"><input value={editName} onChange={(e) => setEditName(e.target.value)} /></Field><Field label="CPF"><input value={editCpf} onChange={(e) => setEditCpf(e.target.value)} /></Field><Field label="Data de nascimento"><input type="date" value={editBirthDate} onChange={(e) => setEditBirthDate(e.target.value)} min="1900-01-01" /></Field><Field label="Tipo de ingresso"><input value={editTicketType} onChange={(e) => setEditTicketType(e.target.value)} /></Field><Field label="Tamanho da camisa"><input value={editShirtSize} onChange={(e) => setEditShirtSize(e.target.value)} /></Field><Field label="Equipe"><input value={editTeam} onChange={(e) => setEditTeam(e.target.value)} /></Field><div className="form-actions"><button type="button" className="button ghost" onClick={() => setEditing(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === editing.id} onClick={() => void saveEdit()}>{busyId === editing.id ? "Salvando..." : "Salvar"}</button></div></div></div> : null}
 		</div>
 	);
 }
@@ -761,34 +780,74 @@ function EventPage({
 function ImportPage({
 	notify,
 	onDone,
+	isNewEvent = false,
 }: {
 	notify: (notice: Exclude<Notice, null>) => void;
-	onDone: () => void;
+	onDone: (event?: EventSummary) => void;
+	isNewEvent?: boolean;
 }) {
 	const [mode, setMode] = useState<"csv" | "json">("csv");
 	const [eventName, setEventName] = useState("");
 	const [eventStartDate, setEventStartDate] = useState("");
+	const [eventEndDate, setEventEndDate] = useState("");
+	const [eventStartTime, setEventStartTime] = useState("");
 	const [file, setFile] = useState<File | null>(null);
+	const [csv, setCsv] = useState<ParsedCsv | null>(null);
+	const [mapping, setMapping] = useState<Mapping | null>(null);
+	const [json, setJson] = useState<Record<string, unknown> | null>(null);
 	const [busy, setBusy] = useState(false);
+	const selectFile = async (next: File | null) => {
+		setFile(next); setCsv(null); setMapping(null); setJson(null);
+		if (!next) return;
+		try {
+			if (mode === "csv") {
+				const parsed = parseCsv(decodeCsv(await next.arrayBuffer()));
+				setCsv(parsed); setMapping(autoMap(parsed.headers));
+			} else {
+				const parsed = JSON.parse(await next.text()) as Record<string, unknown>;
+				if (!Array.isArray(parsed.participants)) throw new Error("O JSON não contém uma lista de participantes válida");
+				setJson(parsed);
+			}
+		} catch (caught) {
+			notify({ kind: "error", message: caught instanceof Error ? caught.message : "Arquivo inválido" });
+			setFile(null);
+		}
+	};
 	const submit = async () => {
-		if (!file) {
+		if (!isNewEvent && !file) {
 			notify({ kind: "error", message: "Selecione um arquivo" });
+			return;
+		}
+		if (mode === "csv" && file && (!csv || !mapping || !mappingIsValid(mapping))) {
+			notify({ kind: "error", message: "Mapeie as colunas obrigatórias antes de importar" });
+			return;
+		}
+		if (file && (!eventName.trim() || !eventStartDate)) {
+			notify({ kind: "error", message: "Informe o nome e a data inicial do evento" });
+			return;
+		}
+		if (isNewEvent && (!eventName.trim() || !eventStartDate)) {
+			notify({ kind: "error", message: "Informe o nome e a data inicial do evento" });
 			return;
 		}
 		setBusy(true);
 		try {
-			if (mode === "csv") {
-				const result = await api.importCsv({ eventName, eventStartDate, file });
-				notify({
-					kind: "success",
-					message: `${result.imported} participantes importados`,
-				});
-			} else {
-				const parsed = JSON.parse(await file.text());
-				await api.importJson(parsed);
+			const eventId = crypto.randomUUID();
+			if (mode === "csv" && file && csv && mapping) {
+				const normalized = new File([buildMappedCsv(csv.rows, mapping)], file.name || "participantes.csv", { type: "text/csv" });
+				await api.importCsv({ eventName: eventName.trim() || file.name.replace(/\.[^.]+$/, ""), eventStartDate: eventStartDate || new Date().toISOString().slice(0, 10), endDate: eventEndDate || null, startTime: eventStartTime || null, eventId, file: normalized });
+				notify({ kind: "success", message: `${mapRows(csv.rows, mapping).length} participantes importados` });
+			} else if (mode === "json" && file && json) {
+				const sourceEvent = (json.event ?? {}) as Record<string, unknown>;
+				await api.importJson({ ...json, eventId, event: { ...sourceEvent, id: eventId, name: eventName || sourceEvent.name || eventId, startDate: eventStartDate || sourceEvent.startDate, endDate: eventEndDate || sourceEvent.endDate || null, startTime: eventStartTime || sourceEvent.startTime || null } });
 				notify({ kind: "success", message: "Evento importado" });
+			} else {
+				const created = await api.createEvent({ name: eventName.trim(), startDate: eventStartDate, endDate: eventEndDate || null, startTime: eventStartTime || null });
+				notify({ kind: "success", message: "Evento criado" });
+				onDone(created); return;
 			}
-			onDone();
+			const events = await api.events();
+			onDone(events.find((item) => item.eventId === eventId));
 		} catch (caught) {
 			notify({
 				kind: "error",
@@ -803,21 +862,21 @@ function ImportPage({
 		<div className="page narrow">
 			<PageHeader
 				eyebrow="Base de eventos"
-				title="Importar evento"
-				subtitle="Carregue participantes para operar as retiradas sem internet."
+				title={isNewEvent ? "Novo evento" : "Importar evento"}
+				subtitle="Revise os dados antes de salvar e operar as retiradas sem internet."
 			/>
 			<div className="import-tabs">
 				<button
 					type="button"
 					className={mode === "csv" ? "selected" : ""}
-					onClick={() => setMode("csv")}
+					onClick={() => { setMode("csv"); setFile(null); setCsv(null); setMapping(null); setJson(null); }}
 				>
 					<FileUp size={17} /> CSV legado
 				</button>
 				<button
 					type="button"
 					className={mode === "json" ? "selected" : ""}
-					onClick={() => setMode("json")}
+					onClick={() => { setMode("json"); setFile(null); setCsv(null); setMapping(null); setJson(null); }}
 				>
 					<Upload size={17} /> JSON sincronizado
 				</button>
@@ -846,6 +905,8 @@ function ImportPage({
 						<code>participants</code> no formato de sincronização atual.
 					</div>
 				)}
+				<Field label="Data final (opcional)"><input type="date" value={eventEndDate} onChange={(event) => setEventEndDate(event.target.value)} /></Field>
+				<Field label="Horário (opcional)"><input type="time" value={eventStartTime} onChange={(event) => setEventStartTime(event.target.value)} /></Field>
 				<label className="dropzone">
 					<Upload size={24} />
 					<strong>{file ? file.name : "Escolha um arquivo"}</strong>
@@ -857,9 +918,11 @@ function ImportPage({
 					<input
 						type="file"
 						accept={mode === "csv" ? ".csv,text/csv" : ".json,application/json"}
-						onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+						onChange={(event) => void selectFile(event.target.files?.[0] ?? null)}
 					/>
 				</label>
+				{mode === "csv" && csv && mapping ? <section className="mapping-card"><h2>Mapeamento das colunas</h2>{LEGACY_FIELDS.map((field) => <Field key={field.key} label={`${field.label}${field.required ? " *" : ""}`}><select value={mapping[field.key] == null ? "" : String(mapping[field.key])} onChange={(event) => setMapping({ ...mapping, [field.key]: event.target.value === "" ? null : Number(event.target.value) })}><option value="">{field.required ? "Selecione a coluna" : "Não usar"}</option>{csv.headers.map((header, index) => <option key={`${header}-${index}`} value={index}>{header || `Coluna ${index + 1}`}</option>)}</select></Field>)}{!mappingIsValid(mapping) && <p className="validation-error">Selecione as colunas obrigatórias sem repetir.</p>}<div className="info-box">Preview: {mapRows(csv.rows, mapping).length} participantes válidos.</div><div className="table-card import-preview"><table><thead><tr>{LEGACY_FIELDS.map((field) => <th key={field.key}>{field.label}</th>)}</tr></thead><tbody>{mapRows(csv.rows, mapping).slice(0, 10).map((row, index) => <tr key={index}>{LEGACY_FIELDS.map((field) => <td key={field.key}>{row[field.key] || "—"}</td>)}</tr>)}</tbody></table></div></section> : null}
+				{mode === "json" && json ? <div className="info-box">Preview carregado: {Array.isArray(json.participants) ? json.participants.length : 0} participantes.</div> : null}
 				<div className="form-actions">
 					<button
 						type="button"
@@ -873,7 +936,7 @@ function ImportPage({
 							</>
 						) : (
 							<>
-								<Upload size={16} /> Importar arquivo
+								<Upload size={16} /> {isNewEvent && !file ? "Criar evento" : "Importar e salvar"}
 							</>
 						)}
 					</button>
@@ -997,6 +1060,105 @@ function AuditPage() {
 	);
 }
 
+function NewEventPage({
+	notify,
+	onCreated,
+}: {
+	notify: (notice: Exclude<Notice, null>) => void;
+	onCreated: (event: EventSummary) => void;
+}) {
+	const [name, setName] = useState("");
+	const [startDate, setStartDate] = useState("");
+	const [endDate, setEndDate] = useState("");
+	const [startTime, setStartTime] = useState("");
+	const [file, setFile] = useState<File | null>(null);
+	const [busy, setBusy] = useState(false);
+	const submit = async () => {
+		if (!name.trim() || !startDate) {
+			notify({ kind: "error", message: "Informe o nome e a data inicial do evento" });
+			return;
+		}
+		setBusy(true);
+		try {
+			const extension = file?.name.toLowerCase().split(".").pop();
+			if (file && extension !== "csv" && extension !== "json") {
+				notify({ kind: "error", message: "Escolha um arquivo CSV ou JSON" });
+				return;
+			}
+			const parsedJson = file && file.name.toLowerCase().endsWith(".json")
+				? (JSON.parse(await file.text()) as Record<string, unknown>)
+				: null;
+			if (parsedJson && !Array.isArray(parsedJson.participants)) {
+				notify({ kind: "error", message: "O JSON não contém uma lista de participantes válida" });
+				return;
+			}
+			const created = await api.createEvent({
+				name: name.trim(),
+				startDate,
+				endDate: endDate || null,
+				startTime: startTime || null,
+			});
+			if (file && file.name.toLowerCase().endsWith(".csv")) {
+				await api.importCsv({
+					eventName: created.name ?? name.trim(),
+					eventStartDate: created.startDate ?? startDate,
+					eventId: created.eventId,
+					file,
+				});
+			} else if (file && parsedJson) {
+				const sourceEvent = (parsedJson.event ?? {}) as Record<string, unknown>;
+				await api.importJson({
+					...parsedJson,
+					eventId: created.eventId,
+					event: {
+						...sourceEvent,
+						id: created.eventId,
+						name: created.name,
+						startDate: created.startDate,
+						endDate: created.endDate,
+						startTime: created.startTime,
+					},
+				});
+			}
+			notify({ kind: "success", message: file ? "Evento criado e participantes importados" : "Evento criado" });
+			onCreated(created);
+		} catch (caught) {
+			notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao criar evento" });
+		} finally {
+			setBusy(false);
+		}
+	};
+	return (
+		<div className="page narrow">
+			<PageHeader eyebrow="Base de eventos" title="Novo Evento" subtitle="Cadastre o evento para iniciar a operação de retirada." />
+			<section className="form-card">
+				<Field label="Nome do evento"><input value={name} onChange={(event) => setName(event.target.value)} placeholder="Ex.: Corrida ASSEEMG 2026" /></Field>
+				<div className="form-grid">
+					<Field label="Data inicial"><input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field>
+					<Field label="Data final (opcional)"><input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></Field>
+				</div>
+				<Field label="Horário (opcional)"><input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></Field>
+				<div className="field">
+						<span>Participantes (opcional)</span>
+						<label className="dropzone compact">
+							<Upload size={20} />
+							<strong>{file ? file.name : "Escolha um arquivo CSV ou JSON"}</strong>
+							<span>{file ? `${(file.size / 1024).toFixed(1)} KB` : "Os participantes serão vinculados a este evento"}</span>
+							<input type="file" accept=".csv,text/csv,.json,application/json" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+						</label>
+					</div>
+				<div className="form-actions">
+					<button type="button" className="button primary" disabled={busy} onClick={() => void submit()}>
+						<CalendarPlus size={16} /> {busy ? "Criando..." : "Criar Evento"}
+					</button>
+				</div>
+			</section>
+		</div>
+	);
+}
+
+void NewEventPage;
+
 export default function App() {
 	const [page, setPage] = useState<Page>("dashboard");
 	const [event, setEvent] = useState<EventSummary | null>(null);
@@ -1009,6 +1171,7 @@ export default function App() {
 		setEvent(next);
 		setPage("event");
 	};
+	const openNewEvent = () => setPage("new-event");
 	useEffect(() => {
 		if (!event) return;
 		const socket = new WebSocket(wsUrl(event.eventId));
@@ -1019,7 +1182,7 @@ export default function App() {
 	}, [event]);
 	const content =
 		page === "dashboard" ? (
-			<Dashboard onOpenEvent={openEvent} notify={notify} />
+			<Dashboard onOpenEvent={openEvent} onOpenNewEvent={openNewEvent} notify={notify} />
 		) : page === "event" && event ? (
 			<EventPage
 				event={event}
@@ -1027,7 +1190,9 @@ export default function App() {
 				notify={notify}
 			/>
 		) : page === "import" ? (
-			<ImportPage notify={notify} onDone={() => setPage("dashboard")} />
+			<ImportPage notify={notify} onDone={(created) => created ? openEvent(created) : setPage("dashboard")} />
+		) : page === "new-event" ? (
+			<ImportPage notify={notify} isNewEvent onDone={(created) => created ? openEvent(created) : setPage("dashboard")} />
 		) : (
 			<AuditPage />
 		);
