@@ -272,6 +272,7 @@ function mapLegacyParticipant(
 		modality: row.modality ?? null,
 		shirtSize: row.shirt_size ?? null,
 		team: row.team ?? null,
+		qrCode: row.qrcode ?? null,
 		checkinDone: Boolean(checkin),
 	};
 }
@@ -378,6 +379,7 @@ function buildLegacyRows(
 	modality: string;
 	shirtSize: string;
 	team: string;
+	qrcode: string;
 }> {
 	const [headers, ...rows] = csvRows(content);
 	const index = {
@@ -415,6 +417,7 @@ function buildLegacyRows(
 			"shirt size",
 		]),
 		team: headerIndex(headers, ["equipe", "time", "assessoria", "team"]),
+		qrcode: headerIndex(headers, ["qrcode", "qr code", "codigo qr", "codigo do qr", "qr"]),
 	};
 	if (index.name < 0) throw new Error("coluna Nome Completo não encontrada");
 	return rows
@@ -427,6 +430,7 @@ function buildLegacyRows(
 			modality: row[index.modality] ?? "",
 			shirtSize: row[index.shirtSize] ?? "",
 			team: row[index.team] ?? "",
+			qrcode: row[index.qrcode] ?? "",
 		}))
 		.filter((row) => row.name.length > 0);
 }
@@ -959,7 +963,7 @@ export function createTakeoutServer({
 				if (!row.name.trim()) continue;
 				const id = randomUUID();
 				db.prepare(
-					"INSERT INTO legacy_participants (id,event_id,bib_number,full_name,sex,cpf_digits,birth_date_iso,modality,shirt_size,team,raw_json,created_at,updated_at,is_manual) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+					"INSERT INTO legacy_participants (id,event_id,bib_number,full_name,sex,cpf_digits,birth_date_iso,modality,shirt_size,team,qrcode,raw_json,created_at,updated_at,is_manual) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
 				).run(
 					id,
 					eventId,
@@ -971,6 +975,7 @@ export function createTakeoutServer({
 					row.modality || null,
 					row.shirtSize || null,
 					row.team || null,
+					row.qrcode || null,
 					JSON.stringify(row),
 					timestamp,
 					timestamp,

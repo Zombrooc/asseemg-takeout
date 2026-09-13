@@ -16,6 +16,15 @@ describe("desktop import utils", () => {
 		expect(buildMappedCsv(parsed.rows, mapping)).toContain('"1","Ana"');
 	});
 
+	it("maps and preserves the optional qrcode column", () => {
+		const parsed = parseCsv("Nome;N\u00famero;QR Code\nAna;1;ticket-qr-001\n");
+		const mapping = autoMap(parsed.headers);
+
+		expect(mapping.qrcode).toBe(2);
+		expect(mapRows(parsed.rows, mapping)[0].qrcode).toBe("ticket-qr-001");
+		expect(buildMappedCsv(parsed.rows, mapping)).toContain('"ticket-qr-001"');
+	});
+
 	it("rejects mappings without required fields", () => {
 		const mapping = autoMap(["CPF"]);
 		expect(mappingIsValid(mapping)).toBe(false);

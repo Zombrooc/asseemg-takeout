@@ -116,6 +116,7 @@ export type LegacyEventParticipant = {
   modality?: string | null;
   shirtSize?: string | null;
   team?: string | null;
+  qrCode?: string | null;
   checkinDone: boolean;
 };
 

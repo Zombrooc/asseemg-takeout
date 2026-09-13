@@ -63,7 +63,8 @@ function matchesSearch(participant: DisplayParticipant, q: string): boolean {
       inStr(participant.birthDate) ||
       inStr(String(participant.bibNumber)) ||
       inStr(participant.modality ?? null) ||
-      inStr(participant.team ?? null)
+      inStr(participant.team ?? null) ||
+      inStr(participant.qrCode ?? null)
     );
   }
   return (
@@ -273,7 +274,11 @@ export default function EventScreen() {
       const code = data.trim();
       const participant = participants.find((p) => {
         if (isLegacyParticipant(p)) {
-          return String(p.bibNumber) === code || p.cpf === code;
+          return (
+            String(p.bibNumber) === code ||
+            p.cpf === code ||
+            p.qrCode === code
+          );
         }
         return (
           p.ticketId === code ||

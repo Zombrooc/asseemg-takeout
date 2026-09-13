@@ -50,6 +50,43 @@ describe("takeout server", () => {
       name: "Corrida de Domingo",
       startDate: "2026-09-20",
       sourceType: "manual",
-    });
-  });
+	    });
+	});
+
+	it("imports qrcode from legacy CSV and exposes it to the scanner", async () => {
+		const db = openMemoryDatabase();
+		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+		runningServers.push(server);
+		await startTakeoutServer(server, 0);
+		const address = server.httpServer.address();
+		if (!address || typeof address === "string") throw new Error("server address unavailable");
+
+		const form = new FormData();
+		form.append("eventId", "event-qr");
+		form.append("eventName", "Corrida QR");
+		form.append("eventStartDate", "2026-09-20");
+		form.append("file", new File(["Nome;N\u00famero;QR Code\nAna;12;qr-ana-12\n"], "participants.csv", { type: "text/csv" }));
+		const imported = await fetch(`http://127.0.0.1:${address.port}/admin/import/legacy-csv`, { method: "POST", body: form });
+		expect(imported.status).toBe(200);
+
+		const participants = await fetch(`http://127.0.0.1:${address.port}/events/event-qr/legacy-participants`);
+		expect(await participants.json()).toMatchObject([{ name: "Ana", qrCode: "qr-ana-12" }]);
+	});
+
+	it("keeps legacy CSV imports compatible without qrcode", async () => {
+		const db = openMemoryDatabase();
+		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+		runningServers.push(server);
+		await startTakeoutServer(server, 0);
+		const address = server.httpServer.address();
+		if (!address || typeof address === "string") throw new Error("server address unavailable");
+
+		const form = new FormData();
+		form.append("eventName", "Corrida antiga");
+		form.append("eventStartDate", "2026-09-20");
+		form.append("file", new File(["Nome;N\u00famero\nAna;12\n"], "participants.csv", { type: "text/csv" }));
+		const imported = await fetch(`http://127.0.0.1:${address.port}/admin/import/legacy-csv`, { method: "POST", body: form });
+		expect(imported.status).toBe(200);
+		expect((await imported.json()).imported).toBe(1);
+	});
 });

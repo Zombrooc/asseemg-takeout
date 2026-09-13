@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, participant_id TEXT, co
 CREATE TABLE IF NOT EXISTS custom_forms (id INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT, definition_json TEXT);
 CREATE TABLE IF NOT EXISTS event_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT NOT NULL, type TEXT NOT NULL, payload_json TEXT, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS locks (participant_id TEXT PRIMARY KEY, device_id TEXT NOT NULL, expires_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS legacy_participants (id TEXT PRIMARY KEY, event_id TEXT NOT NULL, bib_number INTEGER NOT NULL, full_name TEXT NOT NULL, sex TEXT, cpf_digits TEXT NOT NULL, birth_date_iso TEXT NOT NULL, modality TEXT, shirt_size TEXT, team TEXT, raw_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, is_manual INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS legacy_participants (id TEXT PRIMARY KEY, event_id TEXT NOT NULL, bib_number INTEGER NOT NULL, full_name TEXT NOT NULL, sex TEXT, cpf_digits TEXT NOT NULL, birth_date_iso TEXT NOT NULL, modality TEXT, shirt_size TEXT, team TEXT, qrcode TEXT, raw_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, is_manual INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS legacy_reserved_numbers (event_id TEXT NOT NULL, bib_number INTEGER NOT NULL, label TEXT, status TEXT NOT NULL DEFAULT 'available', created_at TEXT NOT NULL, used_at TEXT, used_by_participant_id TEXT, UNIQUE(event_id, bib_number));
 CREATE TABLE IF NOT EXISTS legacy_checkins (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE, event_id TEXT NOT NULL, participant_id TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL, payload_json TEXT, created_at TEXT NOT NULL, source_type TEXT, ticket_id TEXT, participant_name TEXT, birth_date TEXT, age_at_checkin INTEGER, ticket_source_id TEXT, ticket_name TEXT, ticket_code TEXT, operator_alias TEXT, operator_device_id TEXT, checked_in_at TEXT);
 CREATE INDEX IF NOT EXISTS idx_event_log_event_id ON event_log(event_id);
@@ -38,13 +38,23 @@ export function openDatabase(path: string): SqliteDatabase {
 	db.pragma("journal_mode = WAL");
 	db.pragma("foreign_keys = ON");
 	db.exec(SCHEMA_SQL);
+	ensureLegacyQrCodeColumn(db);
 	return db;
 }
 
 export function openMemoryDatabase(): SqliteDatabase {
 	const db = new Database(":memory:");
 	db.exec(SCHEMA_SQL);
+	ensureLegacyQrCodeColumn(db);
 	return db;
+}
+
+function ensureLegacyQrCodeColumn(db: SqliteDatabase): void {
+	const columns = db
+		.prepare("PRAGMA table_info(legacy_participants)")
+		.all() as Array<{ name: string }>;
+	if (!columns.some((column) => column.name === "qrcode"))
+		db.exec("ALTER TABLE legacy_participants ADD COLUMN qrcode TEXT");
 }
 
 export function nowIso(): string {

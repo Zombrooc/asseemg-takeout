@@ -9,7 +9,8 @@ export type LegacyFieldKey =
 	| "sex"
 	| "modality"
 	| "shirtSize"
-	| "team";
+	| "team"
+	| "qrcode";
 
 export const LEGACY_FIELDS: Array<{ key: LegacyFieldKey; label: string; required: boolean }> = [
 	{ key: "number", label: "Número", required: true },
@@ -20,6 +21,7 @@ export const LEGACY_FIELDS: Array<{ key: LegacyFieldKey; label: string; required
 	{ key: "modality", label: "Modalidade", required: false },
 	{ key: "shirtSize", label: "Tamanho da camisa", required: false },
 	{ key: "team", label: "Equipe", required: false },
+	{ key: "qrcode", label: "QR Code", required: false },
 ];
 
 const ALIASES: Record<LegacyFieldKey, string[]> = {
@@ -31,6 +33,7 @@ const ALIASES: Record<LegacyFieldKey, string[]> = {
 	modality: ["modalidade", "categoria", "prova", "race", "categoria ticket"],
 	shirtSize: ["tamanho da camisa", "tamanho camisa", "camisa", "shirt size"],
 	team: ["equipe", "time", "assessoria", "team"],
+	qrcode: ["qrcode", "qr code", "codigo qr", "codigo do qr", "qr"],
 };
 
 function repair(value: string): string {
