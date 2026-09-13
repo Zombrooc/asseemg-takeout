@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { buildLegacyParticipantAlertMap } from "@pickup/api/legacy-participant-alerts";
+import { qrValueMatches } from "@pickup/api/wix-qr";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import type {
   CreateLegacyParticipantPayload,
@@ -276,15 +277,10 @@ export default function EventScreen() {
           return (
             String(p.bibNumber) === code ||
             p.cpf === code ||
-            p.qrCode === code
+            qrValueMatches(code, [p.qrCode])
           );
         }
-        return (
-          p.ticketId === code ||
-          p.qrCode === code ||
-          p.ticketId.trim() === code ||
-          p.qrCode.trim() === code
-        );
+        return qrValueMatches(code, [p.ticketId, p.sourceTicketId, p.qrCode]);
       });
       setShowQrScanner(false);
       if (!participant) {

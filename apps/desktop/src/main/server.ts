@@ -5,6 +5,7 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 import multer from "multer";
 import { WebSocketServer, WebSocket } from "ws";
+import { extractWixQrIdentifiers, getQrLookupValues } from "@pickup/api/wix-qr";
 import type { SqliteDatabase } from "./db";
 import {
 	computeAge,
@@ -225,6 +226,8 @@ function participantRows(
 	const query = search.q.trim();
 	const normalized = normalizeText(query);
 	const digits = normalizeDigits(query);
+	const isWixQr = search.mode === "qr" && extractWixQrIdentifiers(query) != null;
+	const qrLookupValues = search.mode === "qr" ? getQrLookupValues(query) : [];
 	return rows.filter((row) => {
 		const item = mapParticipant(row) as Record<string, unknown>;
 		const values = [
@@ -242,7 +245,9 @@ function participantRows(
 		if (search.mode === "cpf")
 			return normalizeDigits(String(item.cpf ?? "")).includes(digits);
 		if (search.mode === "qr")
-			return values.some((value) => value === query || value.includes(query));
+			return isWixQr
+				? values.some((value) => qrLookupValues.includes(normalizeText(value)))
+				: values.some((value) => value === query || value.includes(query));
 		if (search.mode === "ticket_id")
 			return String(item.ticketId).toLowerCase().includes(query.toLowerCase());
 		if (search.mode === "birth_date")

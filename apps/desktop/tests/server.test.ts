@@ -89,4 +89,37 @@ describe("takeout server", () => {
 		expect(imported.status).toBe(200);
 		expect((await imported.json()).imported).toBe(1);
 	});
+
+	it("finds a participant when QR search receives a Wix URL", async () => {
+		const db = openMemoryDatabase();
+		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+		runningServers.push(server);
+		await startTakeoutServer(server, 0);
+		const address = server.httpServer.address();
+		if (!address || typeof address === "string") throw new Error("server address unavailable");
+
+		const imported = await fetch(`http://127.0.0.1:${address.port}/sync/import`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				eventId: "event-wix",
+				event: { name: "Corrida Wix", startDate: "2026-09-20" },
+				participants: [
+					{
+						seatId: "participant-wix",
+						participantName: "Ana Wix",
+						ticketId: "order-123",
+						qrCode: "30N8-40QJ-DQW1P",
+					},
+				],
+			}),
+		});
+		expect(imported.status).toBe(200);
+
+		const wixUrl = "https://www.wixevents.com/check-in/30N8-40QJ-DQW1P,2221e781-4179-4ed3-998f-159ce621380a";
+		const result = await fetch(
+			`http://127.0.0.1:${address.port}/events/event-wix/participants/search?${new URLSearchParams({ q: wixUrl, mode: "qr" })}`,
+		);
+		expect(await result.json()).toMatchObject([{ id: "participant-wix", qrCode: "30N8-40QJ-DQW1P" }]);
+	});
 });
