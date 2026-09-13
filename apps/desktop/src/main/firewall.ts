@@ -23,35 +23,41 @@ function unsupported(reason: string): FirewallStatus {
 	};
 }
 
-async function runNetsh(args: string[]): Promise<void> {
-	await execFileAsync("netsh.exe", args, {
+async function runNetsh(args: string[]): Promise<{ stdout: string }> {
+	const result = await execFileAsync("netsh.exe", args, {
 		windowsHide: true,
 		timeout: 15_000,
 	});
+	return { stdout: result.stdout };
 }
 
 async function showRule(): Promise<boolean> {
 	try {
-		await runNetsh([
+		const { stdout } = await runNetsh([
 			"advfirewall",
 			"firewall",
 			"show",
 			"rule",
 			`name=${FIREWALL_RULE_NAME}`,
 		]);
-		return true;
+		return !/no rules match/i.test(stdout);
 	} catch {
 		return false;
 	}
 }
 
 function powershellQuote(value: string): string {
-	return `'${value.replaceAll("'", "''")}'`;
+	// Start-Process joins ArgumentList into one command line. Keep each value
+	// quoted so rule names and executable paths containing spaces stay intact.
+	return `'"${value.replaceAll('"', '\\\\"')}"'`;
 }
 
 async function runElevatedNetsh(args: string[]): Promise<void> {
 	const argumentList = args.map(powershellQuote).join(", ");
-	const command = `Start-Process -FilePath 'netsh.exe' -Verb RunAs -Wait -ArgumentList @(${argumentList})`;
+	const command = [
+		`$process = Start-Process -FilePath 'netsh.exe' -Verb RunAs -Wait -PassThru -ArgumentList @(${argumentList})`,
+		`if ($process.ExitCode -ne 0) { exit $process.ExitCode }`,
+	].join("; ");
 	await execFileAsync(
 		"powershell.exe",
 		[
