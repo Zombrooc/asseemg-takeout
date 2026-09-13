@@ -34,8 +34,14 @@ import { ASSEEMGLogo } from "./AsseemgLogo";
 import { getEventMetadataErrors } from "./event-validation";
 import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
 
-type Page = "dashboard" | "event" | "new-event" | "import" | "audit";
+type Page = "dashboard" | "event" | "new-event" | "import" | "audit" | "settings";
 type Notice = { kind: "success" | "error"; message: string } | null;
+
+export const SHOW_PARTICIPANT_QR_STORAGE_KEY = "desktop.showParticipantQr";
+
+export function readShowParticipantQr(storage: Pick<Storage, "getItem"> = localStorage): boolean {
+	return storage.getItem(SHOW_PARTICIPANT_QR_STORAGE_KEY) === "true";
+}
 
 function useAsync<T>(
 	loader: () => Promise<T>,
@@ -188,9 +194,9 @@ function Shell({
 							<strong>127.0.0.1:5555</strong>
 						</div>
 					</div>
-					<div className="sidebar-footer">
+					<button type="button" className={page === "settings" ? "sidebar-footer active" : "sidebar-footer"} onClick={() => setPage("settings")}>
 						<Settings size={15} /> Configurações
-					</div>
+					</button>
 				</aside>
 				<main className="content">{children}</main>
 			</div>
@@ -207,6 +213,39 @@ function Notice({ notice, onClose }: { notice: Notice; onClose: () => void }) {
 			</button>
 		</div>
 	) : null;
+}
+
+function SettingsPage({
+	showParticipantQr,
+	onShowParticipantQrChange,
+}: {
+	showParticipantQr: boolean;
+	onShowParticipantQrChange: (value: boolean) => void;
+}) {
+	return (
+		<div className="page">
+			<PageHeader
+				eyebrow="PreferÃªncias do aplicativo"
+				title="ConfiguraÃ§Ãµes"
+				subtitle="Ajuste o que Ã© exibido durante a operaÃ§Ã£o de retirada."
+			/>
+			<section className="settings-card" aria-labelledby="participant-qr-setting-title">
+				<div>
+					<h2 id="participant-qr-setting-title">QR Code dos participantes</h2>
+					<p>Exibir o QR Code de cada participante na lista do evento.</p>
+				</div>
+				<label className="switch-control">
+					<span className="sr-only">Exibir QR Code dos participantes</span>
+					<input
+						type="checkbox"
+						checked={showParticipantQr}
+						onChange={(event) => onShowParticipantQrChange(event.target.checked)}
+					/>
+					<span className="switch-track" aria-hidden="true" />
+				</label>
+			</section>
+		</div>
+	);
 }
 
 function Dashboard({
@@ -600,10 +639,12 @@ function EventPage({
 	event,
 	onBack,
 	notify,
+	showParticipantQr,
 }: {
 	event: EventSummary;
 	onBack: () => void;
 	notify: (notice: Exclude<Notice, null>) => void;
+	showParticipantQr: boolean;
 }) {
 	const legacy = event.sourceType === "legacy_csv";
 	const participants = useAsync(
@@ -790,6 +831,7 @@ function EventPage({
 							<tr>
 								<th>Participante</th>
 								<th>{legacy ? "Número" : "Ticket"}</th>
+								{showParticipantQr && <th>QR Code</th>}
 								<th>CPF</th>
 								<th>Status</th>
 								<th />
@@ -811,11 +853,16 @@ function EventPage({
 												: ((item as EventParticipant).ticketName ?? "")}
 										</small>
 									</td>
-									<td>
-										{legacy
-											? (item as LegacyEventParticipant).bibNumber
-											: (item as EventParticipant).ticketId}
-									</td>
+					<td>
+						{legacy
+							? (item as LegacyEventParticipant).bibNumber
+							: (item as EventParticipant).ticketId}
+					</td>
+					{showParticipantQr && (
+						<td className="participant-qr-cell">
+							{item.qrCode ? <QRCodeSVG value={item.qrCode} size={64} level="M" /> : <span className="muted">Sem QR Code</span>}
+						</td>
+					)}
 									<td>
 										{legacy
 											? (item as LegacyEventParticipant).cpf
@@ -1305,6 +1352,10 @@ export default function App() {
 	const [page, setPage] = useState<Page>("dashboard");
 	const [event, setEvent] = useState<EventSummary | null>(null);
 	const [notice, setNotice] = useState<Notice>(null);
+	const [showParticipantQr, setShowParticipantQr] = useState(() => readShowParticipantQr());
+	useEffect(() => {
+		localStorage.setItem(SHOW_PARTICIPANT_QR_STORAGE_KEY, String(showParticipantQr));
+	}, [showParticipantQr]);
 	const notify = (next: Exclude<Notice, null>) => {
 		setNotice(next);
 		window.setTimeout(() => setNotice(null), 4500);
@@ -1322,11 +1373,17 @@ export default function App() {
 				event={event}
 				onBack={() => setPage("dashboard")}
 				notify={notify}
+				showParticipantQr={showParticipantQr}
 			/>
 		) : page === "import" ? (
 			<ImportPage notify={notify} onDone={(created) => created ? openEvent(created) : setPage("dashboard")} />
 		) : page === "new-event" ? (
 			<ImportPage notify={notify} isNewEvent onDone={(created) => created ? openEvent(created) : setPage("dashboard")} />
+		) : page === "settings" ? (
+			<SettingsPage
+				showParticipantQr={showParticipantQr}
+				onShowParticipantQrChange={setShowParticipantQr}
+			/>
 		) : (
 			<AuditPage />
 		);
