@@ -920,8 +920,10 @@ function ImportPage({
 						<code>participants</code> no formato de sincronização atual.
 					</div>
 				)}
+				{mode === "csv" ? <>
 				<Field label="Data final (opcional)"><input type="date" value={eventEndDate} onChange={(event) => setEventEndDate(event.target.value)} /></Field>
 				<Field label="Horário (opcional)"><input type="time" value={eventStartTime} onChange={(event) => setEventStartTime(event.target.value)} /></Field>
+				</> : null}
 				</> : null}
 				{!isNewEvent || step === 2 ? <>
 				<label className="dropzone">
