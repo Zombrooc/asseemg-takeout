@@ -20,9 +20,15 @@ export type {
 const BASE_URL = "http://127.0.0.1:5555";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+	const headers = new Headers(init?.headers);
+	// Let fetch set the multipart boundary for FormData bodies. Setting JSON here
+	// makes Express's JSON parser try to parse the multipart delimiter.
+	if (!headers.has("Content-Type") && !(init?.body instanceof FormData)) {
+		headers.set("Content-Type", "application/json");
+	}
 	const response = await fetch(`${BASE_URL}${path}`, {
 		...init,
-		headers: { "Content-Type": "application/json", ...init?.headers },
+		headers,
 	});
 	if (!response.ok) {
 		const body = (await response.json().catch(() => null)) as {

@@ -76,6 +76,20 @@ function useAsync<T>(
 	return { data, loading, error, reload };
 }
 
+export function shouldReloadParticipants(messageData: unknown): boolean {
+	if (typeof messageData !== "string") return false;
+	try {
+		const message = JSON.parse(messageData) as { type?: unknown };
+		return (
+			message.type === "participant_checked_in" ||
+			message.type === "participant_checkin_reverted" ||
+			message.type === "participant_updated"
+		);
+	} catch {
+		return false;
+	}
+}
+
 function WindowControls() {
 	return (
 		<div className="window-controls">
@@ -560,6 +574,13 @@ function EventPage({
 		[event.eventId, legacy],
 		[] as Array<EventParticipant | LegacyEventParticipant>,
 	);
+	useEffect(() => {
+		const socket = new WebSocket(wsUrl(event.eventId));
+		socket.onmessage = (message) => {
+			if (shouldReloadParticipants(message.data)) participants.reload();
+		};
+		return () => socket.close();
+	}, [event.eventId, participants.reload]);
 	const [search, setSearch] = useState("");
 	const [busyId, setBusyId] = useState<string | null>(null);
 	const [confirming, setConfirming] = useState<EventParticipant | LegacyEventParticipant | null>(null);
@@ -1230,9 +1251,6 @@ export default function App() {
 	useEffect(() => {
 		if (!event) return;
 		const socket = new WebSocket(wsUrl(event.eventId));
-		socket.onmessage = () => {
-			/* the event page polls after mutations; this keeps LAN updates visible */
-		};
 		return () => socket.close();
 	}, [event]);
 	const content =
