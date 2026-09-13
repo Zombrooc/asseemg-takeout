@@ -1,6 +1,9 @@
 {
     "name": "pickup",
     "private": true,
+    "engines": {
+        "node": ">=20 <22"
+    },
     "workspaces": [
         "apps/*",
         "packages/*"

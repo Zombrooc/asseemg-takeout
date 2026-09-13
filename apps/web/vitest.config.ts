@@ -8,6 +8,9 @@ const appReactDom = path.resolve(__dirname, "./node_modules/react-dom");
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    // Prefer the authored TypeScript sources over stale transpiled .js copies
+    // that may exist next to them in the repository.
+    extensions: [".tsx", ".ts", ".jsx", ".js", ".json"],
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
       { find: /^react$/, replacement: appReact },

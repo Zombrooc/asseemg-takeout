@@ -1,7 +1,7 @@
 import type { EventParticipant } from "@/lib/takeout-api";
 
 export type ExportFormat = "csv" | "json";
-export type EventSourceType = "json_sync" | "legacy_csv";
+export type EventSourceType = "manual" | "json_sync" | "legacy_csv";
 
 export type EventParticipantExportRecord = {
   eventId: string;

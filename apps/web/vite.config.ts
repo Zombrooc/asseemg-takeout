@@ -8,6 +8,7 @@ export default defineConfig(({ command }) => ({
   plugins: [tailwindcss(), tanstackRouter({}), react()],
   base: command === "build" ? "./" : "/",
   resolve: {
+    extensions: [".tsx", ".ts", ".jsx", ".js", ".json"],
     alias: {
       "@": path.resolve(__dirname, "./src"),
       react: path.resolve(__dirname, "./node_modules/react"),

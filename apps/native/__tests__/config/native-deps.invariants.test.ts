@@ -24,13 +24,10 @@ describe("native deps invariants", () => {
     expect(pkg.dependencies!["@expo/metro-runtime"]).toBeDefined();
   });
 
-  it("pnpm-workspace must declare patchedDependencies for @expo/metro-runtime and patch file must exist", () => {
-    const workspacePath = path.resolve(__dirname, "../../../../pnpm-workspace.yaml");
-    expect(existsSync(workspacePath)).toBe(true);
-    const content = readFileSync(workspacePath, "utf-8");
-    expect(content).toMatch(/patchedDependencies/);
-    expect(content).toMatch(/@expo\/metro-runtime@6\.1\.2/);
-    const patchPath = path.resolve(__dirname, "../../../../patches/@expo__metro-runtime@6.1.2.patch");
-    expect(existsSync(patchPath)).toBe(true);
+  it("uses the Expo 57 metro runtime declared by the app", () => {
+    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies?.["@expo/metro-runtime"]).toBe("~57.0.15");
   });
 });
