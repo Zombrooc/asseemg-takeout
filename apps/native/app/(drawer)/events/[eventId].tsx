@@ -136,7 +136,6 @@ export default function EventScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
   const [offlineNoticeVisible, setOfflineNoticeVisible] = useState(false);
   const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(
     new Set(),
@@ -335,26 +334,6 @@ export default function EventScreen() {
         clearTimeout(offlineNoticeTimeoutRef.current);
     };
   }, []);
-
-  const handleResetCheckins = useCallback(async () => {
-    if (!api || !eventId) return;
-    if (sourceType === "legacy_csv") {
-      Alert.alert("Indisponível", "Reset de check-ins não está disponível para evento legado.");
-      return;
-    }
-    setResetLoading(true);
-    try {
-      await api.postResetEventCheckins(eventId);
-      await Promise.all([auditQuery.refetch(), participantsQuery.refetch()]);
-    } catch (e) {
-      Alert.alert(
-        "Erro",
-        e instanceof Error ? e.message : "Falha ao desfazer check-ins.",
-      );
-    } finally {
-      setResetLoading(false);
-    }
-  }, [api, eventId, auditQuery, participantsQuery, sourceType]);
 
   const handleCreateReservation = useCallback(() => {
     if (!isReachable) {
@@ -561,9 +540,6 @@ export default function EventScreen() {
           <SearchBar value={searchQuery} onChange={setSearchQuery} />
           <QuickActionsRow
             onScan={() => setShowQrScanner(true)}
-            onReset={handleResetCheckins}
-            resetLoading={resetLoading}
-            undoCount={confirmed}
             onCreateReservation={
               sourceType === "legacy_csv" ? handleCreateReservation : undefined
             }
