@@ -41,7 +41,6 @@ var async_storage_1 = require("@react-native-async-storage/async-storage");
 var legacy_participant_alerts_1 = require("@pickup/api/legacy-participant-alerts");
 var takeout_connection_context_1 = require("@/contexts/takeout-connection-context");
 var expo_router_1 = require("expo-router");
-var native_1 = require("@react-navigation/native");
 var react_query_1 = require("@tanstack/react-query");
 var react_1 = require("react");
 var react_native_1 = require("react-native");
@@ -102,7 +101,7 @@ function EventScreen() {
     var _this = this;
     var _a, _b, _c, _d;
     var eventId = (0, expo_router_1.useLocalSearchParams)().eventId;
-    var navigation = (0, native_1.useNavigation)();
+    var navigation = (0, expo_router_1.useNavigation)();
     var router = (0, expo_router_1.useRouter)();
     var queryClient = (0, react_query_1.useQueryClient)();
     var _e = (0, takeout_connection_context_1.useTakeoutConnection)(), api = _e.api, isReachable = _e.isReachable, checkReachability = _e.checkReachability, baseUrl = _e.baseUrl, deviceId = _e.deviceId;

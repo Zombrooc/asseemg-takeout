@@ -9,7 +9,6 @@ const REPO_ROOT = path.resolve(__dirname, "../../../..");
 const NATIVE_ROOT = path.resolve(REPO_ROOT, "apps/native");
 const METRO_CONFIG_PATH = path.join(NATIVE_ROOT, "metro.config.js");
 const NATIVE_PACKAGE_JSON = path.join(NATIVE_ROOT, "package.json");
-const WORKSPACE_YAML = path.join(REPO_ROOT, "pnpm-workspace.yaml");
 const PATCH_PATH = path.join(REPO_ROOT, "patches/@expo__metro-runtime@6.1.2.patch");
 
 describe("metro-resolution contract (non-regression)", () => {
@@ -32,13 +31,7 @@ describe("metro-resolution contract (non-regression)", () => {
     expect(pkg.dependencies?.["react-native-is-edge-to-edge"]).toBeDefined();
   });
 
-  it("contract 3: patch file and patchedDependencies entry must exist", () => {
-    expect(existsSync(PATCH_PATH)).toBe(true);
-    expect(existsSync(WORKSPACE_YAML)).toBe(true);
-    const yaml = readFileSync(WORKSPACE_YAML, "utf-8");
-    expect(yaml).toMatch(/patchedDependencies/);
-    expect(yaml).toMatch(/@expo__metro-runtime@6\.1\.2/);
-    const patchContent = readFileSync(PATCH_PATH, "utf-8");
-    expect(patchContent).toMatch(/whatwg-fetch/);
+  it("contract 3: obsolete SDK 54 Metro patch must not remain after the SDK upgrade", () => {
+    expect(existsSync(PATCH_PATH)).toBe(false);
   });
 });

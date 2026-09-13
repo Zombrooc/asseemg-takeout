@@ -8,8 +8,7 @@ import type {
   LegacyReservedNumber,
   ParticipantAlert,
 } from "@/lib/takeout-api-types";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { useNavigation } from "@react-navigation/native";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, BackHandler } from "react-native";
