@@ -52,6 +52,14 @@ function formatBirthDate(s: string | null | undefined): string {
   return formatDateBR(s);
 }
 
+export function getParticipantBirthDate(participant: ModalParticipant): string | null {
+  const raw = participant as ModalParticipant & {
+    birth_date?: string | null;
+    dataNascimento?: string | null;
+  };
+  return participant.birthDate ?? raw.birth_date ?? raw.dataNascimento ?? null;
+}
+
 function ageFromBirthDate(s: string | null | undefined): string {
   if (!s) return "-";
   const d = new Date(s);
@@ -309,6 +317,7 @@ export function ConfirmTakeoutModal({
     isKeyboardVisible,
     insets: { top: insets.top, bottom: insets.bottom },
   });
+  const birthDate = getParticipantBirthDate(participant);
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -385,8 +394,8 @@ export function ConfirmTakeoutModal({
                 <YStack gap="$2" style={{ marginBottom: 16 }}>
                   <Row label="Nome" value={(legacy?.name ?? current?.name) ?? "-"} />
                   <Row label="CPF" value={(legacy?.cpf ?? current?.cpf) ?? "-"} />
-                  <Row label="Data de nascimento" value={formatBirthDate(legacy?.birthDate ?? current?.birthDate)} />
-                  <Row label="Idade" value={ageFromBirthDate(legacy?.birthDate ?? current?.birthDate)} />
+                  <Row label="Data de nascimento" value={formatBirthDate(birthDate)} />
+                  <Row label="Idade" value={ageFromBirthDate(birthDate)} />
                   <Row
                     label="Ingresso"
                     value={
