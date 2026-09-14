@@ -4,6 +4,10 @@ import type {
 	EventParticipant,
 	EventSummary,
 	LegacyEventParticipant,
+	LegacyReservedNumber,
+	LegacyReserveNumbersPayload,
+	LegacyReserveNumbersResponse,
+	CreateLegacyParticipantPayload,
 	NetworkAddressesResponse,
 	ParticipantSearchMode,
 } from "@pickup/api/takeout-contracts";
@@ -14,6 +18,10 @@ export type {
 	EventParticipant,
 	EventSummary,
 	LegacyEventParticipant,
+	LegacyReservedNumber,
+	LegacyReserveNumbersPayload,
+	LegacyReserveNumbersResponse,
+	CreateLegacyParticipantPayload,
 	NetworkAddressesResponse,
 };
 
@@ -70,6 +78,20 @@ export const api = {
 	legacyParticipants: (eventId: string) =>
 		request<LegacyEventParticipant[]>(
 			`/events/${encodeURIComponent(eventId)}/legacy-participants`,
+		),
+	legacyReservations: (eventId: string, includeUsed = false) =>
+		request<LegacyReservedNumber[]>(
+			`/events/${encodeURIComponent(eventId)}/legacy-reservations${includeUsed ? "?includeUsed=true" : ""}`,
+		),
+	reserveLegacyNumbers: (eventId: string, payload: LegacyReserveNumbersPayload) =>
+		request<LegacyReserveNumbersResponse>(
+			`/events/${encodeURIComponent(eventId)}/legacy-reservations`,
+			{ method: "POST", body: JSON.stringify(payload) },
+		),
+	createLegacyParticipant: (eventId: string, payload: CreateLegacyParticipantPayload) =>
+		request<LegacyEventParticipant>(
+			`/events/${encodeURIComponent(eventId)}/legacy-participants`,
+			{ method: "POST", body: JSON.stringify(payload) },
 		),
 	confirm: (payload: Record<string, unknown>) =>
 		request<{ status: string }>("/takeout/confirm", {

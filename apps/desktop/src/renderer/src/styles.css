@@ -100,7 +100,9 @@ tbody tr:last-child td { border-bottom: 0; }
 td strong, td small { display: block; }
 td strong { color: var(--qz-color-neutral-bone); font-size: 13px; }
 td small { margin-top: 4px; color: var(--qz-color-neutral-smoke); }
-.row-action { width: 110px; text-align: right; }
+.row-action { width: 150px; text-align: right; white-space: nowrap; }
+.row-action-buttons { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.icon-button { width: 30px; min-width: 30px; padding: 0; }
 .status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: var(--qz-radius-pill); font: 10px var(--qz-font-family-mono); }
 .status.confirmed { color: var(--qz-color-feedback-success); background: color-mix(in srgb, var(--qz-color-feedback-success) 14%, transparent); }
 .status.pending { color: var(--qz-color-brand-accent); background: color-mix(in srgb, var(--qz-color-brand-accent) 12%, transparent); }
@@ -160,6 +162,28 @@ td small { margin-top: 4px; color: var(--qz-color-neutral-smoke); }
 .third-party-section label { display: flex; align-items: center; gap: 8px; font-weight: 700; }
 .third-party-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
 .third-party-fields .field { margin-bottom: 0; }
+.reservation-card { margin-bottom: 24px; padding: 22px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-lg); background: var(--qz-color-neutral-asphalt-dark); }
+.reservation-heading { margin-bottom: 18px; }
+.reservation-heading h2 { margin: 4px 0 0; font-size: 18px; }
+.reservation-heading p { margin: 7px 0 0; color: var(--qz-color-neutral-bone-muted); font-size: 13px; }
+.reservation-count { align-self: flex-start; padding: 7px 10px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-brand-accent); font-size: 12px; font-weight: 700; white-space: nowrap; }
+.reservation-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.reservation-form .field { margin-bottom: 0; }
+.reservation-form .field input { min-height: 40px; }
+.reservation-actions { display: flex; grid-column: 1 / -1; gap: 8px; margin-top: 4px; }
+.reservation-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+.reservation-summary span { padding: 7px 10px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone-dim); background: var(--qz-color-neutral-asphalt); font-size: 12px; }
+.reservation-summary strong { color: var(--qz-color-brand-accent); font-family: var(--qz-font-family-mono); }
+.reservation-toggle { display: inline-flex; align-items: center; margin-top: 14px; padding: 0; border: 0; color: var(--qz-color-brand-accent); background: transparent; font-size: 12px; font-weight: 700; }
+.reservation-detail-list { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 50vh; overflow: auto; }
+.reservation-detail-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); background: var(--qz-color-neutral-asphalt); font-size: 12px; }
+.reservation-detail-row strong { color: var(--qz-color-brand-accent); font-family: var(--qz-font-family-mono); }
+.reservation-detail-row span { overflow: hidden; color: var(--qz-color-neutral-bone-muted); text-overflow: ellipsis; white-space: nowrap; }
+.reservation-empty { margin: 18px 0 0; color: var(--qz-color-neutral-bone-muted); font-size: 13px; }
+.modal-help { margin: -10px 0 18px; color: var(--qz-color-neutral-bone-muted); font-size: 13px; }
+.modal .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.modal .field select { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone); background: var(--qz-color-neutral-asphalt); }
+@media (max-width: 760px) { .reservation-form, .modal .form-grid, .reservation-detail-list { grid-template-columns: 1fr; } .reservation-actions { flex-wrap: wrap; } .reservation-heading { align-items: flex-start; flex-direction: column; gap: 12px; } }
 .filter-row select { max-width: 330px; color: var(--qz-color-neutral-bone); }
 .participant-qr-cell { width: 92px; vertical-align: middle; }
 .participant-qr-cell svg { display: block; padding: 4px; border-radius: 4px; background: white; }

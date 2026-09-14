@@ -54,7 +54,7 @@ describe("takeout server", () => {
     expect(await pairing.json()).toMatchObject({ baseUrl: "http://192.168.1.50:5555" });
   });
 
-  it("creates an empty event from the new event form", async () => {
+	it("creates an empty event from the new event form", async () => {
     const db = openMemoryDatabase();
     const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
     runningServers.push(server);
@@ -73,6 +73,41 @@ describe("takeout server", () => {
       startDate: "2026-09-20",
       sourceType: "manual",
 	    });
+	});
+
+	it("creates and consumes legacy reservations when registering a participant", async () => {
+		const db = openMemoryDatabase();
+		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+		runningServers.push(server);
+		await startTakeoutServer(server, 0);
+		const address = server.httpServer.address();
+		if (!address || typeof address === "string") throw new Error("server address unavailable");
+		const base = `http://127.0.0.1:${address.port}`;
+
+		const eventResponse = await fetch(`${base}/events`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name: "Corrida Manual", startDate: "2026-09-20" }),
+		});
+		const event = (await eventResponse.json()) as { eventId: string };
+
+		const reserveResponse = await fetch(`${base}/events/${event.eventId}/legacy-reservations`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ numbers: [{ bibNumber: 16, label: "Equipe A" }, { bibNumber: 17, label: "Equipe A" }, { bibNumber: 16, label: "Duplicado" }] }),
+		});
+		expect(await reserveResponse.json()).toMatchObject({ created: 2, skipped: 1 });
+
+		const participantResponse = await fetch(`${base}/events/${event.eventId}/legacy-participants`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ reservationId: 16, name: "Ana Manual", cpf: "123.456.789-00", birthDate: "1990-01-01", ticketType: "5KM" }),
+		});
+		expect(participantResponse.status).toBe(200);
+		expect(await participantResponse.json()).toMatchObject({ name: "Ana Manual", bibNumber: 16 });
+
+		const available = await fetch(`${base}/events/${event.eventId}/legacy-reservations`);
+		expect(await available.json()).toMatchObject([{ bibNumber: 17 }]);
 	});
 
 	it("imports qrcode from legacy CSV and exposes it to the scanner", async () => {

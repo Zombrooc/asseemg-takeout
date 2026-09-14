@@ -9,9 +9,11 @@ import {
 	ClipboardList,
 	FileUp,
 	FolderOpen,
+	ListPlus,
 	LayoutDashboard,
 	Minus,
 	PackageCheck,
+	Pencil,
 	Plus,
 	RefreshCw,
 	Search,
@@ -19,6 +21,7 @@ import {
 	Square,
 	Trash2,
 	Upload,
+	UserPlus,
 	Wifi,
 	X,
 } from "lucide-react";
@@ -26,7 +29,9 @@ import type {
 	AuditEvent,
 	EventParticipant,
 	EventSummary,
+	CreateLegacyParticipantPayload,
 	LegacyEventParticipant,
+	LegacyReservedNumber,
 } from "./api";
 import { api, wsUrl } from "./api";
 import { autoMap, buildMappedCsv, decodeCsv, getImportSteps, LEGACY_FIELDS, mappingIsValid, mapRows, parseCsv, type Mapping, type ParsedCsv } from "./import-utils";
@@ -52,6 +57,22 @@ function getAge(value: string | null | undefined, today = new Date()): string {
 	let age = today.getFullYear() - Number(match[1]);
 	if (today.getMonth() + 1 < Number(match[2]) || (today.getMonth() + 1 === Number(match[2]) && today.getDate() < Number(match[3]))) age--;
 	return age >= 0 ? String(age) : "-";
+}
+
+function getTodayIsoDate(): string {
+	return new Date().toISOString().slice(0, 10);
+}
+
+function groupLegacyReservations(items: LegacyReservedNumber[]): Array<{ start: number; end: number; label: string | null }> {
+	return items.reduce<Array<{ start: number; end: number; label: string | null }>>((groups, item) => {
+		const previous = groups.at(-1);
+		if (previous && previous.end + 1 === item.bibNumber && previous.label === (item.label ?? null)) {
+			previous.end = item.bibNumber;
+		} else {
+			groups.push({ start: item.bibNumber, end: item.bibNumber, label: item.label ?? null });
+		}
+		return groups;
+	}, []);
 }
 
 function getParticipantField(item: EventParticipant | LegacyEventParticipant, field: string): string {
@@ -655,6 +676,113 @@ function Empty({
 	);
 }
 
+function LegacyParticipantModal({
+	reservations,
+	busy,
+	onClose,
+	onSubmit,
+}: {
+	reservations: LegacyReservedNumber[];
+	busy: boolean;
+	onClose: () => void;
+	onSubmit: (payload: CreateLegacyParticipantPayload) => Promise<void>;
+}) {
+	const [reservationId, setReservationId] = useState<number | null>(null);
+	const [name, setName] = useState("");
+	const [cpf, setCpf] = useState("");
+	const [birthDate, setBirthDate] = useState("");
+	const [ticketType, setTicketType] = useState("");
+	const [shirtSize, setShirtSize] = useState("");
+	const [team, setTeam] = useState("");
+	const [sex, setSex] = useState("");
+	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		setReservationId(reservations[0]?.bibNumber ?? null);
+	}, [reservations]);
+
+	const submit = async () => {
+		if (reservationId == null) return setError("Selecione um número reservado.");
+		if (!name.trim()) return setError("Nome é obrigatório.");
+		if (!cpf.trim()) return setError("CPF é obrigatório.");
+		const parsedDate = new Date(`${birthDate}T00:00:00Z`);
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate) || Number.isNaN(parsedDate.getTime()) || birthDate < "1900-01-01" || birthDate > getTodayIsoDate()) {
+			return setError("Informe uma data de nascimento válida.");
+		}
+		if (!ticketType.trim()) return setError("Tipo de ingresso é obrigatório.");
+		setError(null);
+		await onSubmit({
+			reservationId,
+			name: name.trim(),
+			cpf: cpf.trim(),
+			birthDate,
+			ticketType: ticketType.trim(),
+			shirtSize: shirtSize.trim() || null,
+			team: team.trim() || null,
+			sex: sex.trim() || null,
+		});
+	};
+
+	return (
+		<div className="modal-backdrop">
+			<div className="modal" role="dialog" aria-modal="true" aria-labelledby="legacy-participant-title">
+				<h2 id="legacy-participant-title">Cadastrar participante</h2>
+				<p className="modal-help">Use uma reserva disponível para criar o cadastro manualmente.</p>
+				<div className="form-grid">
+					<Field label="Número reservado">
+						<select value={reservationId == null ? "" : String(reservationId)} onChange={(event) => setReservationId(event.target.value ? Number(event.target.value) : null)}>
+							<option value="">Selecione um número</option>
+							{reservations.map((item) => <option key={item.bibNumber} value={item.bibNumber}>#{item.bibNumber}{item.label ? ` — ${item.label}` : ""}</option>)}
+						</select>
+					</Field>
+					<Field label="Nome"><input value={name} onChange={(event) => setName(event.target.value)} /></Field>
+					<Field label="CPF"><input value={cpf} onChange={(event) => setCpf(event.target.value)} inputMode="numeric" /></Field>
+					<Field label="Data de nascimento"><input type="date" value={birthDate} onChange={(event) => setBirthDate(event.target.value)} min="1900-01-01" max={getTodayIsoDate()} /></Field>
+					<Field label="Tipo de ingresso"><input value={ticketType} onChange={(event) => setTicketType(event.target.value)} placeholder="Ex.: 5KM" /></Field>
+					<Field label="Tamanho da camisa"><input value={shirtSize} onChange={(event) => setShirtSize(event.target.value)} placeholder="Ex.: M" /></Field>
+					<Field label="Equipe"><input value={team} onChange={(event) => setTeam(event.target.value)} /></Field>
+					<Field label="Sexo (opcional)"><input value={sex} onChange={(event) => setSex(event.target.value)} /></Field>
+				</div>
+				{error ? <p className="validation-error" role="alert">{error}</p> : null}
+				<div className="form-actions">
+					<button type="button" className="button ghost" onClick={onClose} disabled={busy}>Cancelar</button>
+					<button type="button" className="button primary" onClick={() => void submit()} disabled={busy || reservations.length === 0}>
+						{busy ? "Salvando..." : "Cadastrar participante"}
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function LegacyReservationsModal({
+	reservations,
+	onClose,
+}: {
+	reservations: LegacyReservedNumber[];
+	onClose: () => void;
+}) {
+	return (
+		<div className="modal-backdrop">
+			<div className="modal reservation-modal" role="dialog" aria-modal="true" aria-labelledby="available-reservations-title">
+				<h2 id="available-reservations-title">Números reservados disponíveis</h2>
+				<p className="modal-help">Confira os números individuais e a descrição de cada reserva.</p>
+				<div className="reservation-detail-list">
+					{reservations.map((item) => (
+						<div className="reservation-detail-row" key={item.bibNumber}>
+							<strong>#{item.bibNumber}</strong>
+							<span>{item.label || "Sem descrição"}</span>
+						</div>
+					))}
+				</div>
+				<div className="form-actions">
+					<button type="button" className="button primary" onClick={onClose}>Fechar</button>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 function EventPage({
 	event,
 	onBack,
@@ -675,6 +803,12 @@ function EventPage({
 		[event.eventId, legacy],
 		[] as Array<EventParticipant | LegacyEventParticipant>,
 	);
+	const reservations = useAsync(
+		() => legacy ? api.legacyReservations(event.eventId) : Promise.resolve([] as LegacyReservedNumber[]),
+		[event.eventId, legacy],
+		[] as LegacyReservedNumber[],
+	);
+	const reservationGroups = useMemo(() => groupLegacyReservations(reservations.data), [reservations.data]);
 	useEffect(() => {
 		const socket = new WebSocket(wsUrl(event.eventId));
 		socket.onmessage = (message) => {
@@ -708,6 +842,13 @@ function EventPage({
 	const [isProxyTakeout, setIsProxyTakeout] = useState(false);
 	const [retiranteNome, setRetiranteNome] = useState("");
 	const [retiranteCpf, setRetiranteCpf] = useState("");
+	const [reserveStart, setReserveStart] = useState("");
+	const [reserveEnd, setReserveEnd] = useState("");
+	const [reserveLabel, setReserveLabel] = useState("");
+	const [reserveBusy, setReserveBusy] = useState(false);
+	const [reservationsOpen, setReservationsOpen] = useState(false);
+	const [createParticipantOpen, setCreateParticipantOpen] = useState(false);
+	const [createParticipantBusy, setCreateParticipantBusy] = useState(false);
 	useEffect(() => {
 		if (!confirming) return;
 		setIsProxyTakeout(false);
@@ -818,6 +959,59 @@ function EventPage({
 		} catch (caught) { notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao editar participante" }); }
 		finally { setBusyId(null); }
 	};
+	const createReservations = async () => {
+		const start = Number(reserveStart);
+		const end = Number(reserveEnd || reserveStart);
+		if (!Number.isInteger(start) || !Number.isInteger(end) || start <= 0 || end <= 0) {
+			notify({ kind: "error", message: "Informe números inteiros maiores que zero." });
+			return;
+		}
+		if (end < start) {
+			notify({ kind: "error", message: "O número final não pode ser menor que o inicial." });
+			return;
+		}
+		setReserveBusy(true);
+		try {
+			const label = reserveLabel.trim() || null;
+			const numbers = Array.from({ length: end - start + 1 }, (_, index) => ({ bibNumber: start + index, label }));
+			const result = await api.reserveLegacyNumbers(event.eventId, { numbers });
+			reservations.patch((current) => {
+				const existing = new Set(current.map((item) => item.bibNumber));
+				const created = numbers
+					.filter((item) => !existing.has(item.bibNumber))
+					.map((item) => ({
+						eventId: event.eventId,
+						bibNumber: item.bibNumber,
+						label: item.label,
+						status: "available" as const,
+						createdAt: new Date().toISOString(),
+					}));
+				return [...current, ...created].sort((left, right) => left.bibNumber - right.bibNumber);
+			});
+			setReserveStart("");
+			setReserveEnd("");
+			setReserveLabel("");
+			notify({ kind: "success", message: `Reservas criadas: ${result.created}${result.skipped ? ` (${result.skipped} já existentes)` : ""}` });
+		} catch (caught) {
+			notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao criar reservas" });
+		} finally {
+			setReserveBusy(false);
+		}
+	};
+	const createParticipant = async (payload: CreateLegacyParticipantPayload) => {
+		setCreateParticipantBusy(true);
+		try {
+			const created = await api.createLegacyParticipant(event.eventId, payload);
+			participants.patch((current) => [created, ...current]);
+			reservations.patch((current) => current.filter((item) => item.bibNumber !== payload.reservationId));
+			setCreateParticipantOpen(false);
+			notify({ kind: "success", message: "Participante criado" });
+		} catch (caught) {
+			notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao cadastrar participante" });
+		} finally {
+			setCreateParticipantBusy(false);
+		}
+	};
 	return (
 		<div className="page">
 			<button type="button" className="back-link" onClick={onBack}>
@@ -848,6 +1042,39 @@ function EventPage({
 				</div>
 				<span className="result-count">{filtered.length} resultados</span>
 			</div>
+			{legacy ? (
+				<section className="reservation-card" aria-labelledby="reservations-title">
+					<div className="section-heading reservation-heading">
+						<div>
+							<div className="eyebrow">Operação manual</div>
+							<h2 id="reservations-title">Reservas de números</h2>
+							<p>Reserve uma faixa para cadastrar participantes que não estão no arquivo importado.</p>
+						</div>
+						<div className="reservation-count">{reservations.loading ? "Carregando..." : `${reservations.data.length} disponíveis`}</div>
+					</div>
+					<div className="reservation-form">
+						<Field label="Número inicial"><input type="number" min="1" step="1" inputMode="numeric" value={reserveStart} onChange={(input) => setReserveStart(input.target.value)} placeholder="Ex.: 16" /></Field>
+						<Field label="Número final"><input type="number" min="1" step="1" inputMode="numeric" value={reserveEnd} onChange={(input) => setReserveEnd(input.target.value)} placeholder="Opcional" /></Field>
+						<Field label="Etiqueta / equipe (opcional)"><input value={reserveLabel} onChange={(input) => setReserveLabel(input.target.value)} placeholder="Ex.: Tia Gleida" /></Field>
+						<div className="reservation-actions">
+							<button type="button" className="button primary" onClick={(click) => { click.preventDefault(); void createReservations(); }} disabled={reserveBusy}>
+								<ListPlus size={16} /> {reserveBusy ? "Salvando..." : "Adicionar reservas"}
+							</button>
+							<button type="button" className="button outline" onClick={() => setCreateParticipantOpen(true)} disabled={reservations.loading || reservations.data.length === 0}>
+								<UserPlus size={16} /> Cadastrar participante
+							</button>
+						</div>
+					</div>
+					{reservationGroups.length > 0 ? <div className="reservation-summary" aria-label="Faixas reservadas">{reservationGroups.map((group) => <span key={`${group.start}-${group.end}-${group.label ?? "none"}`}><strong>{group.start === group.end ? group.start : `${group.start}–${group.end}`}</strong>{group.label ? ` · ${group.label}` : ""}</span>)}</div> : null}
+					{reservations.data.length > 0 ? (
+						<button type="button" className="reservation-toggle" onClick={() => setReservationsOpen(true)}>
+							Ver reservas disponíveis ({reservations.data.length})
+						</button>
+					) : (
+						<p className="reservation-empty">Nenhuma reserva disponível. Adicione uma faixa para liberar números.</p>
+					)}
+				</section>
+			) : null}
 			{participants.loading ? (
 				<Loading />
 			) : filtered.length === 0 ? (
@@ -925,11 +1152,13 @@ function EventPage({
 											>
 												Desfazer
 											</button>
-												) : lockedByOther ? <span className="status pending">Em atendimento</span> : (
-													<>
-														<button type="button" className="button small outline" disabled={busyId === item.id} onClick={() => openEdit(item)}>Editar</button>
-														<button type="button" className="button small primary" disabled={busyId === item.id || lockedByOther} onClick={() => setConfirming(item)}>{busyId === item.id ? "..." : "Confirmar"}</button>
-													</>
+														) : lockedByOther ? <span className="status pending">Em atendimento</span> : (
+															<>
+																<div className="row-action-buttons">
+																	<button type="button" className="button icon-button outline" title="Editar participante" aria-label="Editar participante" disabled={busyId === item.id} onClick={() => openEdit(item)}><Pencil size={14} /></button>
+																<button type="button" className="button small primary" disabled={busyId === item.id || lockedByOther} onClick={() => setConfirming(item)}>{busyId === item.id ? "..." : "Confirmar"}</button>
+															</div>
+															</>
 												)}
 									</td>
 								</tr>;
@@ -940,6 +1169,8 @@ function EventPage({
 			)}
 			{confirming ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Confirmar retirada</h2><dl className="detail-list"><dt>Nome</dt><dd>{getParticipantField(confirming, "name")}</dd><dt>CPF</dt><dd>{getParticipantField(confirming, "cpf")}</dd><dt>Data de nascimento</dt><dd>{formatBirthDate(confirming.birthDate)}</dd><dt>Idade</dt><dd>{getAge(confirming.birthDate)}</dd><dt>Sexo</dt><dd>{getParticipantField(confirming, "sex")}</dd><dt>Tamanho da camisa</dt><dd>{getParticipantField(confirming, "shirtSize")}</dd><dt>Equipe</dt><dd>{getParticipantField(confirming, "team")}</dd><dt>{legacy ? "Número" : "Ingresso"}</dt><dd>{legacy ? getParticipantField(confirming, "bibNumber") : getParticipantField(confirming, "ticketId")}</dd><dt>Código do ingresso</dt><dd>{getParticipantField(confirming, "sourceTicketId")}</dd><dt>Categoria</dt><dd>{legacy ? getParticipantField(confirming, "modality") : getParticipantField(confirming, "ticketName")}</dd><dt>QR Code</dt><dd>{getParticipantField(confirming, "qrCode")}</dd>{!legacy && (confirming as EventParticipant).customFormResponses?.map((field, index) => <React.Fragment key={`${field.name}-${index}`}><dt>{field.label || field.name}</dt><dd>{String(field.response ?? "-")}</dd></React.Fragment>)}</dl><section className="third-party-section"><label><input type="checkbox" checked={isProxyTakeout} onChange={(event) => setIsProxyTakeout(event.target.checked)} disabled={busyId === confirming.id} /> Retirada por terceiros</label>{isProxyTakeout ? <div className="third-party-fields"><Field label="Nome do retirante"><input value={retiranteNome} onChange={(event) => setRetiranteNome(event.target.value)} placeholder="Nome completo" /></Field><Field label="CPF do retirante (opcional)"><input value={retiranteCpf} onChange={(event) => setRetiranteCpf(event.target.value)} inputMode="numeric" /></Field></div> : null}</section><div className="form-actions"><button type="button" className="button ghost" onClick={() => setConfirming(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === confirming.id || (isProxyTakeout && !retiranteNome.trim())} onClick={() => { void confirm(confirming).finally(() => setConfirming(null)); }}>Confirmar retirada</button></div></div></div> : null}
 			{editing ? <div className="modal-backdrop"><div className="modal" role="dialog" aria-modal="true"><h2>Editar participante</h2><Field label="Nome"><input value={editName} onChange={(e) => setEditName(e.target.value)} /></Field><Field label="CPF"><input value={editCpf} onChange={(e) => setEditCpf(e.target.value)} /></Field><Field label="Data de nascimento"><input type="date" value={editBirthDate} onChange={(e) => setEditBirthDate(e.target.value)} min="1900-01-01" /></Field><Field label="Tipo de ingresso"><input value={editTicketType} onChange={(e) => setEditTicketType(e.target.value)} /></Field><Field label="Tamanho da camisa"><input value={editShirtSize} onChange={(e) => setEditShirtSize(e.target.value)} /></Field><Field label="Equipe"><input value={editTeam} onChange={(e) => setEditTeam(e.target.value)} /></Field><div className="form-actions"><button type="button" className="button ghost" onClick={() => setEditing(null)}>Cancelar</button><button type="button" className="button primary" disabled={busyId === editing.id} onClick={() => void saveEdit()}>{busyId === editing.id ? "Salvando..." : "Salvar"}</button></div></div></div> : null}
+			{reservationsOpen ? <LegacyReservationsModal reservations={reservations.data} onClose={() => setReservationsOpen(false)} /> : null}
+			{createParticipantOpen ? <LegacyParticipantModal reservations={reservations.data} busy={createParticipantBusy} onClose={() => setCreateParticipantOpen(false)} onSubmit={createParticipant} /> : null}
 		</div>
 	);
 }
