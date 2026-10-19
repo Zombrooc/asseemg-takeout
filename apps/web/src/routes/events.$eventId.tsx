@@ -12,7 +12,11 @@ import { ExportEventParticipantsButton } from "@/components/takeout/export-event
 import { BreadcrumbNav } from "@/components/breadcrumb-nav";
 import { cn } from "@/lib/utils";
 import { formatBirthDateBR } from "@/lib/format-date";
-import Fuse from "fuse.js";
+import {
+  createParticipantSearchIndex,
+  normalizeSearchValue,
+  searchParticipantIndex,
+} from "@pickup/api/participant-search";
 import { buildLegacyParticipantAlertMap } from "@pickup/api/legacy-participant-alerts";
 import {
   getEventParticipants,
@@ -36,19 +40,13 @@ import { useTakeoutWs } from "@/lib/use-takeout-ws";
 import { toast } from "sonner";
 import { ArrowLeft, RefreshCw, Search, TriangleAlert, X } from "lucide-react";
 
+export { normalizeSearchValue } from "@pickup/api/participant-search";
+
 const isDev = import.meta.env.DEV;
 
 export const Route = createFileRoute("/events/$eventId")({
   component: EventDetailPage,
 });
-
-export function normalizeSearchValue(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
 
 export function participantMatchesSearch(participant: EventParticipant, query: string): boolean {
   const normalizedQuery = normalizeSearchValue(query);
@@ -358,30 +356,27 @@ function EventDetailPage() {
     setCreateModalOpen(true);
   };
 
-  const fuse = useMemo(
+  const participantSearchIndex = useMemo(
     () =>
-      new Fuse(participants, {
-        keys: ["name"],
-        threshold: 0.4,
-        includeScore: false,
-      }),
-    [participants]
+      createParticipantSearchIndex(participants, (participant) => ({
+        exact: [
+          participant.name,
+          participant.cpf,
+          participant.birthDate,
+          participant.ticketId,
+          participant.sourceTicketId,
+          participant.qrCode,
+          participant.ticketName,
+          participant.bibNumber,
+        ],
+        fuzzy: [participant.name],
+      })),
+    [participants],
   );
 
   const filteredParticipants = useMemo(() => {
-    if (!searchQuery.trim()) return participants;
-
-    // Passo rápido: match exato/parcial (CPF, número de peito, ingresso, etc.)
-    const exactMatches = participants.filter((p) => participantMatchesSearch(p, searchQuery));
-    if (exactMatches.length > 0) return exactMatches;
-
-    // Fallback: busca fuzzy por nome (tolera typos), mínimo 3 chars
-    if (normalizeSearchValue(searchQuery).length >= 3) {
-      return fuse.search(searchQuery).map((r) => r.item);
-    }
-
-    return [];
-  }, [participants, searchQuery, fuse]);
+    return searchParticipantIndex(participantSearchIndex, searchQuery);
+  }, [participantSearchIndex, searchQuery]);
 
   const realStats = useMemo(() => getParticipantStats(participants), [participants]);
   const participantAlertMap = useMemo(

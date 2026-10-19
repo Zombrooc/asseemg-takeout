@@ -2,3 +2,4 @@
 export * from "./takeout-contracts";
 export * from "./legacy-participant-alerts";
 export * from "./wix-qr";
+export * from "./participant-search";

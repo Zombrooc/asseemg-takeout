@@ -1,5 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { buildLegacyParticipantAlertMap } from "@pickup/api/legacy-participant-alerts";
+import {
+  createParticipantSearchIndex,
+  searchParticipantIndex,
+} from "@pickup/api/participant-search";
 import { qrValueMatches } from "@pickup/api/wix-qr";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import type {
@@ -45,36 +49,6 @@ function isLegacyParticipant(participant: DisplayParticipant): participant is Le
 function getParticipantKey(participant: DisplayParticipant, sourceType: SourceType): string {
   if (sourceType === "legacy_csv" && isLegacyParticipant(participant)) return participant.id;
   return (participant as EventParticipant).ticketId;
-}
-
-function normalize(s: string): string {
-  return s.trim().toLowerCase();
-}
-
-function matchesSearch(participant: DisplayParticipant, q: string): boolean {
-  const nq = normalize(q);
-  if (!nq) return true;
-  const inStr = (val: string | null | undefined) =>
-    val != null && normalize(String(val)).includes(nq);
-  if (isLegacyParticipant(participant)) {
-    return (
-      inStr(participant.name) ||
-      inStr(participant.cpf) ||
-      inStr(participant.birthDate) ||
-      inStr(String(participant.bibNumber)) ||
-      inStr(participant.modality ?? null) ||
-      inStr(participant.team ?? null) ||
-      inStr(participant.qrCode ?? null)
-    );
-  }
-  return (
-    inStr(participant.name) ||
-    inStr(participant.cpf) ||
-    inStr(participant.birthDate ?? null) ||
-    inStr(participant.sourceTicketId ?? null) ||
-    inStr(participant.ticketId) ||
-    inStr(participant.qrCode)
-  );
 }
 
 const PENDING_QUEUE_KEY = ["takeout-pending-queue"] as const;
@@ -216,9 +190,39 @@ export default function EventScreen() {
       new Map(participants.map((participant) => [participant.id, participant])),
     [participants],
   );
+  const participantSearchIndex = useMemo(
+    () =>
+      createParticipantSearchIndex(participants, (participant) =>
+        isLegacyParticipant(participant)
+          ? {
+              exact: [
+                participant.name,
+                participant.cpf,
+                participant.birthDate,
+                participant.bibNumber,
+                participant.modality,
+                participant.team,
+                participant.qrCode,
+              ],
+              fuzzy: [participant.name, participant.modality, participant.team],
+            }
+          : {
+              exact: [
+                participant.name,
+                participant.cpf,
+                participant.birthDate,
+                participant.sourceTicketId,
+                participant.ticketId,
+                participant.qrCode,
+              ],
+              fuzzy: [participant.name],
+            },
+      ),
+    [participants],
+  );
   const filteredParticipants = useMemo(
-    () => participants.filter((p) => matchesSearch(p, searchQuery)),
-    [participants, searchQuery],
+    () => searchParticipantIndex(participantSearchIndex, searchQuery),
+    [participantSearchIndex, searchQuery],
   );
   const participantAlertMap = useMemo<Record<string, ParticipantAlert[]>>(
     () =>

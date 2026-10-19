@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { EventParticipant, LegacyEventParticipant } from "@/lib/takeout-api";
 import { resolveDisplayTicket } from "@/components/participants-table";
 import {
+  createParticipantSearchIndex,
+  searchParticipantIndex,
+} from "@pickup/api/participant-search";
+import {
   getParticipantStats,
   getTicketTypeOptions,
   isBirthDateInAllowedRange,
@@ -87,6 +91,29 @@ describe("participant search helpers", () => {
     expect(participantMatchesSearch(withBib, "42")).toBe(true);
     // "77" does not appear in any other field of the fixture
     expect(participantMatchesSearch(withBib, "77")).toBe(false);
+  });
+
+  it("finds an accented name when the query omits accents or contains a transposition", () => {
+    const index = createParticipantSearchIndex(
+      [{ id: "accented", name: "João da Silva" }, { id: "other", name: "Maria Souza" }],
+      (item) => ({ exact: [item.name], fuzzy: [item.name] }),
+    );
+
+    expect(searchParticipantIndex(index, "joao").map((item) => item.id)).toEqual(["accented"]);
+    expect(searchParticipantIndex(index, "jooa").map((item) => item.id)).toEqual(["accented"]);
+  });
+
+  it("prioritizes exact fields and only uses fuzzy matching when exact search has no result", () => {
+    const index = createParticipantSearchIndex(
+      [
+        { id: "exact", name: "João da Silva", ticket: "TICKET-123" },
+        { id: "fuzzy", name: "Joana da Silva", ticket: "TICKET-456" },
+      ],
+      (item) => ({ exact: [item.name, item.ticket], fuzzy: [item.name] }),
+    );
+
+    expect(searchParticipantIndex(index, "ticket-123").map((item) => item.id)).toEqual(["exact"]);
+    expect(searchParticipantIndex(index, "joana").map((item) => item.id)).toEqual(["fuzzy"]);
   });
 });
 

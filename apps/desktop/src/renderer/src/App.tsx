@@ -38,6 +38,7 @@ import { autoMap, buildMappedCsv, decodeCsv, getImportSteps, LEGACY_FIELDS, mapp
 import { ASSEEMGLogo } from "./AsseemgLogo";
 import { getEventMetadataErrors } from "./event-validation";
 import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
+import { createParticipantSearchIndex, searchParticipantIndex } from "@pickup/api/participant-search";
 
 type Page = "dashboard" | "event" | "new-event" | "import" | "audit" | "settings";
 type Notice = { kind: "success" | "error"; message: string } | null;
@@ -859,17 +860,22 @@ function EventPage({
 		const timer = window.setInterval(() => { if (active) void api.renewLock(confirming.id).catch(() => {}); }, 15000);
 		return () => { active = false; window.clearInterval(timer); void api.releaseLock(confirming.id).catch(() => {}); };
 	}, [confirming]);
-	const filtered = useMemo(() => {
-		const query = search.trim().toLocaleLowerCase("pt-BR");
-		if (!query) return participants.data;
-		return participants.data.filter((item) =>
-			Object.values(item).some((value) =>
-				String(value ?? "")
-					.toLocaleLowerCase("pt-BR")
-					.includes(query),
-			),
-		);
-	}, [participants.data, search]);
+	const participantSearchIndex = useMemo(
+		() =>
+			createParticipantSearchIndex(participants.data, (item) => ({
+				exact: Object.values(item),
+				fuzzy: [
+					item.name,
+					"modality" in item ? item.modality : (item as EventParticipant).ticketName,
+					item.team,
+				],
+			})),
+		[participants.data],
+	);
+	const filtered = useMemo(
+		() => searchParticipantIndex(participantSearchIndex, search),
+		[participantSearchIndex, search],
+	);
 	const confirm = async (item: EventParticipant | LegacyEventParticipant) => {
 		if (isProxyTakeout && !retiranteNome.trim()) {
 			notify({ kind: "error", message: "Informe o nome do retirante" });
