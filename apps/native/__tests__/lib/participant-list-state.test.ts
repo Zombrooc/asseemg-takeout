@@ -11,8 +11,8 @@ describe("participant-list-state", () => {
 
     expect(state.statusLabel).toBe("Check-in feito");
     expect(state.statusTone).toBe("success");
-    expect(state.primaryActionLabel).toBe("OK");
-    expect(state.primaryActionDisabled).toBe(true);
+    expect(state.primaryActionLabel).toBe("Visualizar dados");
+    expect(state.primaryActionDisabled).toBe(false);
     expect(state.showDismissConflict).toBe(false);
   });
 

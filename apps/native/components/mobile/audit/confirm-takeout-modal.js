@@ -88,7 +88,7 @@ function buildTicketConflictKey(participant, sourceType) {
 function ConfirmTakeoutModal(_a) {
     var _this = this;
     var _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
-    var visible = _a.visible, participant = _a.participant, _p = _a.alerts, alerts = _p === void 0 ? [] : _p, _q = _a.sourceType, sourceType = _q === void 0 ? "json_sync" : _q, eventId = _a.eventId, onClose = _a.onClose, onConfirmed = _a.onConfirmed, onQueuedOffline = _a.onQueuedOffline, onConflict = _a.onConflict;
+    var visible = _a.visible, participant = _a.participant, _p = _a.readOnly, readOnly = _p === void 0 ? false : _p, _q = _a.alerts, alerts = _q === void 0 ? [] : _q, _r = _a.sourceType, sourceType = _r === void 0 ? "json_sync" : _r, eventId = _a.eventId, onClose = _a.onClose, onConfirmed = _a.onConfirmed, onQueuedOffline = _a.onQueuedOffline, onConflict = _a.onConflict;
     var insets = (0, react_native_safe_area_context_1.useSafeAreaInsets)();
     var _r = (0, responsive_1.useResponsiveScale)(), scale = _r.scale, width = _r.width;
     var windowHeight = (0, react_native_1.useWindowDimensions)().height;
@@ -135,7 +135,7 @@ function ConfirmTakeoutModal(_a) {
         };
     }, [visible]);
     (0, react_1.useEffect)(function () {
-        if (!visible || !participant || !api || !deviceId) {
+        if (readOnly || !visible || !participant || !api || !deviceId) {
             setLockState(null);
             return;
         }
@@ -181,7 +181,7 @@ function ConfirmTakeoutModal(_a) {
                 api.deleteLocksRelease(participant.id, deviceId).catch(function () { });
             }
         };
-    }, [visible, participant === null || participant === void 0 ? void 0 : participant.id, api, deviceId]);
+    }, [visible, participant === null || participant === void 0 ? void 0 : participant.id, api, deviceId, readOnly]);
     var handleClose = function () {
         if (participant && api && deviceId && lockState === "heldByMe") {
             api.deleteLocksRelease(participant.id, deviceId).catch(function () { });
@@ -217,7 +217,7 @@ function ConfirmTakeoutModal(_a) {
                         }),
                     }).catch(function () { });
                     // #endregion
-                    if (!participant || !api || !deviceId)
+                    if (readOnly || !participant || !api || !deviceId)
                         return [2 /*return*/];
                     if (sourceType === "legacy_csv" && !eventId) {
                         setError("Event ID ausente para confirmacao legado.");
@@ -353,7 +353,7 @@ function ConfirmTakeoutModal(_a) {
             <react_native_1.Pressable style={{ width: "90%", maxWidth: width * 0.9, maxHeight: modalLayout.cardMaxHeight }} onPress={function (e) { return e.stopPropagation(); }}>
               <ui_tamagui_1.Card style={{ padding: 24 }}>
                 <tamagui_1.Text fontSize={18} fontWeight="600" color="$foreground">
-                  Confirmar check-in
+                  {readOnly ? "Dados do participante" : "Confirmar check-in"}
                 </tamagui_1.Text>
                 {alerts.length > 0 ? (<tamagui_1.YStack testID="takeout-confirm-modal-alerts" gap="$2" style={{
                 marginTop: 12,
@@ -385,7 +385,7 @@ function ConfirmTakeoutModal(_a) {
                   <Row label="Tipo de ingresso" value={(_l = ((_k = legacy === null || legacy === void 0 ? void 0 : legacy.modality) !== null && _k !== void 0 ? _k : current === null || current === void 0 ? void 0 : current.ticketName)) !== null && _l !== void 0 ? _l : "-"}/>
                   <Row label="Tamanho da camisa" value={(_m = legacy === null || legacy === void 0 ? void 0 : legacy.shirtSize) !== null && _m !== void 0 ? _m : "-"}/>
                   <Row label="Equipe" value={(_o = legacy === null || legacy === void 0 ? void 0 : legacy.team) !== null && _o !== void 0 ? _o : "-"}/>
-                </tamagui_1.YStack>
+                 </tamagui_1.YStack>
                 {(current === null || current === void 0 ? void 0 : current.customFormResponses) && current.customFormResponses.length > 0 ? (<tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
                     <tamagui_1.Text color="$textSecondary" fontSize={12} fontWeight="500">
                       Dados adicionais
@@ -394,7 +394,7 @@ function ConfirmTakeoutModal(_a) {
                       {current.customFormResponses.map(function (r, i) { return (<Row key={i} label={r.label || r.name} value={formatResponseValue(r.response)}/>); })}
                     </tamagui_1.YStack>
                   </tamagui_1.YStack>) : null}
-                <tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
+                 {!readOnly ? (<tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
                   <tamagui_1.Text color="$textSecondary" fontSize={12} fontWeight="500">
                     Retirante
                   </tamagui_1.Text>
@@ -408,7 +408,7 @@ function ConfirmTakeoutModal(_a) {
                           Nome do retirante e obrigatorio.
                         </tamagui_1.Text>) : null}
                     </tamagui_1.YStack>) : null}
-                </tamagui_1.YStack>
+                 </tamagui_1.YStack>) : null}
                 {error ? (<tamagui_1.Text color="$danger" fontSize={14}>
                     {error}
                   </tamagui_1.Text>) : null}
@@ -416,9 +416,9 @@ function ConfirmTakeoutModal(_a) {
                   <ui_tamagui_1.Button testID="takeout-confirm-modal-cancel" variant="bordered" onPress={handleClose} isDisabled={loading}>
                     Cancelar
                   </ui_tamagui_1.Button>
-                  <ui_tamagui_1.Button testID="takeout-confirm-modal-confirm" onPress={handleConfirm} isLoading={loading} isDisabled={loading || !canConfirm}>
+                  {!readOnly ? (<ui_tamagui_1.Button testID="takeout-confirm-modal-confirm" onPress={handleConfirm} isLoading={loading} isDisabled={loading || !canConfirm}>
                     Confirmar check-in
-                  </ui_tamagui_1.Button>
+                  </ui_tamagui_1.Button>) : null}
                 </tamagui_1.XStack>
               </ui_tamagui_1.Card>
             </react_native_1.Pressable>

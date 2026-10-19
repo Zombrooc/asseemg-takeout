@@ -39,6 +39,7 @@ type ModalParticipant = EventParticipant | LegacyEventParticipant;
 type Props = {
   visible: boolean;
   participant: ModalParticipant | null;
+  readOnly?: boolean;
   alerts?: ParticipantAlert[];
   sourceType?: SourceType;
   eventId?: string;
@@ -91,6 +92,7 @@ function buildTicketConflictKey(participant: ModalParticipant, sourceType: Sourc
 export function ConfirmTakeoutModal({
   visible,
   participant,
+  readOnly = false,
   alerts = [],
   sourceType = "json_sync",
   eventId,
@@ -151,7 +153,7 @@ export function ConfirmTakeoutModal({
   }, [visible]);
 
   useEffect(() => {
-    if (!visible || !participant || !api || !deviceId) {
+    if (readOnly || !visible || !participant || !api || !deviceId) {
       setLockState(null);
       return;
     }
@@ -183,7 +185,7 @@ export function ConfirmTakeoutModal({
         api.deleteLocksRelease(participant.id, deviceId).catch(() => {});
       }
     };
-  }, [visible, participant?.id, api, deviceId]);
+  }, [visible, participant?.id, api, deviceId, readOnly]);
 
   const handleClose = () => {
     if (participant && api && deviceId && lockState === "heldByMe") {
@@ -216,7 +218,7 @@ export function ConfirmTakeoutModal({
       }),
     }).catch(() => {});
     // #endregion
-    if (!participant || !api || !deviceId) return;
+    if (readOnly || !participant || !api || !deviceId) return;
     if (sourceType === "legacy_csv" && !eventId) {
       setError("Event ID ausente para confirmacao legado.");
       return;
@@ -352,7 +354,7 @@ export function ConfirmTakeoutModal({
             >
               <Card style={{ padding: 24 }}>
                 <Text fontSize={18} fontWeight="600" color="$foreground">
-                  Confirmar check-in
+                  {readOnly ? "Dados do participante" : "Confirmar check-in"}
                 </Text>
                 {alerts.length > 0 ? (
                   <YStack
@@ -418,44 +420,46 @@ export function ConfirmTakeoutModal({
                     </YStack>
                   </YStack>
                 ) : null}
-                <YStack gap="$2" style={{ marginBottom: 16 }}>
-                  <Text color="$textSecondary" fontSize={12} fontWeight="500">
-                    Retirante
-                  </Text>
-                  <Button
-                    testID="takeout-confirm-modal-proxy-toggle"
-                    variant={isProxyTakeout ? "secondary" : "bordered"}
-                    onPress={() => setIsProxyTakeout((prev) => !prev)}
-                    isDisabled={loading}
-                  >
-                    {isProxyTakeout ? "Retirada por terceiro: Sim" : "Retirada por terceiro: Nao"}
-                  </Button>
-                  {isProxyTakeout ? (
-                    <YStack gap="$2">
-                      <Input
-                        testID="takeout-confirm-modal-retirante-nome"
-                        value={retiranteNome}
-                        onChangeText={setRetiranteNome}
-                        placeholder="Nome do retirante"
-                        autoCapitalize="words"
-                        editable={!loading}
-                      />
-                      <Input
-                        testID="takeout-confirm-modal-retirante-cpf"
-                        value={retiranteCpf}
-                        onChangeText={setRetiranteCpf}
-                        placeholder="CPF do retirante (opcional)"
-                        keyboardType="number-pad"
-                        editable={!loading}
-                      />
-                      {!isRetiranteNomeValid ? (
-                        <Text color="$danger" fontSize={12}>
-                          Nome do retirante e obrigatorio.
-                        </Text>
-                      ) : null}
-                    </YStack>
-                  ) : null}
-                </YStack>
+                {!readOnly ? (
+                  <YStack gap="$2" style={{ marginBottom: 16 }}>
+                    <Text color="$textSecondary" fontSize={12} fontWeight="500">
+                      Retirante
+                    </Text>
+                    <Button
+                      testID="takeout-confirm-modal-proxy-toggle"
+                      variant={isProxyTakeout ? "secondary" : "bordered"}
+                      onPress={() => setIsProxyTakeout((prev) => !prev)}
+                      isDisabled={loading}
+                    >
+                      {isProxyTakeout ? "Retirada por terceiro: Sim" : "Retirada por terceiro: Nao"}
+                    </Button>
+                    {isProxyTakeout ? (
+                      <YStack gap="$2">
+                        <Input
+                          testID="takeout-confirm-modal-retirante-nome"
+                          value={retiranteNome}
+                          onChangeText={setRetiranteNome}
+                          placeholder="Nome do retirante"
+                          autoCapitalize="words"
+                          editable={!loading}
+                        />
+                        <Input
+                          testID="takeout-confirm-modal-retirante-cpf"
+                          value={retiranteCpf}
+                          onChangeText={setRetiranteCpf}
+                          placeholder="CPF do retirante (opcional)"
+                          keyboardType="number-pad"
+                          editable={!loading}
+                        />
+                        {!isRetiranteNomeValid ? (
+                          <Text color="$danger" fontSize={12}>
+                            Nome do retirante e obrigatorio.
+                          </Text>
+                        ) : null}
+                      </YStack>
+                    ) : null}
+                  </YStack>
+                ) : null}
                 {error ? (
                   <Text color="$danger" fontSize={14}>
                     {error}
@@ -470,14 +474,16 @@ export function ConfirmTakeoutModal({
                   >
                     Cancelar
                   </Button>
-                  <Button
-                    testID="takeout-confirm-modal-confirm"
-                    onPress={handleConfirm}
-                    isLoading={loading}
-                    isDisabled={loading || !canConfirm}
-                  >
-                    Confirmar check-in
-                  </Button>
+                  {!readOnly ? (
+                    <Button
+                      testID="takeout-confirm-modal-confirm"
+                      onPress={handleConfirm}
+                      isLoading={loading}
+                      isDisabled={loading || !canConfirm}
+                    >
+                      Confirmar check-in
+                    </Button>
+                  ) : null}
                 </XStack>
               </Card>
             </Pressable>

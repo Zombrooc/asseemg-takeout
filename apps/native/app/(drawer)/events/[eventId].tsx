@@ -290,11 +290,12 @@ export default function EventScreen() {
         return;
       }
       const participantKey = getParticipantKey(participant, sourceType);
-      if (sourceType === "legacy_csv" ? participant.checkinDone : auditConfirmedTicketIds.has(participantKey)) {
-        Alert.alert(
-          "Check-in já realizado",
-          "Este ingresso já teve check-in realizado.",
-        );
+      const isConfirmed =
+        sourceType === "legacy_csv"
+          ? participant.checkinDone
+          : auditConfirmedTicketIds.has(participantKey);
+      if (isConfirmed) {
+        setSelectedParticipant(participant);
         return;
       }
       if (
@@ -371,6 +372,12 @@ export default function EventScreen() {
     },
     [participantsById],
   );
+
+  const selectedParticipantIsConfirmed =
+    selectedParticipant != null &&
+    (sourceType === "legacy_csv"
+      ? selectedParticipant.checkinDone
+      : auditConfirmedTicketIds.has(getParticipantKey(selectedParticipant, sourceType)));
 
   const handleDismissConflict = useCallback((ticketId: string) => {
     setConflictTicketIds((prev) => {
@@ -592,6 +599,7 @@ export default function EventScreen() {
       <ConfirmTakeoutModal
         visible={!!selectedParticipant}
         participant={selectedParticipant}
+        readOnly={selectedParticipantIsConfirmed}
         alerts={selectedParticipant ? participantAlertMap[selectedParticipant.id] ?? [] : []}
         sourceType={sourceType}
         eventId={eventId}

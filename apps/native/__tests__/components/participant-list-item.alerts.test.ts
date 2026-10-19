@@ -31,4 +31,16 @@ describe("participant list item alerts", () => {
     expect(source).toContain("testID={`participant-alert-icon-${id}`}");
     expect(source).toContain("{alert.message}");
   });
+
+  it("keeps the confirmed participant action available for viewing", () => {
+    const sources = [
+      loadSource(tamaguiItemPath),
+      loadSource(herouiItemPath),
+    ];
+
+    for (const source of sources) {
+      expect(source).toContain("{state.primaryActionLabel}");
+      expect(source).toContain("onPress={() => onPrimaryAction(id)}");
+    }
+  });
 });

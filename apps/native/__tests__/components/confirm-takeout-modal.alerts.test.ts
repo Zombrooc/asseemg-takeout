@@ -25,4 +25,13 @@ describe("confirm-takeout-modal alerts", () => {
 
     expect(source).toContain("isDisabled={loading || !canConfirm}");
   });
+
+  it("supports a read-only mode for already confirmed participants", () => {
+    const source = loadModalSource();
+
+    expect(source).toContain("readOnly?: boolean;");
+    expect(source).toContain('{readOnly ? "Dados do participante" : "Confirmar check-in"}');
+    expect(source).toContain("if (readOnly || !participant || !api || !deviceId) return;");
+    expect(source).toContain("{!readOnly ? (");
+  });
 });

@@ -6,8 +6,8 @@ function getParticipantListState(input) {
         return {
             statusLabel: "Check-in feito",
             statusTone: "success",
-            primaryActionLabel: "OK",
-            primaryActionDisabled: true,
+            primaryActionLabel: "Visualizar dados",
+            primaryActionDisabled: false,
             showDismissConflict: false,
         };
     }
