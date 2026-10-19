@@ -1,4 +1,5 @@
 import {
+  applyParticipantUpdatePatch,
   getRealtimeInvalidation,
   nextReconnectDelay,
   parseRealtimeMessageData,
@@ -68,6 +69,56 @@ describe("realtime invalidation policy", () => {
       invalidateAudit: false,
       invalidateEvents: true,
     });
+  });
+});
+
+describe("participant update patch", () => {
+  it("updates JSON participants immediately from the desktop event", () => {
+    const participants = [
+      { id: "p-1", ticketId: "ticket-1", name: "Nome antigo", checkinDone: false },
+      { id: "p-2", ticketId: "ticket-2", name: "Outro", checkinDone: false },
+    ];
+
+    expect(
+      applyParticipantUpdatePatch(participants, {
+        type: "participant_updated",
+        source_type: "json_sync",
+        participant_id: "p-1",
+        ticket_id: "ticket-1",
+        name: "Nome novo",
+        cpf: "123",
+        birthDate: "1990-01-01",
+        ticketName: "10KM",
+        shirtSize: "M",
+        team: "Equipe",
+      }),
+    ).toEqual([
+      {
+        id: "p-1",
+        ticketId: "ticket-1",
+        name: "Nome novo",
+        checkinDone: false,
+        cpf: "123",
+        birthDate: "1990-01-01",
+        ticketName: "10KM",
+        shirtSize: "M",
+        team: "Equipe",
+      },
+      participants[1],
+    ]);
+  });
+
+  it("updates legacy participants by participant id", () => {
+    const participants = [{ id: "legacy-1", name: "Nome antigo", modality: "5KM" }];
+
+    expect(
+      applyParticipantUpdatePatch(participants, {
+        type: "participant_updated",
+        source_type: "legacy_csv",
+        participant_id: "legacy-1",
+        modality: "10KM",
+      }),
+    ).toEqual([{ id: "legacy-1", name: "Nome antigo", modality: "10KM" }]);
   });
 });
 

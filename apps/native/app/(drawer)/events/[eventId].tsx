@@ -12,6 +12,7 @@ import type {
   LegacyEventParticipant,
   LegacyReservedNumber,
   ParticipantAlert,
+  UpdateEventParticipantPayload,
 } from "@/lib/takeout-api-types";
 import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +27,7 @@ import {
   SearchBar,
   SummaryStats,
 } from "@/components/mobile-tamagui/event";
+import { EditParticipantModal } from "@/components/mobile-tamagui/event/edit-participant-modal";
 import { LegacyCreateParticipantModal } from "@/components/mobile-tamagui/event/legacy-create-participant-modal";
 import { ConfirmTakeoutModal } from "@/components/mobile/audit/confirm-takeout-modal";
 import { ParticipantListItem } from "@/components/mobile-tamagui/participant-list-item";
@@ -106,6 +108,8 @@ export default function EventScreen() {
   }, [api, eventId, isReachable, queryClient]);
 
   const [selectedParticipant, setSelectedParticipant] =
+    useState<DisplayParticipant | null>(null);
+  const [editingParticipant, setEditingParticipant] =
     useState<DisplayParticipant | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showQrScanner, setShowQrScanner] = useState(false);
@@ -368,6 +372,34 @@ export default function EventScreen() {
     },
   });
 
+  const editParticipantMutation = useMutation({
+    mutationFn: async (payload: UpdateEventParticipantPayload) => {
+      if (!api || !eventId || !editingParticipant) {
+        throw new Error("Sem conexão com a API.");
+      }
+      return sourceType === "legacy_csv"
+        ? api.putLegacyEventParticipant(eventId, editingParticipant.id, payload)
+        : api.putEventParticipant(eventId, editingParticipant.id, payload);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData<DisplayParticipant[]>(
+        ["takeout-event-participants", eventId],
+        (current) => current?.map((item) => (item.id === updated.id ? updated : item)),
+      );
+      setEditingParticipant(null);
+      Alert.alert("Participante atualizado", "As informações foram salvas.");
+    },
+    onError: (err) => {
+      const message = err instanceof Error ? err.message : "Falha ao atualizar participante.";
+      Alert.alert(
+        "Não foi possível atualizar",
+        message.includes("409")
+          ? "Participante já confirmado não pode ser editado."
+          : message,
+      );
+    },
+  });
+
   const handlePrimaryAction = useCallback(
     (participantId: string) => {
       const participant = participantsById.get(participantId);
@@ -375,6 +407,19 @@ export default function EventScreen() {
       setSelectedParticipant(participant);
     },
     [participantsById],
+  );
+
+  const handleEdit = useCallback(
+    (participantId: string) => {
+      const participant = participantsById.get(participantId);
+      if (!participant) return;
+      if (participant.checkinDone || auditConfirmedTicketIds.has(getParticipantKey(participant, sourceType))) {
+        Alert.alert("Edição indisponível", "Participante já confirmado não pode ser editado.");
+        return;
+      }
+      setEditingParticipant(participant);
+    },
+    [participantsById, auditConfirmedTicketIds, sourceType],
   );
 
   const selectedParticipantIsConfirmed =
@@ -441,6 +486,7 @@ export default function EventScreen() {
           lockedByOther={lockedByOther}
           alerts={alerts}
           onPrimaryAction={handlePrimaryAction}
+          onEdit={handleEdit}
           onDismissConflict={handleDismissConflict}
         />
       );
@@ -619,6 +665,15 @@ export default function EventScreen() {
         submitting={createParticipantMutation.isPending}
         onClose={() => setShowCreateModal(false)}
         onSubmit={(payload) => createParticipantMutation.mutate(payload)}
+      />
+
+      <EditParticipantModal
+        visible={!!editingParticipant}
+        participant={editingParticipant}
+        sourceType={sourceType}
+        submitting={editParticipantMutation.isPending}
+        onClose={() => setEditingParticipant(null)}
+        onSubmit={(payload) => editParticipantMutation.mutate(payload)}
       />
     </>
   );

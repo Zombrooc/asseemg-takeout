@@ -237,6 +237,66 @@ describe("createTakeoutClient", () => {
     );
   });
 
+  it("PUT /events/:eventId/participants/:participantId sends the edit payload", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ id: "p-1" })),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "edit-token",
+    });
+    const payload = {
+      name: "Nome novo",
+      cpf: "12345678900",
+      birthDate: "1990-01-01",
+      ticketType: "10KM",
+      shirtSize: "M",
+      team: "Equipe",
+    };
+
+    await client.putEventParticipant("ev-1", "p-1", payload);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/events/ev-1/participants/p-1",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify(payload),
+        headers: expect.objectContaining({ Authorization: "Bearer edit-token" }),
+      }),
+    );
+  });
+
+  it("PUT /events/:eventId/legacy-participants/:participantId sends the edit payload", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ id: "legacy-1" })),
+    });
+    const client = createTakeoutClient({
+      baseUrl,
+      getAccessToken: async () => "legacy-edit-token",
+    });
+    const payload = {
+      name: "Nome legado",
+      cpf: "12345678900",
+      birthDate: "1990-01-01",
+      ticketType: "5KM",
+      shirtSize: null,
+      team: null,
+    };
+
+    await client.putLegacyEventParticipant("ev-legacy", "legacy-1", payload);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://192.168.1.10:5555/events/ev-legacy/legacy-participants/legacy-1",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify(payload),
+        headers: expect.objectContaining({ Authorization: "Bearer legacy-edit-token" }),
+      }),
+    );
+  });
+
   it("POST /takeout/confirm/legacy sends participant and event ids", async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,

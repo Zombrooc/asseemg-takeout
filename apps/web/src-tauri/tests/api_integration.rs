@@ -1956,6 +1956,12 @@ async fn participants_update_json_sync_emits_ws_participant_updated() {
     );
     assert_eq!(json.get("ticket_id").and_then(|v| v.as_str()), Some("seat-edit-ws"));
     assert_eq!(json.get("source_type").and_then(|v| v.as_str()), Some("json_sync"));
+    assert!(json.get("seq").and_then(|v| v.as_i64()).unwrap_or_default() > 0);
+    assert_eq!(json.get("name").and_then(|v| v.as_str()), Some("Nome Novo"));
+    assert_eq!(json.get("birthDate").and_then(|v| v.as_str()), Some("1991-02-03"));
+    assert_eq!(json.get("ticketName").and_then(|v| v.as_str()), Some("10K"));
+    assert_eq!(json.get("shirtSize").and_then(|v| v.as_str()), Some("GG"));
+    assert_eq!(json.get("team").and_then(|v| v.as_str()), Some("Equipe X"));
 }
 
 #[tokio::test]
@@ -2032,6 +2038,10 @@ async fn participants_update_legacy_emits_ws_participant_updated() {
         Some(participant_id.as_str())
     );
     assert_eq!(json.get("source_type").and_then(|v| v.as_str()), Some("legacy_csv"));
+    assert!(json.get("seq").and_then(|v| v.as_i64()).unwrap_or_default() > 0);
+    assert_eq!(json.get("name").and_then(|v| v.as_str()), Some("Nome Legado Novo"));
+    assert_eq!(json.get("birthDate").and_then(|v| v.as_str()), Some("2001-04-09"));
+    assert_eq!(json.get("modality").and_then(|v| v.as_str()), Some("10KM"));
 }
 
 #[tokio::test]

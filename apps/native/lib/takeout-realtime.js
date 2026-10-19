@@ -18,6 +18,7 @@ exports.parseRealtimeMessageData = parseRealtimeMessageData;
 exports.applyLockEvent = applyLockEvent;
 exports.expireLocks = expireLocks;
 exports.applyParticipantCheckinPatch = applyParticipantCheckinPatch;
+exports.applyParticipantUpdatePatch = applyParticipantUpdatePatch;
 exports.useTakeoutRealtime = useTakeoutRealtime;
 exports.useEventsListRealtime = useEventsListRealtime;
 var react_query_1 = require("@tanstack/react-query");
@@ -139,6 +140,33 @@ function applyParticipantCheckinPatch(participants, message, checkinDone) {
     return participants.map(function (participant) { return (isLegacy ? participant.id === target : participant.ticketId === target)
         ? __assign(__assign({}, participant), { checkinDone: checkinDone }) : participant; });
 }
+function applyParticipantUpdatePatch(participants, message) {
+    if (message.type !== "participant_updated")
+        return participants;
+    var isLegacy = message.source_type === "legacy_csv" || message.ticket_id == null;
+    var target = isLegacy ? message.participant_id : message.ticket_id;
+    if (!target)
+        return participants;
+    var patch = {};
+    if (message.name !== undefined)
+        patch.name = message.name;
+    if (message.cpf !== undefined)
+        patch.cpf = message.cpf;
+    if (message.birthDate !== undefined)
+        patch.birthDate = message.birthDate;
+    if (message.shirtSize !== undefined)
+        patch.shirtSize = message.shirtSize;
+    if (message.team !== undefined)
+        patch.team = message.team;
+    if (isLegacy && message.modality !== undefined)
+        patch.modality = message.modality;
+    if (!isLegacy && message.ticketName !== undefined)
+        patch.ticketName = message.ticketName;
+    return participants.map(function (participant) {
+        var matches = isLegacy ? participant.id === target : participant.ticketId === target;
+        return matches ? __assign(__assign({}, participant), patch) : participant;
+    });
+}
 function useTakeoutRealtime(eventId, baseUrl, deviceId) {
     var queryClient = (0, react_query_1.useQueryClient)();
     var _a = (0, react_1.useState)({}), lockMap = _a[0], setLockMap = _a[1];
@@ -242,6 +270,10 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
                 if (invalidation.invalidateParticipants) {
                     if (data.type === "participant_checked_in" || data.type === "participant_checkin_reverted")
                         queryClient.setQueryData(["takeout-event-participants", eventId], function (participants) { return Array.isArray(participants) ? applyParticipantCheckinPatch(participants, data, data.type === "participant_checked_in") : participants; });
+                    else if (data.type === "participant_updated") {
+                        queryClient.setQueryData(["takeout-event-participants", eventId], function (participants) { return Array.isArray(participants) ? applyParticipantUpdatePatch(participants, data) : participants; });
+                        void queryClient.refetchQueries({ queryKey: ["takeout-event-participants", eventId], type: "active" });
+                    }
                     else
                         queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
                     if (__DEV__) {

@@ -15,6 +15,7 @@ var __exportStar = (this && this.__exportStar) || function(m, exports) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./event-header"), exports);
+__exportStar(require("./edit-participant-modal"), exports);
 __exportStar(require("./legacy-create-participant-modal"), exports);
 __exportStar(require("./offline-queue-notice"), exports);
 __exportStar(require("./quick-actions-row"), exports);

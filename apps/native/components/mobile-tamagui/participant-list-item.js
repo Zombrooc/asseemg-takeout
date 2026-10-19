@@ -12,7 +12,7 @@ var statusColorMap = {
     danger: "#dc2626",
 };
 function ParticipantListItemComponent(_a) {
-    var id = _a.id, ticketId = _a.ticketId, name = _a.name, ticketLabel = _a.ticketLabel, isConfirmed = _a.isConfirmed, isPendingSync = _a.isPendingSync, isConflict = _a.isConflict, lockedByOther = _a.lockedByOther, _b = _a.alerts, alerts = _b === void 0 ? [] : _b, onPrimaryAction = _a.onPrimaryAction, onDismissConflict = _a.onDismissConflict;
+    var id = _a.id, ticketId = _a.ticketId, name = _a.name, ticketLabel = _a.ticketLabel, isConfirmed = _a.isConfirmed, isPendingSync = _a.isPendingSync, isConflict = _a.isConflict, lockedByOther = _a.lockedByOther, _b = _a.alerts, alerts = _b === void 0 ? [] : _b, onPrimaryAction = _a.onPrimaryAction, onEdit = _a.onEdit, onDismissConflict = _a.onDismissConflict;
     var state = (0, participant_list_state_1.getParticipantListState)({
         isConfirmed: isConfirmed,
         lockedByOther: lockedByOther,
@@ -75,9 +75,14 @@ function ParticipantListItemComponent(_a) {
         </react_native_1.View>
         {state.showDismissConflict ? (<ui_tamagui_1.Button testID={"participant-dismiss-".concat(ticketId)} variant="outline" onPress={function () { return onDismissConflict(ticketId); }} style={{ flexShrink: 0 }}>
             Dispensar
-          </ui_tamagui_1.Button>) : (<ui_tamagui_1.Button testID={"participant-confirm-".concat(id)} onPress={function () { return onPrimaryAction(id); }} isDisabled={state.primaryActionDisabled} style={{ flexShrink: 0 }}>
-            {state.primaryActionLabel}
-          </ui_tamagui_1.Button>)}
+          </ui_tamagui_1.Button>) : (<react_native_1.View style={{ flexShrink: 0, gap: 6 }}>
+            <ui_tamagui_1.Button testID={"participant-edit-".concat(id)} variant="outline" onPress={function () { return onEdit(id); }} isDisabled={isConfirmed || state.primaryActionDisabled}>
+              Editar
+            </ui_tamagui_1.Button>
+            <ui_tamagui_1.Button testID={"participant-confirm-".concat(id)} onPress={function () { return onPrimaryAction(id); }} isDisabled={state.primaryActionDisabled}>
+              {state.primaryActionLabel}
+            </ui_tamagui_1.Button>
+          </react_native_1.View>)}
       </react_native_1.View>
     </ui_tamagui_1.Card>);
 }

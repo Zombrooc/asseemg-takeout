@@ -235,6 +235,8 @@ export type WsTakeoutMessage =
       birthDate?: string | null;
       ticketName?: string | null;
       modality?: string | null;
+      shirtSize?: string | null;
+      team?: string | null;
       seq?: number;
     }
   | {

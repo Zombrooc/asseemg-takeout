@@ -440,6 +440,13 @@ fn broadcast_participant_updated(
     participant_id: &str,
     ticket_id: Option<&str>,
     source_type: &str,
+    seq: i64,
+    name: Option<&str>,
+    cpf: Option<&str>,
+    birth_date: Option<&str>,
+    ticket_name: Option<&str>,
+    shirt_size: Option<&str>,
+    team: Option<&str>,
 ) {
     println!(
         "[ws.broadcast] type=participant_updated event_id={} participant_id={} ticket_id={} source_type={} ws_channel={} broadcast_ok=true",
@@ -454,7 +461,15 @@ fn broadcast_participant_updated(
       "event_id": event_id,
       "participant_id": participant_id,
       "ticket_id": ticket_id,
-      "source_type": source_type
+      "source_type": source_type,
+      "name": name,
+      "cpf": cpf,
+      "birthDate": birth_date,
+      "ticketName": ticket_name,
+      "modality": ticket_name,
+      "shirtSize": shirt_size,
+      "team": team,
+      "seq": seq
     })
     .to_string();
     state.ws_registry.broadcast(event_id, &msg);
@@ -668,18 +683,26 @@ async fn events_participants_update(
               "source_type": "json_sync"
             })
             .to_string();
-            let _ = EventLogRepository::insert(
+            let seq = EventLogRepository::insert(
                 &state.pool,
                 &event_id,
                 "participant_updated",
                 Some(&payload_json),
-            );
+            )
+            .unwrap_or_default();
             broadcast_participant_updated(
                 &state,
                 &event_id,
                 &updated.id,
                 Some(&updated.ticket_id),
                 "json_sync",
+                seq,
+                updated.name.as_deref(),
+                updated.cpf.as_deref(),
+                updated.birth_date.as_deref(),
+                updated.ticket_name.as_deref(),
+                updated.shirt_size.as_deref(),
+                updated.team.as_deref(),
             );
             (StatusCode::OK, Json(updated)).into_response()
         },
@@ -1419,18 +1442,26 @@ async fn events_legacy_participants_create(
               "source_type": "legacy_csv"
             })
             .to_string();
-            let _ = EventLogRepository::insert(
+            let seq = EventLogRepository::insert(
                 &state.pool,
                 &event_id,
                 "participant_updated",
                 Some(&payload_json),
-            );
+            )
+            .unwrap_or_default();
             broadcast_participant_updated(
                 &state,
                 &event_id,
                 &created.id,
                 Some(&created.id),
                 "legacy_csv",
+                seq,
+                Some(&created.name),
+                Some(&created.cpf),
+                Some(&created.birth_date),
+                created.modality.as_deref(),
+                created.shirt_size.as_deref(),
+                created.team.as_deref(),
             );
             (StatusCode::OK, Json(created)).into_response()
         }
@@ -1500,18 +1531,26 @@ async fn events_legacy_participants_update(
               "source_type": "legacy_csv"
             })
             .to_string();
-            let _ = EventLogRepository::insert(
+            let seq = EventLogRepository::insert(
                 &state.pool,
                 &event_id,
                 "participant_updated",
                 Some(&payload_json),
-            );
+            )
+            .unwrap_or_default();
             broadcast_participant_updated(
                 &state,
                 &event_id,
                 &updated.id,
                 Some(&updated.id),
                 "legacy_csv",
+                seq,
+                Some(&updated.name),
+                Some(&updated.cpf),
+                Some(&updated.birth_date),
+                updated.modality.as_deref(),
+                updated.shirt_size.as_deref(),
+                updated.team.as_deref(),
             );
             (StatusCode::OK, Json(updated)).into_response()
         },

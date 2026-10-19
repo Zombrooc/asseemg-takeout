@@ -134,8 +134,20 @@ function createTakeoutClient(config) {
         getEventParticipants: function (eventId) {
             return request("/events/".concat(encodeURIComponent(eventId), "/participants"));
         },
+        putEventParticipant: function (eventId, participantId, payload) {
+            return request("/events/".concat(encodeURIComponent(eventId), "/participants/").concat(encodeURIComponent(participantId)), {
+                method: "PUT",
+                body: JSON.stringify(payload),
+            });
+        },
         getLegacyEventParticipants: function (eventId) {
             return request("/events/".concat(encodeURIComponent(eventId), "/legacy-participants"));
+        },
+        putLegacyEventParticipant: function (eventId, participantId, payload) {
+            return request("/events/".concat(encodeURIComponent(eventId), "/legacy-participants/").concat(encodeURIComponent(participantId)), {
+                method: "PUT",
+                body: JSON.stringify(payload),
+            });
         },
         getLegacyReservedNumbers: function (eventId, includeUsed) {
             if (includeUsed === void 0) { includeUsed = false; }

@@ -16,6 +16,7 @@ export type ParticipantListItemProps = {
   lockedByOther: boolean;
   alerts?: ParticipantAlert[];
   onPrimaryAction: (participantId: string) => void;
+  onEdit: (participantId: string) => void;
   onDismissConflict: (ticketId: string) => void;
 };
 
@@ -36,6 +37,7 @@ function ParticipantListItemComponent({
   lockedByOther,
   alerts = [],
   onPrimaryAction,
+  onEdit,
   onDismissConflict,
 }: ParticipantListItemProps) {
   const state = getParticipantListState({
@@ -140,14 +142,23 @@ function ParticipantListItemComponent({
             Dispensar
           </Button>
         ) : (
-          <Button
-            testID={`participant-confirm-${id}`}
-            onPress={() => onPrimaryAction(id)}
-            isDisabled={state.primaryActionDisabled}
-            style={{ flexShrink: 0 }}
-          >
-            {state.primaryActionLabel}
-          </Button>
+          <View style={{ flexShrink: 0, gap: 6 }}>
+            <Button
+              testID={`participant-edit-${id}`}
+              variant="outline"
+              onPress={() => onEdit(id)}
+              isDisabled={isConfirmed || state.primaryActionDisabled}
+            >
+              Editar
+            </Button>
+            <Button
+              testID={`participant-confirm-${id}`}
+              onPress={() => onPrimaryAction(id)}
+              isDisabled={state.primaryActionDisabled}
+            >
+              {state.primaryActionLabel}
+            </Button>
+          </View>
         )}
       </View>
     </Card>

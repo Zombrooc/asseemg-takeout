@@ -16,6 +16,8 @@ export type {
   ParticipantSearchMode,
   SyncEvent,
   CreateLegacyParticipantPayload,
+  UpdateEventParticipantPayload,
+  UpdateLegacyParticipantPayload,
   TakeoutConfirmConflictResponse,
   TakeoutConfirmPayload,
   TakeoutConfirmResponse,

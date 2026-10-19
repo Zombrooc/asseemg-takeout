@@ -21,6 +21,8 @@ import type {
   LegacyTakeoutUndoPayload,
   LegacyTakeoutUndoResponse,
   CreateLegacyParticipantPayload,
+  UpdateEventParticipantPayload,
+  UpdateLegacyParticipantPayload,
 } from "./takeout-api-types";
 
 export type {
@@ -43,6 +45,8 @@ export type {
   LegacyTakeoutUndoPayload,
   LegacyTakeoutUndoResponse,
   CreateLegacyParticipantPayload,
+  UpdateEventParticipantPayload,
+  UpdateLegacyParticipantPayload,
 };
 
 function ensureSlash(url: string): string {
@@ -87,8 +91,32 @@ export function createTakeoutClient(config: {
     getEvents: () => request<EventSummary[]>("/events"),
     getEventParticipants: (eventId: string) =>
       request<EventParticipant[]>(`/events/${encodeURIComponent(eventId)}/participants`),
+    putEventParticipant: (
+      eventId: string,
+      participantId: string,
+      payload: UpdateEventParticipantPayload,
+    ) =>
+      request<EventParticipant>(
+        `/events/${encodeURIComponent(eventId)}/participants/${encodeURIComponent(participantId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        },
+      ),
     getLegacyEventParticipants: (eventId: string) =>
       request<LegacyEventParticipant[]>(`/events/${encodeURIComponent(eventId)}/legacy-participants`),
+    putLegacyEventParticipant: (
+      eventId: string,
+      participantId: string,
+      payload: UpdateLegacyParticipantPayload,
+    ) =>
+      request<LegacyEventParticipant>(
+        `/events/${encodeURIComponent(eventId)}/legacy-participants/${encodeURIComponent(participantId)}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        },
+      ),
     getLegacyReservedNumbers: (eventId: string, includeUsed = false) => {
       const q = includeUsed ? "?includeUsed=true" : "";
       return request<LegacyReservedNumber[]>(

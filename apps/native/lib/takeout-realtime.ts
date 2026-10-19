@@ -65,6 +65,33 @@ export function applyParticipantCheckinPatch<T extends { id: string; ticketId?: 
   });
 }
 
+export function applyParticipantUpdatePatch<T extends { id: string; ticketId?: string }>(
+  participants: T[],
+  message: WsTakeoutMessage,
+): T[] {
+  if (message.type !== "participant_updated") return participants;
+
+  const isLegacy = message.source_type === "legacy_csv" || message.ticket_id == null;
+  const target = isLegacy ? message.participant_id : message.ticket_id;
+  if (!target) return participants;
+
+  const patch: Record<string, unknown> = {};
+  if (message.name !== undefined) patch.name = message.name;
+  if (message.cpf !== undefined) patch.cpf = message.cpf;
+  if (message.birthDate !== undefined) patch.birthDate = message.birthDate;
+  if (message.shirtSize !== undefined) patch.shirtSize = message.shirtSize;
+  if (message.team !== undefined) patch.team = message.team;
+  if (isLegacy && message.modality !== undefined) patch.modality = message.modality;
+  if (!isLegacy && message.ticketName !== undefined) patch.ticketName = message.ticketName;
+
+  return participants.map((participant) => {
+    const matches = isLegacy
+      ? participant.id === target
+      : participant.ticketId === target;
+    return matches ? ({ ...participant, ...patch } as T) : participant;
+  });
+}
+
 export function nextReconnectDelay(current: number): number {
   return Math.min(Math.round(current * 1.7), MAX_RECONNECT_DELAY_MS);
 }
@@ -259,6 +286,14 @@ export function useTakeoutRealtime(
             queryClient.setQueryData(["takeout-event-participants", eventId], (participants: unknown) =>
               Array.isArray(participants) ? applyParticipantCheckinPatch(participants, data, data.type === "participant_checked_in") : participants,
             );
+          } else if (data.type === "participant_updated") {
+            queryClient.setQueryData(["takeout-event-participants", eventId], (participants: unknown) =>
+              Array.isArray(participants) ? applyParticipantUpdatePatch(participants, data) : participants,
+            );
+            void queryClient.refetchQueries({
+              queryKey: ["takeout-event-participants", eventId],
+              type: "active",
+            });
           } else {
             queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
           }
