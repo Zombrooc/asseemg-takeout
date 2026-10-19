@@ -35,18 +35,128 @@ export type SqliteDatabase = Database.Database;
 export function openDatabase(path: string): SqliteDatabase {
 	mkdirSync(dirname(path), { recursive: true });
 	const db = new Database(path);
-	db.pragma("journal_mode = WAL");
-	db.pragma("foreign_keys = ON");
-	db.exec(SCHEMA_SQL);
-	ensureLegacyQrCodeColumn(db);
+	initializeDatabase(db);
 	return db;
 }
 
 export function openMemoryDatabase(): SqliteDatabase {
 	const db = new Database(":memory:");
-	db.exec(SCHEMA_SQL);
-	ensureLegacyQrCodeColumn(db);
+	initializeDatabase(db);
 	return db;
+}
+
+/**
+ * Creates the current schema and upgrades databases created by older builds.
+ * SQLite's CREATE TABLE IF NOT EXISTS does not add columns to an existing
+ * table, so all runtime schema changes must be applied explicitly here.
+ */
+export function initializeDatabase(db: SqliteDatabase): void {
+	db.pragma("journal_mode = WAL");
+	db.pragma("foreign_keys = ON");
+	movePeerSchemaCollisions(db);
+	db.exec(SCHEMA_SQL);
+	applyRuntimeMigrations(db);
+	ensureLegacyQrCodeColumn(db);
+}
+
+function tableExists(db: SqliteDatabase, tableName: string): boolean {
+	return Boolean(
+		db
+			.prepare(
+				"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+			)
+			.get(tableName),
+	);
+}
+
+function tableColumns(db: SqliteDatabase, tableName: string): Set<string> {
+	return new Set(
+		(
+			db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{
+				name: string;
+			}>
+		).map((column) => column.name),
+	);
+}
+
+/**
+ * A development P2P build used the same table names as the takeout store but
+ * with a different schema. Keep those tables intact under compatibility names
+ * so opening the database with the stable desktop build cannot fail with
+ * errors such as "no such column: name".
+ */
+function movePeerSchemaCollisions(db: SqliteDatabase): void {
+	const collisions = [
+		["participants", "peer_participants"],
+		["tickets", "peer_tickets"],
+		["check_ins", "peer_check_ins"],
+		["custom_forms", "peer_custom_forms"],
+		["events", "peer_events"],
+	] as const;
+
+	for (const [tableName, compatibilityName] of collisions) {
+		if (!tableExists(db, tableName) || tableExists(db, compatibilityName))
+			continue;
+		const columns = tableColumns(db, tableName);
+		const isPeerTable =
+			(tableName === "events" && columns.has("event_type")) ||
+			(tableName !== "events" && columns.has("session_id"));
+		if (isPeerTable)
+			db.exec(`ALTER TABLE ${tableName} RENAME TO ${compatibilityName}`);
+	}
+}
+
+function ensureColumn(
+	db: SqliteDatabase,
+	tableName: string,
+	columnName: string,
+	definition: string,
+): void {
+	if (!tableColumns(db, tableName).has(columnName))
+		db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
+function applyRuntimeMigrations(db: SqliteDatabase): void {
+	const columns = [
+		["events", "source_type", "TEXT NOT NULL DEFAULT 'json_sync'"],
+		["events", "archived_at", "TEXT"],
+		["paired_devices", "operator_alias", "TEXT"],
+		["participants", "event_id", "TEXT"],
+		["participants", "name", "TEXT"],
+		["participants", "cpf", "TEXT"],
+		["participants", "birth_date", "TEXT"],
+		["participants", "raw_json", "TEXT"],
+		["tickets", "participant_id", "TEXT"],
+		["tickets", "code", "TEXT"],
+		["tickets", "raw_json", "TEXT"],
+		["takeout_events", "source_type", "TEXT"],
+		["takeout_events", "event_id", "TEXT"],
+		["takeout_events", "participant_id", "TEXT"],
+		["takeout_events", "participant_name", "TEXT"],
+		["takeout_events", "birth_date", "TEXT"],
+		["takeout_events", "age_at_checkin", "INTEGER"],
+		["takeout_events", "ticket_source_id", "TEXT"],
+		["takeout_events", "ticket_name", "TEXT"],
+		["takeout_events", "ticket_code", "TEXT"],
+		["takeout_events", "operator_alias", "TEXT"],
+		["takeout_events", "operator_device_id", "TEXT"],
+		["takeout_events", "checked_in_at", "TEXT"],
+		["legacy_participants", "is_manual", "INTEGER NOT NULL DEFAULT 0"],
+		["legacy_checkins", "source_type", "TEXT"],
+		["legacy_checkins", "ticket_id", "TEXT"],
+		["legacy_checkins", "participant_name", "TEXT"],
+		["legacy_checkins", "birth_date", "TEXT"],
+		["legacy_checkins", "age_at_checkin", "INTEGER"],
+		["legacy_checkins", "ticket_source_id", "TEXT"],
+		["legacy_checkins", "ticket_name", "TEXT"],
+		["legacy_checkins", "ticket_code", "TEXT"],
+		["legacy_checkins", "operator_alias", "TEXT"],
+		["legacy_checkins", "operator_device_id", "TEXT"],
+		["legacy_checkins", "checked_in_at", "TEXT"],
+	] as const;
+
+	for (const [tableName, columnName, definition] of columns)
+		ensureColumn(db, tableName, columnName, definition);
 }
 
 function ensureLegacyQrCodeColumn(db: SqliteDatabase): void {
