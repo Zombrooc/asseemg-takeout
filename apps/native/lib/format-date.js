@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatDateBR = formatDateBR;
 exports.formatDateTimeBR = formatDateTimeBR;
 exports.formatDateShort = formatDateShort;
+exports.parseDateValue = parseDateValue;
 var MONTHS = [
     "janeiro",
     "fevereiro",
@@ -17,12 +18,31 @@ var MONTHS = [
     "novembro",
     "dezembro",
 ];
+function createCalendarDate(year, month, day) {
+    var date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+        ? date
+        : null;
+}
+function parseDateValue(value) {
+    if (value instanceof Date)
+        return Number.isNaN(value.getTime()) ? null : value;
+    var trimmed = value.trim();
+    var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    if (iso)
+        return createCalendarDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    var brazilian = /^(\d{1,2})[\\/.\-](\d{1,2})[\\/.\-](\d{4})$/.exec(trimmed);
+    if (brazilian)
+        return createCalendarDate(Number(brazilian[3]), Number(brazilian[2]), Number(brazilian[1]));
+    var parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
 /** Formata data no padrão brasileiro: "22 de fevereiro de 2026" */
 function formatDateBR(value) {
     if (value == null)
         return "—";
-    var d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime()))
+    var d = parseDateValue(value);
+    if (!d)
         return "—";
     var day = d.getDate();
     var month = MONTHS[d.getMonth()];
@@ -33,8 +53,8 @@ function formatDateBR(value) {
 function formatDateTimeBR(value) {
     if (value == null)
         return "—";
-    var d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime()))
+    var d = parseDateValue(value);
+    if (!d)
         return "—";
     var datePart = formatDateBR(d);
     var time = d.toLocaleTimeString("pt-BR", {
@@ -62,8 +82,8 @@ var MONTH_SHORT = [
 function formatDateShort(value) {
     if (value == null)
         return "—";
-    var d = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(d.getTime()))
+    var d = parseDateValue(value);
+    if (!d)
         return "—";
     var w = WEEKDAY_SHORT[d.getDay()];
     var day = d.getDate();

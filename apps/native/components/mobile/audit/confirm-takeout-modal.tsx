@@ -1,6 +1,6 @@
 import { Button, Card, Input } from "@/components/ui-tamagui";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
-import { formatDateBR } from "@/lib/format-date";
+import { formatDateBR, parseDateValue } from "@/lib/format-date";
 import { TakeoutApiError } from "@/lib/takeout-api";
 import type {
   CustomFormResponseItem,
@@ -63,8 +63,8 @@ export function getParticipantBirthDate(participant: ModalParticipant): string |
 
 function ageFromBirthDate(s: string | null | undefined): string {
   if (!s) return "-";
-  const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "-";
+  const d = parseDateValue(s);
+  if (!d) return "-";
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
   if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) {

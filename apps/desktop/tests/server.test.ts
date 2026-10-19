@@ -147,6 +147,39 @@ describe("takeout server", () => {
 		expect((await imported.json()).imported).toBe(1);
 	});
 
+	it("keeps the birth date from a mapped legacy CSV in the API contract", async () => {
+		const db = openMemoryDatabase();
+		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+		runningServers.push(server);
+		await startTakeoutServer(server, 0);
+		const address = server.httpServer.address();
+		if (!address || typeof address === "string") throw new Error("server address unavailable");
+
+		const form = new FormData();
+		form.append("eventId", "event-birth-date");
+		form.append("eventName", "Corrida Data");
+		form.append("eventStartDate", "2026-09-20");
+		form.append(
+			"file",
+			new File(
+				["Nome;Número;CPF;Data de Nascimento\nAna;12;12345678900;08/03/2000\n"],
+				"participants.csv",
+				{ type: "text/csv" },
+			),
+		);
+
+		const imported = await fetch(`http://127.0.0.1:${address.port}/admin/import/legacy-csv`, {
+			method: "POST",
+			body: form,
+		});
+		expect(imported.status).toBe(200);
+
+		const participants = await fetch(
+			`http://127.0.0.1:${address.port}/events/event-birth-date/legacy-participants`,
+		);
+		expect(await participants.json()).toMatchObject([{ birthDate: "2000-03-08" }]);
+	});
+
 	it("finds a participant when QR search receives a Wix URL", async () => {
 		const db = openMemoryDatabase();
 		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });

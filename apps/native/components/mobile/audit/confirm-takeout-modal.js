@@ -53,11 +53,19 @@ var LOCK_RENEW_INTERVAL_MS = 15000;
 function formatBirthDate(s) {
     return (0, format_date_1.formatDateBR)(s);
 }
+function getParticipantBirthDate(participant) {
+    var raw = participant;
+    if (participant.birthDate != null)
+        return participant.birthDate;
+    if (raw.birth_date != null)
+        return raw.birth_date;
+    return raw.dataNascimento != null ? raw.dataNascimento : null;
+}
 function ageFromBirthDate(s) {
     if (!s)
         return "-";
-    var d = new Date(s);
-    if (Number.isNaN(d.getTime()))
+    var d = (0, format_date_1.parseDateValue)(s);
+    if (!d)
         return "-";
     var now = new Date();
     var age = now.getFullYear() - d.getFullYear();
@@ -379,8 +387,8 @@ function ConfirmTakeoutModal(_a) {
                 <tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
                   <Row label="Nome" value={(_c = ((_b = legacy === null || legacy === void 0 ? void 0 : legacy.name) !== null && _b !== void 0 ? _b : current === null || current === void 0 ? void 0 : current.name)) !== null && _c !== void 0 ? _c : "-"}/>
                   <Row label="CPF" value={(_e = ((_d = legacy === null || legacy === void 0 ? void 0 : legacy.cpf) !== null && _d !== void 0 ? _d : current === null || current === void 0 ? void 0 : current.cpf)) !== null && _e !== void 0 ? _e : "-"}/>
-                  <Row label="Data de nascimento" value={formatBirthDate((_f = legacy === null || legacy === void 0 ? void 0 : legacy.birthDate) !== null && _f !== void 0 ? _f : current === null || current === void 0 ? void 0 : current.birthDate)}/>
-                  <Row label="Idade" value={ageFromBirthDate((_g = legacy === null || legacy === void 0 ? void 0 : legacy.birthDate) !== null && _g !== void 0 ? _g : current === null || current === void 0 ? void 0 : current.birthDate)}/>
+                  <Row label="Data de nascimento" value={formatBirthDate(getParticipantBirthDate(participant))}/>
+                  <Row label="Idade" value={ageFromBirthDate(getParticipantBirthDate(participant))}/>
                   <Row label="Ingresso" value={legacy != null ? "#".concat(legacy.bibNumber) : ((_j = ((_h = current === null || current === void 0 ? void 0 : current.sourceTicketId) !== null && _h !== void 0 ? _h : current === null || current === void 0 ? void 0 : current.ticketId)) !== null && _j !== void 0 ? _j : "-")}/>
                   <Row label="Tipo de ingresso" value={(_l = ((_k = legacy === null || legacy === void 0 ? void 0 : legacy.modality) !== null && _k !== void 0 ? _k : current === null || current === void 0 ? void 0 : current.ticketName)) !== null && _l !== void 0 ? _l : "-"}/>
                   <Row label="Tamanho da camisa" value={(_m = legacy === null || legacy === void 0 ? void 0 : legacy.shirtSize) !== null && _m !== void 0 ? _m : "-"}/>

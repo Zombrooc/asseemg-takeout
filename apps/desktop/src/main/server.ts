@@ -11,6 +11,7 @@ import type { SqliteDatabase } from "./db";
 import {
 	computeAge,
 	normalizeDigits,
+	normalizeBirthDate,
 	normalizeText,
 	nowEpoch,
 	nowIso,
@@ -250,7 +251,7 @@ function mapParticipant(row: ParticipantRow) {
 			row.name ??
 			(typeof raw.participantName === "string" ? raw.participantName : null),
 		cpf: row.cpf,
-		birthDate: row.birth_date,
+		birthDate: normalizeBirthDate(row.birth_date),
 		sex: typeof raw.sex === "string" ? raw.sex : null,
 		shirtSize: typeof raw.shirtSize === "string" ? raw.shirtSize : null,
 		team: typeof raw.team === "string" ? raw.team : null,
@@ -338,7 +339,7 @@ function mapLegacyParticipant(
 		name: String(row.full_name),
 		sex: row.sex ?? null,
 		cpf: String(row.cpf_digits),
-		birthDate: String(row.birth_date_iso),
+		birthDate: normalizeBirthDate(String(row.birth_date_iso)) ?? "",
 		modality: row.modality ?? null,
 		shirtSize: row.shirt_size ?? null,
 		team: row.team ?? null,
@@ -996,7 +997,7 @@ export function createTakeoutServer({
 					eventId,
 					item.participantName ?? item.name ?? null,
 					item.cpf ?? null,
-					item.birthDate ?? null,
+					normalizeBirthDate(typeof item.birthDate === "string" ? item.birthDate : null),
 					participantRaw,
 				);
 				db.prepare(
@@ -1050,7 +1051,7 @@ export function createTakeoutServer({
 					row.name,
 					row.sex || null,
 					normalizeDigits(row.cpf),
-					row.birthDate || "1900-01-01",
+					normalizeBirthDate(row.birthDate) || "1900-01-01",
 					row.modality || null,
 					row.shirtSize || null,
 					row.team || null,

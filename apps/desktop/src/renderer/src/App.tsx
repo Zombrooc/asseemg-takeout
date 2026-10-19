@@ -45,18 +45,28 @@ type Notice = { kind: "success" | "error"; message: string } | null;
 
 export const SHOW_PARTICIPANT_QR_STORAGE_KEY = "desktop.showParticipantQr";
 
+function birthDateParts(value: string | null | undefined): [number, number, number] | null {
+	if (!value) return null;
+	const trimmed = value.trim();
+	const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+	if (iso) return [Number(iso[1]), Number(iso[2]), Number(iso[3])];
+	const brazilian = /^(\d{1,2})[\\/.\-](\d{1,2})[\\/.\-](\d{4})/.exec(trimmed);
+	if (brazilian) return [Number(brazilian[3]), Number(brazilian[2]), Number(brazilian[1])];
+	return null;
+}
+
 function formatBirthDate(value: string | null | undefined): string {
 	if (!value) return "-";
-	const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-	return match ? `${match[3]}/${match[2]}/${match[1]}` : value;
+	const parts = birthDateParts(value);
+	return parts ? `${String(parts[2]).padStart(2, "0")}/${String(parts[1]).padStart(2, "0")}/${String(parts[0]).padStart(2, "0")}` : value;
 }
 
 function getAge(value: string | null | undefined, today = new Date()): string {
 	if (!value) return "-";
-	const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-	if (!match) return "-";
-	let age = today.getFullYear() - Number(match[1]);
-	if (today.getMonth() + 1 < Number(match[2]) || (today.getMonth() + 1 === Number(match[2]) && today.getDate() < Number(match[3]))) age--;
+	const parts = birthDateParts(value);
+	if (!parts) return "-";
+	let age = today.getFullYear() - parts[0];
+	if (today.getMonth() + 1 < parts[1] || (today.getMonth() + 1 === parts[1] && today.getDate() < parts[2])) age--;
 	return age >= 0 ? String(age) : "-";
 }
 

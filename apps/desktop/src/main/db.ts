@@ -187,11 +187,50 @@ export function normalizeText(value: string | null | undefined): string {
 		.replace(/[\u0300-\u036f]/g, "");
 }
 
+/**
+ * Normalizes date-only values from CSV/API payloads without using the host
+ * locale parser. CSV files commonly contain Brazilian dates (DD/MM/YYYY),
+ * while the API contract uses YYYY-MM-DD.
+ */
+export function normalizeBirthDate(
+	value: string | null | undefined,
+): string | null {
+	const trimmed = value?.trim();
+	if (!trimmed) return null;
+
+	const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/.exec(trimmed);
+	if (iso) {
+		const [, year, month, day] = iso;
+		const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+		if (
+			date.getUTCFullYear() === Number(year) &&
+			date.getUTCMonth() === Number(month) - 1 &&
+			date.getUTCDate() === Number(day)
+		)
+			return `${year}-${month}-${day}`;
+	}
+
+	const brazilian = /^(\d{1,2})[\\/.\-](\d{1,2})[\\/.\-](\d{4})(?:\s|$)/.exec(trimmed);
+	if (brazilian) {
+		const [, day, month, year] = brazilian;
+		const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+		if (
+			date.getUTCFullYear() === Number(year) &&
+			date.getUTCMonth() === Number(month) - 1 &&
+			date.getUTCDate() === Number(day)
+		)
+			return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+	}
+
+	return trimmed;
+}
+
 export function computeAge(
 	birthDate: string | null | undefined,
 ): number | null {
-	if (!birthDate) return null;
-	const birth = new Date(`${birthDate.slice(0, 10)}T00:00:00Z`);
+	const normalized = normalizeBirthDate(birthDate);
+	if (!normalized) return null;
+	const birth = new Date(`${normalized.slice(0, 10)}T00:00:00Z`);
 	if (Number.isNaN(birth.getTime())) return null;
 	const today = new Date();
 	let age = today.getUTCFullYear() - birth.getUTCFullYear();

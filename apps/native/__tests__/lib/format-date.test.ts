@@ -16,6 +16,11 @@ describe("format-date", () => {
     it("returns '—' for invalid date string", () => {
       expect(formatDateBR("not-a-date")).toBe("—");
     });
+
+    it("parses calendar dates without timezone or locale ambiguity", () => {
+      expect(formatDateBR("2000-03-08")).toBe("8 de mar\u00e7o de 2000");
+      expect(formatDateBR("08/03/2000")).toBe("8 de mar\u00e7o de 2000");
+    });
   });
 
   describe("formatDateTimeBR", () => {
