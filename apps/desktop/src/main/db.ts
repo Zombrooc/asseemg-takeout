@@ -1,6 +1,109 @@
-import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
+
+type SqliteParameter = unknown;
+
+export interface SqliteStatement {
+	all(...params: SqliteParameter[]): unknown[];
+	get(...params: SqliteParameter[]): unknown;
+	run(...params: SqliteParameter[]): {
+		changes: number | bigint;
+		lastInsertRowid: number | bigint;
+	};
+}
+
+interface SqliteDriver {
+	exec(sql: string): void;
+	prepare(sql: string): {
+		all(...params: SqliteParameter[]): unknown[];
+		get(...params: SqliteParameter[]): unknown;
+		run(...params: SqliteParameter[]): {
+			changes: number | bigint;
+			lastInsertRowid: number | bigint;
+		};
+	};
+	close(): void;
+}
+
+type BetterSqliteDriver = new (path: string) => SqliteDriver & {
+	pragma(sql: string): unknown;
+};
+
+type NodeSqliteDriver = new (path: string) => SqliteDriver;
+
+const require = createRequire(import.meta.url);
+
+// Electron 44 ships Node 24's built-in SQLite API. The fallback keeps the
+// Node 20 Vitest process usable without making the Electron runtime native.
+function getDatabaseDriver(): {
+	driver: NodeSqliteDriver | BetterSqliteDriver;
+	isNodeSqlite: boolean;
+} {
+	try {
+		const { DatabaseSync } = require("node:sqlite") as {
+			DatabaseSync: NodeSqliteDriver;
+		};
+		return { driver: DatabaseSync, isNodeSqlite: true };
+	} catch {
+		const BetterSqlite3 = require("better-sqlite3") as BetterSqliteDriver;
+		return { driver: BetterSqlite3, isNodeSqlite: false };
+	}
+}
+
+export interface SqliteDatabase {
+	exec(sql: string): void;
+	prepare(sql: string): SqliteStatement;
+	pragma(sql: string): unknown;
+	transaction<T>(callback: () => T): () => T;
+	close(): void;
+}
+
+class SqliteDatabaseAdapter implements SqliteDatabase {
+	private readonly raw: SqliteDriver & Partial<{ pragma(sql: string): unknown }>;
+	private readonly isNodeSqlite: boolean;
+
+	constructor(path: string) {
+		const database = getDatabaseDriver();
+		this.raw = new database.driver(path);
+		this.isNodeSqlite = database.isNodeSqlite;
+	}
+
+	exec(sql: string): void {
+		this.raw.exec(sql);
+	}
+
+	prepare(sql: string): SqliteStatement {
+		return this.raw.prepare(sql);
+	}
+
+	pragma(sql: string): unknown {
+		if (!this.isNodeSqlite && this.raw.pragma) return this.raw.pragma(sql);
+		return this.raw.exec(`PRAGMA ${sql}`);
+	}
+
+	transaction<T>(callback: () => T): () => T {
+		return () => {
+			this.raw.exec("BEGIN");
+			try {
+				const result = callback();
+				this.raw.exec("COMMIT");
+				return result;
+			} catch (error) {
+				try {
+					this.raw.exec("ROLLBACK");
+				} catch {
+					// Preserve the original transaction error.
+				}
+				throw error;
+			}
+		};
+	}
+
+	close(): void {
+		this.raw.close();
+	}
+}
 
 export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
@@ -30,17 +133,15 @@ CREATE INDEX IF NOT EXISTS idx_legacy_checkins_event_id ON legacy_checkins(event
 CREATE INDEX IF NOT EXISTS idx_legacy_checkins_participant_id ON legacy_checkins(participant_id);
 `;
 
-export type SqliteDatabase = Database.Database;
-
 export function openDatabase(path: string): SqliteDatabase {
 	mkdirSync(dirname(path), { recursive: true });
-	const db = new Database(path);
+	const db = new SqliteDatabaseAdapter(path);
 	initializeDatabase(db);
 	return db;
 }
 
 export function openMemoryDatabase(): SqliteDatabase {
-	const db = new Database(":memory:");
+	const db = new SqliteDatabaseAdapter(":memory:");
 	initializeDatabase(db);
 	return db;
 }
