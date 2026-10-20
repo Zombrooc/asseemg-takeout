@@ -185,6 +185,9 @@ td small { margin-top: 4px; color: var(--qz-color-neutral-smoke); }
 .modal .field select { width: 100%; min-height: 40px; padding: 0 12px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone); background: var(--qz-color-neutral-asphalt); }
 @media (max-width: 760px) { .reservation-form, .modal .form-grid, .reservation-detail-list { grid-template-columns: 1fr; } .reservation-actions { flex-wrap: wrap; } .reservation-heading { align-items: flex-start; flex-direction: column; gap: 12px; } }
 .filter-row select { max-width: 330px; color: var(--qz-color-neutral-bone); }
+.audit-event-context { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); background: var(--qz-color-neutral-asphalt); }
+.audit-event-context span { color: var(--qz-color-neutral-bone-muted); font-size: 12px; }
+.audit-event-context strong { font-size: 13px; }
 .participant-qr-cell { width: 92px; vertical-align: middle; }
 .participant-qr-cell svg { display: block; padding: 4px; border-radius: 4px; background: white; }
 .muted { color: var(--qz-color-neutral-smoke); font-size: 11px; }

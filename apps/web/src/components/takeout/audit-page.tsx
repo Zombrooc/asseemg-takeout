@@ -1,14 +1,22 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AuditFilters } from "@/components/audit-filters";
 import { AuditLogTable } from "@/components/audit-log-table";
 import { buildAuditCsv, parseAuditRetirantePayload } from "@/lib/audit-utils";
 import { getAudit, getEvents, type AuditParams } from "@/lib/takeout-api";
 
-export function AuditPage() {
+interface AuditPageProps {
+  initialEventId?: string;
+}
+
+export function AuditPage({ initialEventId }: AuditPageProps) {
   const [statusFilter, setStatusFilter] = useState<AuditParams["status"]>("");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedEventId, setSelectedEventId] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState(initialEventId ?? "");
+
+  useEffect(() => {
+    setSelectedEventId(initialEventId ?? "");
+  }, [initialEventId]);
 
   const { data: events = [] } = useQuery({
     queryKey: ["takeout", "events", "audit-selector"],
@@ -16,6 +24,8 @@ export function AuditPage() {
   });
 
   const effectiveEventId = selectedEventId || events[0]?.eventId || "";
+  const isEventContextual = Boolean(initialEventId);
+  const contextualEvent = events.find((event) => event.eventId === initialEventId);
 
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ["takeout", "audit", effectiveEventId, statusFilter],
@@ -63,26 +73,36 @@ export function AuditPage() {
 
   return (
     <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
-      <h1 className="text-2xl font-bold">Auditoria</h1>
+      <h1 className="text-2xl font-bold">
+        {isEventContextual
+          ? `Auditoria — ${contextualEvent?.name ?? initialEventId}`
+          : "Auditoria"}
+      </h1>
 
-      <div className="max-w-md space-y-2">
-        <label htmlFor="event-audit-filter" className="text-sm font-medium">
-          Evento
-        </label>
-        <select
-          id="event-audit-filter"
-          aria-label="Selecionar evento da auditoria"
-          value={effectiveEventId}
-          onChange={(e) => setSelectedEventId(e.target.value)}
-          className="h-10 w-full rounded-md border bg-background px-3"
-        >
-          {events.map((event) => (
-            <option key={event.eventId} value={event.eventId}>
-              {event.name ?? event.eventId}
-            </option>
-          ))}
-        </select>
-      </div>
+      {isEventContextual ? (
+        <p className="text-sm text-muted-foreground">
+          Evento selecionado: {contextualEvent?.name ?? initialEventId}
+        </p>
+      ) : (
+        <div className="max-w-md space-y-2">
+          <label htmlFor="event-audit-filter" className="text-sm font-medium">
+            Evento
+          </label>
+          <select
+            id="event-audit-filter"
+            aria-label="Selecionar evento da auditoria"
+            value={effectiveEventId}
+            onChange={(e) => setSelectedEventId(e.target.value)}
+            className="h-10 w-full rounded-md border bg-background px-3"
+          >
+            {events.map((event) => (
+              <option key={event.eventId} value={event.eventId}>
+                {event.name ?? event.eventId}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <AuditFilters
         statusFilter={statusFilter ?? ""}

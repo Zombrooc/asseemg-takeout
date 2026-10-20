@@ -1413,10 +1413,21 @@ function Field({
 	);
 }
 
-function AuditPage() {
+export function resolveAuditEventId(
+	eventContext: Pick<EventSummary, "eventId"> | null | undefined,
+	selectedEventId: string,
+): string {
+	return eventContext?.eventId ?? selectedEventId;
+}
+
+function AuditPage({ event }: { event?: EventSummary | null }) {
 	const events = useAsync(api.events, [], [] as EventSummary[]);
-	const [eventId, setEventId] = useState("");
+	const [selectedEventId, setSelectedEventId] = useState(event?.eventId ?? "");
 	const [status, setStatus] = useState("");
+	const eventId = resolveAuditEventId(event, selectedEventId);
+	useEffect(() => {
+		setSelectedEventId(event?.eventId ?? "");
+	}, [event?.eventId]);
 	const audit = useAsync(
 		() =>
 			eventId
@@ -1429,8 +1440,10 @@ function AuditPage() {
 		<div className="page">
 			<PageHeader
 				eyebrow="Rastreabilidade"
-				title="Auditoria"
-				subtitle="Consulte todas as retiradas confirmadas e desfeitas."
+				title={event ? `Auditoria — ${event.name ?? event.eventId}` : "Auditoria"}
+				subtitle={event
+					? "Consulte as retiradas confirmadas e desfeitas deste evento."
+					: "Consulte todas as retiradas confirmadas e desfeitas."}
 				action={
 					<button type="button" className="button ghost" onClick={() => audit.reload()}>
 						<RefreshCw size={15} /> Atualizar
@@ -1438,17 +1451,24 @@ function AuditPage() {
 				}
 			/>
 			<div className="filter-row">
-				<select
-					value={eventId}
-					onChange={(event) => setEventId(event.target.value)}
-				>
-					<option value="">Selecione um evento</option>
-					{events.data.map((event) => (
-						<option key={event.eventId} value={event.eventId}>
-							{event.name ?? event.eventId}
-						</option>
-					))}
-				</select>
+				{event ? (
+					<div className="audit-event-context" aria-label="Evento da auditoria">
+						<span>Evento</span>
+						<strong>{event.name ?? event.eventId}</strong>
+					</div>
+				) : (
+					<select
+						value={selectedEventId}
+						onChange={(nextEvent) => setSelectedEventId(nextEvent.target.value)}
+					>
+						<option value="">Selecione um evento</option>
+						{events.data.map((availableEvent) => (
+							<option key={availableEvent.eventId} value={availableEvent.eventId}>
+								{availableEvent.name ?? availableEvent.eventId}
+							</option>
+						))}
+					</select>
+				)}
 				<select
 					value={status}
 					onChange={(event) => setStatus(event.target.value)}
@@ -1653,14 +1673,18 @@ export default function App() {
 		setEvent(next);
 		setPage("event");
 	};
-	const openNewEvent = () => setPage("new-event");
+	const navigate = (next: Page) => {
+		setPage(next);
+		if (next !== "event" && next !== "audit") setEvent(null);
+	};
+	const openNewEvent = () => navigate("new-event");
 	const content =
 		page === "dashboard" ? (
 			<Dashboard onOpenEvent={openEvent} onOpenNewEvent={openNewEvent} notify={notify} />
 		) : page === "event" && event ? (
 			<EventPage
 				event={event}
-				onBack={() => setPage("dashboard")}
+				onBack={() => navigate("dashboard")}
 				notify={notify}
 				showParticipantQr={showParticipantQr}
 			/>
@@ -1674,15 +1698,12 @@ export default function App() {
 				onShowParticipantQrChange={setShowParticipantQr}
 			/>
 		) : (
-			<AuditPage />
+			<AuditPage event={event} />
 		);
 	return (
 		<Shell
 			page={page}
-			setPage={(next) => {
-				setPage(next);
-				if (next !== "event") setEvent(null);
-			}}
+			setPage={navigate}
 		>
 			<Notice notice={notice} onClose={() => setNotice(null)} />
 			{content}

@@ -12,6 +12,17 @@ import { ModeToggle } from "./mode-toggle";
 
 export type HeaderCurrentPage = "dashboard" | "import" | "audit" | "events";
 
+export function getEventIdFromPathname(pathname: string): string | undefined {
+  const match = pathname.match(/^\/events\/([^/]+)(?:\/|$)/);
+  if (!match) return undefined;
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 function getCurrentPage(pathname: string): HeaderCurrentPage {
   if (pathname === "/") return "dashboard";
   if (pathname.startsWith("/import")) return "import";
@@ -23,6 +34,7 @@ function getCurrentPage(pathname: string): HeaderCurrentPage {
 export default function Header() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const currentPage = getCurrentPage(pathname);
+  const eventId = getEventIdFromPathname(pathname);
 
   const navItems = [
     { to: "/", label: "Dashboard", id: "dashboard" as const, icon: LayoutDashboard },
@@ -45,6 +57,25 @@ export default function Header() {
         <nav className="flex items-center gap-1" aria-label="Navegação principal">
           {navItems.map(({ to, label, id, icon: Icon }) => {
             const isActive = currentPage === id;
+            if (id === "audit") {
+              return (
+                <Link
+                  key={to}
+                  to="/audit"
+                  search={eventId ? { eventId } : undefined}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    isActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-4" aria-hidden />
+                  {label}
+                </Link>
+              );
+            }
+
             return (
               <Link
                 key={to}
