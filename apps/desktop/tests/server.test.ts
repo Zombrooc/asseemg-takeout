@@ -212,4 +212,47 @@ describe("takeout server", () => {
 		);
 		expect(await result.json()).toMatchObject([{ id: "participant-wix", qrCode: "30N8-40QJ-DQW1P" }]);
 	});
+
+	it("returns audit ticket name, participant CPF and shirt size", async () => {
+		const db = openMemoryDatabase();
+		const server = createTakeoutServer({ db, baseUrl: "http://127.0.0.1:5555" });
+		runningServers.push(server);
+		await startTakeoutServer(server, 0);
+		const address = server.httpServer.address();
+		if (!address || typeof address === "string") throw new Error("server address unavailable");
+		const base = `http://127.0.0.1:${address.port}`;
+
+		const imported = await fetch(`${base}/sync/import`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				eventId: "event-audit-fields",
+				event: { name: "Corrida Auditoria", startDate: "2026-09-20" },
+				participants: [{
+					seatId: "participant-audit",
+					ticketId: "ticket-10k",
+					ticketName: "10KM",
+					qrCode: "qr-audit",
+					participantName: "Ana Auditada",
+					cpf: "12345678900",
+					customFormResponses: [{ name: "tamanho", label: "Tamanho da camisa", response: "M" }],
+				}],
+			}),
+		});
+		expect(imported.status).toBe(200);
+
+		const confirmed = await fetch(`${base}/takeout/confirm`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ request_id: "request-audit-fields", ticket_id: "ticket-10k", device_id: "desktop" }),
+		});
+		expect(confirmed.status).toBe(200);
+
+		const audit = await fetch(`${base}/audit?eventId=event-audit-fields`);
+		expect(await audit.json()).toMatchObject([{
+			ticket_name: "10KM",
+			participant_cpf: "12345678900",
+			shirt_size: "M",
+		}]);
+	});
 });

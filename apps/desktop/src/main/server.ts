@@ -273,6 +273,31 @@ function mapParticipant(row: ParticipantRow) {
 	};
 }
 
+function auditShirtSize(rawJson: string | null | undefined): string | null {
+	const raw = safeJson(rawJson);
+	const directValue = ["shirtSize", "tamanhoCamisa", "camisa", "shirt_size"]
+		.map((key) => raw[key])
+		.find((value): value is string => typeof value === "string" && value.trim() !== "");
+	if (directValue) return directValue.trim();
+
+	const responses = Array.isArray(raw.customFormResponses)
+		? raw.customFormResponses
+		: Array.isArray(raw.custom_form_responses)
+			? raw.custom_form_responses
+			: [];
+	const aliases = new Set(["camisa", "tamanho da camisa", "shirtsize"]);
+	for (const response of responses) {
+		if (!response || typeof response !== "object") continue;
+		const item = response as Record<string, unknown>;
+		const name = typeof item.name === "string" ? normalizeText(item.name) : "";
+		const label = typeof item.label === "string" ? normalizeText(item.label) : "";
+		if (!aliases.has(name) && !aliases.has(label)) continue;
+		const value = item.response;
+		if (typeof value === "string" && value.trim() !== "") return value.trim();
+	}
+	return null;
+}
+
 function participantRows(
 	db: SqliteDatabase,
 	eventId: string,
@@ -931,7 +956,15 @@ export function createTakeoutServer({
 		const status = req.query.status ? String(req.query.status) : null;
 		const normal = db
 			.prepare(
-				`SELECT request_id,ticket_id,device_id,status,payload_json,created_at,source_type,event_id,participant_id,participant_name,birth_date,age_at_checkin,ticket_source_id,ticket_name,ticket_code,operator_alias,operator_device_id,checked_in_at FROM takeout_events WHERE event_id=? ${status ? "AND status=?" : ""} ORDER BY checked_in_at DESC`,
+				`SELECT te.request_id,te.ticket_id,te.device_id,te.status,te.payload_json,te.created_at,te.source_type,te.event_id,te.participant_id,te.participant_name,te.birth_date,te.age_at_checkin,
+					COALESCE(te.ticket_source_id, json_extract(t.raw_json, '$.ticketId')) AS ticket_source_id,
+					COALESCE(te.ticket_name, json_extract(t.raw_json, '$.ticketName')) AS ticket_name,
+					te.ticket_code,te.operator_alias,te.operator_device_id,te.checked_in_at,
+					p.cpf AS participant_cpf,p.raw_json AS participant_raw_json
+				 FROM takeout_events te
+				 LEFT JOIN tickets t ON t.id=te.ticket_id
+				 LEFT JOIN participants p ON p.id=te.participant_id
+				 WHERE te.event_id=? ${status ? "AND te.status=?" : ""} ORDER BY te.checked_in_at DESC`,
 			)
 			.all(...(status ? [eventId, status] : [eventId])) as Record<
 			string,
@@ -939,16 +972,28 @@ export function createTakeoutServer({
 		>[];
 		const legacy = db
 			.prepare(
-				`SELECT request_id, participant_id ticket_id, device_id,status,payload_json,created_at,source_type,event_id,participant_id,participant_name,birth_date,age_at_checkin,ticket_source_id,ticket_name,ticket_code,operator_alias,operator_device_id,checked_in_at FROM legacy_checkins WHERE event_id=? ${status ? "AND status=?" : ""} ORDER BY checked_in_at DESC`,
+				`SELECT c.request_id,c.participant_id AS ticket_id,c.device_id,c.status,c.payload_json,c.created_at,c.source_type,c.event_id,c.participant_id,c.participant_name,c.birth_date,c.age_at_checkin,c.ticket_source_id,
+					COALESCE(c.ticket_name, p.modality) AS ticket_name,c.ticket_code,c.operator_alias,c.operator_device_id,c.checked_in_at,
+					p.cpf_digits AS participant_cpf,p.shirt_size AS shirt_size
+				 FROM legacy_checkins c
+				 LEFT JOIN legacy_participants p ON p.id=c.participant_id
+				 WHERE c.event_id=? ${status ? "AND c.status=?" : ""} ORDER BY c.checked_in_at DESC`,
 			)
 			.all(...(status ? [eventId, status] : [eventId])) as Record<
 			string,
 			unknown
 		>[];
+		const auditRows: Record<string, unknown>[] = [
+			...normal.map(({ participant_raw_json, ...row }) => ({
+				...row,
+				shirt_size: auditShirtSize(String(participant_raw_json ?? "")),
+			}) as Record<string, unknown>),
+			...legacy,
+		];
 		return json(
 			res,
 			200,
-			[...normal, ...legacy].sort((a, b) =>
+			auditRows.sort((a, b) =>
 				String(b.checked_in_at ?? b.created_at).localeCompare(
 					String(a.checked_in_at ?? a.created_at),
 				),

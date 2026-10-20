@@ -193,6 +193,8 @@ export type AuditEvent = {
   event_id: string | null;
   participant_id: string | null;
   participant_name: string | null;
+  participant_cpf?: string | null;
+  shirt_size?: string | null;
   birth_date: string | null;
   age_at_checkin: number | null;
   ticket_source_id: string | null;

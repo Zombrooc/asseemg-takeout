@@ -91,6 +91,12 @@ function getParticipantField(item: EventParticipant | LegacyEventParticipant, fi
 	return value == null || value === "" ? "-" : String(value);
 }
 
+export function formatAuditCpf(value: string | null | undefined): string {
+	const digits = value?.replace(/\D/g, "") ?? "";
+	if (digits.length !== 11) return value?.trim() || "—";
+	return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
+
 export function readShowParticipantQr(storage: Pick<Storage, "getItem"> = localStorage): boolean {
 	return storage.getItem(SHOW_PARTICIPANT_QR_STORAGE_KEY) === "true";
 }
@@ -1500,7 +1506,9 @@ function AuditPage({ event }: { event?: EventSummary | null }) {
 							<tr>
 								<th>Data</th>
 								<th>Participante</th>
-								<th>Ticket</th>
+								<th>CPF</th>
+								<th>Ingresso</th>
+								<th>Camisa</th>
 								<th>Operador</th>
 								<th>Status</th>
 							</tr>
@@ -1514,7 +1522,9 @@ function AuditPage({ event }: { event?: EventSummary | null }) {
 										).toLocaleString("pt-BR")}
 									</td>
 									<td>{item.participant_name ?? "—"}</td>
-									<td>{item.ticket_name ?? item.ticket_id}</td>
+									<td>{formatAuditCpf(item.participant_cpf)}</td>
+									<td>{item.ticket_name?.trim() || "—"}</td>
+									<td>{item.shirt_size?.trim() || "—"}</td>
 									<td>{item.operator_alias ?? item.device_id}</td>
 									<td>
 										<span
