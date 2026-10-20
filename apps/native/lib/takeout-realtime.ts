@@ -1,5 +1,6 @@
 import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
 import { useQueryClient } from "@tanstack/react-query";
+import { normalizeDateOnly } from "@/lib/format-date";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const INITIAL_RECONNECT_DELAY_MS = 1_500;
@@ -85,6 +86,9 @@ export function applyParticipantUpdatePatch<T extends { id: string; ticketId?: s
   if (message.team !== undefined) patch.team = message.team;
   if (isLegacy && message.modality !== undefined) patch.modality = message.modality;
   if (!isLegacy && message.ticketName !== undefined) patch.ticketName = message.ticketName;
+  if (patch.birthDate !== undefined) {
+    patch.birthDate = typeof patch.birthDate === "string" ? normalizeDateOnly(patch.birthDate) : null;
+  }
 
   return participants.map((participant) => {
     const matches = isLegacy

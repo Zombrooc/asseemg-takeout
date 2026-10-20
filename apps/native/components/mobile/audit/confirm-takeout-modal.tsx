@@ -1,7 +1,7 @@
 import { Button, Card, Input } from "@/components/ui-tamagui";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
-import { formatDateBR, parseDateValue } from "@/lib/format-date";
+import { formatDateOnlyBR, parseDateOnlyParts } from "@/lib/format-date";
 import { TakeoutApiError } from "@/lib/takeout-api";
 import type {
   CustomFormResponseItem,
@@ -49,7 +49,7 @@ type Props = {
 };
 
 function formatBirthDate(s: string | null | undefined): string {
-  return formatDateBR(s);
+  return formatDateOnlyBR(s);
 }
 
 export function getParticipantBirthDate(participant: ModalParticipant): string | null {
@@ -57,18 +57,21 @@ export function getParticipantBirthDate(participant: ModalParticipant): string |
     birth_date?: string | null;
     dataNascimento?: string | null;
   };
-  return participant.birthDate ?? raw.birth_date ?? raw.dataNascimento ?? null;
+  const value = participant.birthDate ?? raw.birth_date ?? raw.dataNascimento ?? null;
+  const parts = parseDateOnlyParts(value);
+  if (!parts) return null;
+  return `${parts.year.toString().padStart(4, "0")}-${parts.month.toString().padStart(2, "0")}-${parts.day.toString().padStart(2, "0")}`;
 }
 
 function ageFromBirthDate(s: string | null | undefined): string {
   if (!s) return "-";
-  const d = parseDateValue(s);
-  if (!d) return "-";
+  const birthDate = parseDateOnlyParts(s);
+  if (!birthDate) return "-";
   const now = new Date();
-  let age = now.getFullYear() - d.getFullYear();
+  let age = now.getFullYear() - birthDate.year;
   if (
-    now.getMonth() < d.getMonth() ||
-    (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())
+    now.getMonth() + 1 < birthDate.month ||
+    (now.getMonth() + 1 === birthDate.month && now.getDate() < birthDate.day)
   ) {
     age--;
   }

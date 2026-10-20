@@ -4,10 +4,14 @@ import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 
 export default defineConfig({
   main: { plugins: [externalizeDepsPlugin()] },
-  preload: { plugins: [externalizeDepsPlugin()] },
+  preload: {
+    plugins: [externalizeDepsPlugin()],
+    build: { rollupOptions: { output: { format: "cjs" } } },
+  },
   renderer: {
     root: resolve(__dirname, "src/renderer"),
     resolve: { alias: { "@": resolve(__dirname, "src/renderer/src") } },
     plugins: [react()],
+    worker: { format: "es" },
   },
 });

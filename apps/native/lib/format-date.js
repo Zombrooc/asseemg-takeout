@@ -1,8 +1,11 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatDateBR = formatDateBR;
+exports.formatDateOnlyBR = formatDateOnlyBR;
 exports.formatDateTimeBR = formatDateTimeBR;
 exports.formatDateShort = formatDateShort;
+exports.normalizeDateOnly = normalizeDateOnly;
+exports.parseDateOnlyParts = parseDateOnlyParts;
 exports.parseDateValue = parseDateValue;
 var MONTHS = [
     "janeiro",
@@ -23,6 +26,42 @@ function createCalendarDate(year, month, day) {
     return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
         ? date
         : null;
+}
+function isValidCalendarDate(_a) {
+    var year = _a.year, month = _a.month, day = _a.day;
+    if (month < 1 || month > 12 || day < 1)
+        return false;
+    var leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    var daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+    return day <= daysInMonth;
+}
+function parseDateOnlyParts(value) {
+    if (value == null)
+        return null;
+    var trimmed = value.trim();
+    var iso = /^(\d{4})-(\d{2})-(\d{2})(?=$|T|\s)/.exec(trimmed);
+    if (iso) {
+        var parts = { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
+        return isValidCalendarDate(parts) ? parts : null;
+    }
+    var brazilian = /^(\d{1,2})[\\/.\-](\d{1,2})[\\/.\-](\d{4})$/.exec(trimmed);
+    if (brazilian) {
+        var parts = { year: Number(brazilian[3]), month: Number(brazilian[2]), day: Number(brazilian[1]) };
+        return isValidCalendarDate(parts) ? parts : null;
+    }
+    return null;
+}
+function normalizeDateOnly(value) {
+    var parts = parseDateOnlyParts(value);
+    if (!parts)
+        return null;
+    return "".concat(parts.year.toString().padStart(4, "0"), "-").concat(parts.month.toString().padStart(2, "0"), "-").concat(parts.day.toString().padStart(2, "0"));
+}
+function formatDateOnlyBR(value) {
+    var parts = parseDateOnlyParts(value);
+    if (!parts)
+        return "—";
+    return "".concat(parts.day, " de ").concat(MONTHS[parts.month - 1], " de ").concat(parts.year);
 }
 function parseDateValue(value) {
     if (value instanceof Date)

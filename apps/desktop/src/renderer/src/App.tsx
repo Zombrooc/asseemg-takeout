@@ -1,5 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
 	Archive,
 	ArrowLeft,
@@ -40,7 +39,17 @@ import { ASSEEMGLogo } from "./AsseemgLogo";
 import { getEventMetadataErrors } from "./event-validation";
 import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
 import { createParticipantSearchIndex, searchParticipantIndex } from "@pickup/api/participant-search";
-import { exportParticipants, type ParticipantExportFormat } from "./participant-export";
+import type { ParticipantExportFormat } from "./participant-export";
+
+const QRCodeSVG = lazy(() => import("qrcode.react").then(({ QRCodeSVG: Component }) => ({ default: Component })));
+
+function DeferredQrCode({ value, size, level }: { value: string; size: number; level?: "L" | "M" | "Q" | "H" }) {
+	return (
+		<Suspense fallback={<span className="qr-placeholder" style={{ width: size, height: size }} aria-hidden="true" />}>
+			<QRCodeSVG value={value} size={size} level={level} />
+		</Suspense>
+	);
+}
 
 type Page = "dashboard" | "event" | "new-event" | "import" | "audit" | "settings";
 type Notice = { kind: "success" | "error"; message: string } | null;
@@ -517,7 +526,7 @@ function Dashboard({
 				</div>
 				<div className="qr-frame">
 					{pairingUrl ? (
-						<QRCodeSVG value={pairingUrl} size={156} />
+						<DeferredQrCode value={pairingUrl} size={156} />
 					) : (
 						<span className="spinner" />
 					)}
@@ -834,29 +843,61 @@ function EventPage({
 		[] as LegacyReservedNumber[],
 	);
 	const reservationGroups = useMemo(() => groupLegacyReservations(reservations.data), [reservations.data]);
+	const [socketConnected, setSocketConnected] = useState(false);
 	useEffect(() => {
-		const socket = new WebSocket(wsUrl(event.eventId));
-		socket.onmessage = (message) => {
-			try {
-				const data = JSON.parse(message.data) as WsTakeoutMessage;
-				if (data.type === "lock_acquired" || data.type === "lock_renewed" || data.type === "lock_snapshot") {
-					if (data.participant_id && data.device_id && data.expires_at) setLockMap((current) => ({ ...current, [data.participant_id!]: { deviceId: data.device_id!, expiresAt: data.expires_at! } }));
-				} else if (data.type === "lock_released" && data.participant_id) {
-					setLockMap((current) => current[data.participant_id!]?.deviceId === data.device_id ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== data.participant_id)) : current);
-				}
-				participants.patch((current) => patchDesktopParticipants(current, data));
-			} catch { /* ignore malformed messages */ }
+		let socket: WebSocket | null = null;
+		let retryTimer: number | null = null;
+		let retryDelay = 1000;
+		let stopped = false;
+
+		const connect = () => {
+			if (stopped) return;
+			socket = new WebSocket(wsUrl(event.eventId));
+			socket.onopen = () => {
+				retryDelay = 1000;
+				setSocketConnected(true);
+			};
+			socket.onmessage = (message) => {
+				try {
+					const data = JSON.parse(message.data) as WsTakeoutMessage;
+					if (data.type === "lock_acquired" || data.type === "lock_renewed" || data.type === "lock_snapshot") {
+						const participantId = data.participant_id;
+						const deviceId = data.device_id;
+						const expiresAt = data.expires_at;
+						if (participantId && deviceId && expiresAt) setLockMap((current) => ({ ...current, [participantId]: { deviceId, expiresAt } }));
+					} else if (data.type === "lock_released" && data.participant_id) {
+						const participantId = data.participant_id;
+						setLockMap((current) => current[participantId]?.deviceId === data.device_id ? Object.fromEntries(Object.entries(current).filter(([id]) => id !== participantId)) : current);
+					}
+					participants.patch((current) => patchDesktopParticipants(current, data));
+				} catch { /* ignore malformed messages */ }
+			};
+			socket.onclose = () => {
+				setSocketConnected(false);
+				if (stopped) return;
+				retryTimer = window.setTimeout(connect, retryDelay);
+				retryDelay = Math.min(retryDelay * 2, 30_000);
+			};
+			socket.onerror = () => socket?.close();
 		};
-		return () => socket.close();
+
+		connect();
+		return () => {
+			stopped = true;
+			setSocketConnected(false);
+			if (retryTimer !== null) window.clearTimeout(retryTimer);
+			socket?.close();
+		};
 	}, [event.eventId, participants.patch]);
 	useEffect(() => {
 		const timer = window.setInterval(() => setLockMap((current) => Object.fromEntries(Object.entries(current).filter(([, lock]) => lock.expiresAt > Date.now() / 1000))), 1000);
 		return () => window.clearInterval(timer);
 	}, []);
 	useEffect(() => {
+		if (socketConnected) return;
 		const timer = window.setInterval(() => participants.reload(), 120_000);
 		return () => window.clearInterval(timer);
-	}, [participants.reload]);
+	}, [participants.reload, socketConnected]);
 	const [search, setSearch] = useState("");
 	const [busyId, setBusyId] = useState<string | null>(null);
 	const [lockMap, setLockMap] = useState<Record<string, { deviceId: string; expiresAt: number }>>({});
@@ -1054,6 +1095,7 @@ function EventPage({
 		}
 		setExportBusy(format);
 		try {
+			const { exportParticipants } = await import("./participant-export");
 			const result = await exportParticipants(participants.data, event, format);
 			if (result.status === "saved") notify({ kind: "success", message: `${format.toUpperCase()} salvo com ${result.count} participante(s).` });
 		} catch (caught) {
@@ -1173,7 +1215,7 @@ function EventPage({
 					</td>
 					{showParticipantQr && (
 						<td className="participant-qr-cell">
-							{item.qrCode ? <QRCodeSVG value={item.qrCode} size={64} level="M" /> : <span className="muted">Sem QR Code</span>}
+							{item.qrCode ? <DeferredQrCode value={item.qrCode} size={64} level="M" /> : <span className="muted">Sem QR Code</span>}
 						</td>
 					)}
 									<td>
@@ -1253,15 +1295,41 @@ function ImportPage({
 	const metadataValid = eventName.trim().length > 0 && eventStartDate.length > 0;
 	const uploadValid = file !== null && (mode === "csv" ? csv !== null : json !== null);
 	const mappingValid = mode === "json" || (mapping !== null && mappingIsValid(mapping));
+	const parseFileOnWorker = async (next: File, nextMode: "csv" | "json") => {
+		if (typeof Worker === "undefined") {
+			if (nextMode === "csv") {
+				const parsed = parseCsv(decodeCsv(await next.arrayBuffer()));
+				return { mode: "csv" as const, parsed, mapping: autoMap(parsed.headers) };
+			}
+			const parsed = JSON.parse(await next.text()) as Record<string, unknown>;
+			if (!Array.isArray(parsed.participants)) throw new Error("O JSON não contém uma lista de participantes válida");
+			return { mode: "json" as const, parsed };
+		}
+
+		return new Promise<{ mode: "csv" | "json"; parsed: ParsedCsv | Record<string, unknown>; mapping?: Mapping }>((resolve, reject) => {
+			const worker = new Worker(new URL("./import-parser.worker.ts", import.meta.url), { type: "module" });
+			worker.onmessage = (message: MessageEvent<{ ok: boolean; mode?: "csv" | "json"; parsed?: ParsedCsv | Record<string, unknown>; mapping?: Mapping; error?: string }>) => {
+				worker.terminate();
+				if (message.data.ok && message.data.mode && message.data.parsed) resolve({ mode: message.data.mode, parsed: message.data.parsed, mapping: message.data.mapping });
+				else reject(new Error(message.data.error ?? "Arquivo inválido"));
+			};
+			worker.onerror = (error) => {
+				worker.terminate();
+				reject(error.error instanceof Error ? error.error : new Error(error.message));
+			};
+			if (nextMode === "csv") void next.arrayBuffer().then((buffer) => worker.postMessage({ mode: "csv", buffer }, [buffer])).catch(reject);
+			else void next.text().then((text) => worker.postMessage({ mode: "json", text })).catch(reject);
+		});
+	};
 	const selectFile = async (next: File | null) => {
 		setFile(next); setCsv(null); setMapping(null); setJson(null);
 		if (!next) return;
 		try {
-			if (mode === "csv") {
-				const parsed = parseCsv(decodeCsv(await next.arrayBuffer()));
-				setCsv(parsed); setMapping(autoMap(parsed.headers));
+			const result = await parseFileOnWorker(next, mode);
+			if (result.mode === "csv") {
+				setCsv(result.parsed as ParsedCsv); setMapping(result.mapping ?? null);
 			} else {
-				const parsed = JSON.parse(await next.text()) as Record<string, unknown>;
+				const parsed = result.parsed as Record<string, unknown>;
 				if (!Array.isArray(parsed.participants)) throw new Error("O JSON não contém uma lista de participantes válida");
 				setJson(parsed);
 			}

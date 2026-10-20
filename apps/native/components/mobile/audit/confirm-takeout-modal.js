@@ -20,22 +20,26 @@ const react_native_safe_area_context_1 = require("react-native-safe-area-context
 const tamagui_1 = require("tamagui");
 const LOCK_RENEW_INTERVAL_MS = 15_000;
 function formatBirthDate(s) {
-    return (0, format_date_1.formatDateBR)(s);
+    return (0, format_date_1.formatDateOnlyBR)(s);
 }
 function getParticipantBirthDate(participant) {
     const raw = participant;
-    return participant.birthDate ?? raw.birth_date ?? raw.dataNascimento ?? null;
+    const value = participant.birthDate ?? raw.birth_date ?? raw.dataNascimento ?? null;
+    const parts = (0, format_date_1.parseDateOnlyParts)(value);
+    if (!parts)
+        return null;
+    return "".concat(parts.year.toString().padStart(4, "0"), "-").concat(parts.month.toString().padStart(2, "0"), "-").concat(parts.day.toString().padStart(2, "0"));
 }
 function ageFromBirthDate(s) {
     if (!s)
         return "-";
-    const d = (0, format_date_1.parseDateValue)(s);
-    if (!d)
+    const birthDate = (0, format_date_1.parseDateOnlyParts)(s);
+    if (!birthDate)
         return "-";
     const now = new Date();
-    let age = now.getFullYear() - d.getFullYear();
-    if (now.getMonth() < d.getMonth() ||
-        (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) {
+    let age = now.getFullYear() - birthDate.year;
+    if (now.getMonth() + 1 < birthDate.month ||
+        (now.getMonth() + 1 === birthDate.month && now.getDate() < birthDate.day)) {
         age--;
     }
     return age >= 0 ? String(age) : "-";

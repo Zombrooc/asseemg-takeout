@@ -152,6 +152,19 @@ describe("participant update patch", () => {
       }),
     ).toEqual([{ ...participants[0], name: "Nome novo", cpf: "", birthDate: "2000-02-02", modality: "10KM", shirtSize: null, team: null, bibNumber: 1, checkinDone: false }]);
   });
+
+  it("keeps the civil birth date when realtime sends an UTC timestamp", () => {
+    const participants = [{ id: "legacy-1", name: "Nome", birthDate: "1990-01-01" }];
+
+    expect(
+      applyParticipantUpdatePatch(participants, {
+        type: "participant_updated",
+        source_type: "legacy_csv",
+        participant_id: "legacy-1",
+        birthDate: "2000-03-08T00:00:00.000Z",
+      }),
+    ).toEqual([{ id: "legacy-1", name: "Nome", birthDate: "2000-03-08" }]);
+  });
 });
 
 describe("realtime message parser", () => {

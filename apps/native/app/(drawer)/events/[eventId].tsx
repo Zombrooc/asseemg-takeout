@@ -32,7 +32,7 @@ import { LegacyCreateParticipantModal } from "@/components/mobile-tamagui/event/
 import { ConfirmTakeoutModal } from "@/components/mobile/audit/confirm-takeout-modal";
 import { ParticipantListItem } from "@/components/mobile-tamagui/participant-list-item";
 import { Banner, Button, ScreenContainer, Spinner } from "@/components/ui-tamagui";
-import { formatDateShort } from "@/lib/format-date";
+import { formatDateShort, normalizeDateOnly } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -47,6 +47,18 @@ type DisplayParticipant = EventParticipant | LegacyEventParticipant;
 
 function isLegacyParticipant(participant: DisplayParticipant): participant is LegacyEventParticipant {
   return typeof (participant as LegacyEventParticipant).bibNumber === "number";
+}
+
+function normalizeParticipantBirthDate(participant: DisplayParticipant): DisplayParticipant {
+  const normalized = normalizeDateOnly(participant.birthDate);
+  if (isLegacyParticipant(participant)) {
+    return normalized === participant.birthDate
+      ? participant
+      : { ...participant, birthDate: normalized ?? "" };
+  }
+  return normalized === participant.birthDate
+    ? participant
+    : { ...participant, birthDate: normalized };
 }
 
 function getParticipantKey(participant: DisplayParticipant, sourceType: SourceType): string {
@@ -137,12 +149,13 @@ export default function EventScreen() {
 
   const participantsQuery = useQuery<DisplayParticipant[]>({
     queryKey: ["takeout-event-participants", eventId],
-    queryFn: () =>
-      api && eventId
-        ? sourceType === "legacy_csv"
-          ? api.getLegacyEventParticipants(eventId)
-          : api.getEventParticipants(eventId)
-        : Promise.reject(new Error("No API")),
+    queryFn: async () => {
+      if (!api || !eventId) throw new Error("No API");
+      const participants = sourceType === "legacy_csv"
+        ? await api.getLegacyEventParticipants(eventId)
+        : await api.getEventParticipants(eventId);
+      return participants.map(normalizeParticipantBirthDate);
+    },
     enabled: !!api && !!eventId && isReachable,
     refetchInterval: isReachable ? PARTICIPANTS_REFRESH_INTERVAL_MS : false,
     refetchIntervalInBackground: true,
@@ -385,9 +398,10 @@ export default function EventScreen() {
         : api.putEventParticipant(eventId, editingParticipant.id, payload);
     },
     onSuccess: (updated) => {
+      const normalizedUpdated = normalizeParticipantBirthDate(updated);
       queryClient.setQueryData<DisplayParticipant[]>(
         ["takeout-event-participants", eventId],
-        (current) => current?.map((item) => (item.id === updated.id ? updated : item)),
+        (current) => current?.map((item) => (item.id === normalizedUpdated.id ? normalizedUpdated : item)),
       );
       setEditingParticipant(null);
       Alert.alert("Participante atualizado", "As informações foram salvas.");

@@ -109,9 +109,11 @@ function getDefaultRoute(): DefaultRoute | null {
 	}
 }
 
-function isVirtualInterface(interfaceName: string): boolean {
-	return /virtualbox|host.only|vmware|hyper.v|vEthernet|wsl|docker|vpn|tunnel|loopback/i.test(
-		interfaceName,
+function isVirtualInterface(interfaceName: string, ip = ""): boolean {
+	return (
+		/virtualbox|host.only|vmware|hyper.v|vEthernet|wsl|docker|vpn|tunnel|loopback/i.test(
+			interfaceName,
+		) || /^(192\.168\.56\.|192\.168\.99\.)/.test(ip)
 	);
 }
 
@@ -135,7 +137,7 @@ export function selectPrimaryAddress(
 		: undefined;
 	return (
 		routed ??
-		addresses.find((address) => !isVirtualInterface(address.interfaceName)) ??
+		addresses.find((address) => !isVirtualInterface(address.interfaceName, address.ip)) ??
 		addresses[0]
 	);
 }
@@ -1019,9 +1021,10 @@ export function createTakeoutServer({
 			? pull.participants
 			: [];
 		const importData = db.transaction(() => {
-			db.prepare(
+			const upsertEvent = db.prepare(
 				"INSERT INTO events (event_id,name,start_date,end_date,start_time,imported_at,source_type,archived_at) VALUES (?,?,?,?,?,?,?,NULL) ON CONFLICT(event_id) DO UPDATE SET name=excluded.name,start_date=excluded.start_date,end_date=excluded.end_date,start_time=excluded.start_time,source_type=excluded.source_type",
-			).run(
+			);
+			upsertEvent.run(
 				eventId,
 				event.name ?? event.title ?? eventId,
 				event.startDate ?? null,
@@ -1029,6 +1032,15 @@ export function createTakeoutServer({
 				event.startTime ?? null,
 				nowIso(),
 				"json_sync",
+			);
+			const upsertParticipant = db.prepare(
+				"INSERT INTO participants (id,event_id,name,cpf,birth_date,raw_json) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET event_id=excluded.event_id,name=excluded.name,cpf=excluded.cpf,birth_date=excluded.birth_date,raw_json=excluded.raw_json",
+			);
+			const upsertTicket = db.prepare(
+				"INSERT INTO tickets (id,participant_id,code,raw_json) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET participant_id=excluded.participant_id,code=excluded.code,raw_json=excluded.raw_json",
+			);
+			const insertCustomForm = db.prepare(
+				"INSERT INTO custom_forms (event_id,definition_json) VALUES (?,?)",
 			);
 			for (const item of participants as Array<Record<string, unknown>>) {
 				const id = String(item.seatId ?? item.participantId ?? randomUUID());
@@ -1039,9 +1051,7 @@ export function createTakeoutServer({
 					customFormResponses: item.customFormResponses,
 				});
 				const ticketRaw = JSON.stringify(item);
-				db.prepare(
-					"INSERT INTO participants (id,event_id,name,cpf,birth_date,raw_json) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET event_id=excluded.event_id,name=excluded.name,cpf=excluded.cpf,birth_date=excluded.birth_date,raw_json=excluded.raw_json",
-				).run(
+				upsertParticipant.run(
 					id,
 					eventId,
 					item.participantName ?? item.name ?? null,
@@ -1049,15 +1059,11 @@ export function createTakeoutServer({
 					normalizeBirthDate(typeof item.birthDate === "string" ? item.birthDate : null),
 					participantRaw,
 				);
-				db.prepare(
-					"INSERT INTO tickets (id,participant_id,code,raw_json) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET participant_id=excluded.participant_id,code=excluded.code,raw_json=excluded.raw_json",
-				).run(ticketId, id, item.qrCode ?? ticketId, ticketRaw);
+				upsertTicket.run(ticketId, id, item.qrCode ?? ticketId, ticketRaw);
 			}
 			if (Array.isArray(pull.customForm))
 				for (const definition of pull.customForm)
-					db.prepare(
-						"INSERT INTO custom_forms (event_id,definition_json) VALUES (?,?)",
-					).run(eventId, JSON.stringify(definition));
+					insertCustomForm.run(eventId, JSON.stringify(definition));
 		});
 		importData();
 		emitEvent(db, clients, "_events", "events_list_changed", {});
@@ -1084,16 +1090,18 @@ export function createTakeoutServer({
 		}
 		const importRows = db.transaction(() => {
 			const timestamp = nowIso();
-			db.prepare(
+			const upsertEvent = db.prepare(
 				"INSERT INTO events (event_id,name,start_date,end_date,start_time,imported_at,source_type) VALUES (?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET name=excluded.name,start_date=excluded.start_date,end_date=excluded.end_date,start_time=excluded.start_time,source_type=excluded.source_type",
-			).run(eventId, eventName, eventStartDate, eventEndDate, eventStartTime, timestamp, "legacy_csv");
+			);
+			upsertEvent.run(eventId, eventName, eventStartDate, eventEndDate, eventStartTime, timestamp, "legacy_csv");
+			const insertParticipant = db.prepare(
+				"INSERT INTO legacy_participants (id,event_id,bib_number,full_name,sex,cpf_digits,birth_date_iso,modality,shirt_size,team,qrcode,raw_json,created_at,updated_at,is_manual) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+			);
 			let imported = 0;
 			for (const row of rows) {
 				if (!row.name.trim()) continue;
 				const id = randomUUID();
-				db.prepare(
-					"INSERT INTO legacy_participants (id,event_id,bib_number,full_name,sex,cpf_digits,birth_date_iso,modality,shirt_size,team,qrcode,raw_json,created_at,updated_at,is_manual) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
-				).run(
+				insertParticipant.run(
 					id,
 					eventId,
 					Number.isFinite(row.number) ? row.number : 0,

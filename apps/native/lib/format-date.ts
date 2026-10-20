@@ -20,6 +20,56 @@ function createCalendarDate(year: number, month: number, day: number): Date | nu
     : null;
 }
 
+export type DateOnlyParts = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+function isValidCalendarDate({ year, month, day }: DateOnlyParts): boolean {
+  if (month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  return day <= daysInMonth;
+}
+
+/**
+ * Reads a civil date without interpreting it as an instant in time.
+ *
+ * Birth dates are calendar values, not timestamps. In particular, the date
+ * prefix of an accidental ISO timestamp must win over the device timezone.
+ */
+export function parseDateOnlyParts(value: string | null | undefined): DateOnlyParts | null {
+  if (value == null) return null;
+  const trimmed = value.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?=$|T|\s)/.exec(trimmed);
+  if (iso) {
+    const parts = { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
+    return isValidCalendarDate(parts) ? parts : null;
+  }
+
+  const brazilian = /^(\d{1,2})[\\/.\-](\d{1,2})[\\/.\-](\d{4})$/.exec(trimmed);
+  if (brazilian) {
+    const parts = { year: Number(brazilian[3]), month: Number(brazilian[2]), day: Number(brazilian[1]) };
+    return isValidCalendarDate(parts) ? parts : null;
+  }
+
+  return null;
+}
+
+export function normalizeDateOnly(value: string | null | undefined): string | null {
+  const parts = parseDateOnlyParts(value);
+  if (!parts) return null;
+  return `${parts.year.toString().padStart(4, "0")}-${parts.month.toString().padStart(2, "0")}-${parts.day.toString().padStart(2, "0")}`;
+}
+
+/** Formats a date-only value without applying timezone conversion. */
+export function formatDateOnlyBR(value: string | null | undefined): string {
+  const parts = parseDateOnlyParts(value);
+  if (!parts) return "—";
+  return `${parts.day} de ${MONTHS[parts.month - 1]} de ${parts.year}`;
+}
+
 /** Parses date-only values without relying on the platform's locale parser. */
 export function parseDateValue(value: string | Date): Date | null {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;

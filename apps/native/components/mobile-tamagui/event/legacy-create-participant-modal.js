@@ -2,18 +2,13 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.LegacyCreateParticipantModal = LegacyCreateParticipantModal;
 var ui_tamagui_1 = require("@/components/ui-tamagui");
+var format_date_1 = require("@/lib/format-date");
 var react_1 = require("react");
 var react_native_1 = require("react-native");
 var react_native_safe_area_context_1 = require("react-native-safe-area-context");
 var MIN_DATE = "1900-01-01";
 function isValidDate(value) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(value))
-        return false;
-    var parsed = new Date("".concat(value, "T00:00:00Z"));
-    if (Number.isNaN(parsed.getTime()))
-        return false;
-    var iso = parsed.toISOString().slice(0, 10);
-    return iso === value && value >= MIN_DATE;
+    return (0, format_date_1.parseDateOnlyParts)(value) != null && (0, format_date_1.normalizeDateOnly)(value) === value && value >= MIN_DATE;
 }
 function LegacyCreateParticipantModal(_a) {
     var visible = _a.visible, reservations = _a.reservations, submitting = _a.submitting, onClose = _a.onClose, onSubmit = _a.onSubmit;
@@ -67,7 +62,7 @@ function LegacyCreateParticipantModal(_a) {
             reservationId: reservationId,
             name: name.trim(),
             cpf: cpf.trim(),
-            birthDate: birthDate.trim(),
+            birthDate: (0, format_date_1.normalizeDateOnly)(birthDate.trim()),
             ticketType: ticketType.trim(),
             shirtSize: shirtSize.trim() ? shirtSize.trim() : null,
             team: team.trim() ? team.trim() : null,

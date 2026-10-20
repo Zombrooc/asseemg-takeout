@@ -4,6 +4,7 @@ import type {
   LegacyEventParticipant,
   UpdateEventParticipantPayload,
 } from "@/lib/takeout-api-types";
+import { normalizeDateOnly, parseDateOnlyParts } from "@/lib/format-date";
 import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -28,9 +29,7 @@ type Props = {
 };
 
 function isValidDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+  return parseDateOnlyParts(value) != null && normalizeDateOnly(value) === value;
 }
 
 export function EditParticipantModal({
@@ -56,7 +55,7 @@ export function EditParticipantModal({
     const eventParticipant = participant as EventParticipant;
     setName(participant.name ?? "");
     setCpf(participant.cpf ?? "");
-    setBirthDate(participant.birthDate ?? "");
+    setBirthDate(normalizeDateOnly(participant.birthDate) ?? "");
     setTicketType(legacy?.modality ?? eventParticipant.ticketName ?? "");
     setShirtSize(participant.shirtSize ?? "");
     setTeam(participant.team ?? "");
@@ -80,7 +79,7 @@ export function EditParticipantModal({
     onSubmit({
       name: name.trim(),
       cpf: cpf.trim(),
-      birthDate: birthDate.trim(),
+      birthDate: normalizeDateOnly(birthDate.trim())!,
       ticketType: ticketType.trim(),
       shirtSize: shirtSize.trim() || null,
       team: team.trim() || null,

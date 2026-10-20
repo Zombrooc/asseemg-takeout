@@ -9,6 +9,8 @@ describe("ConfirmTakeoutModal birth date", () => {
     const source = readFileSync(modalPath, "utf-8");
 
     expect(source).toContain("participant.birthDate ?? raw.birth_date ?? raw.dataNascimento");
+    expect(source).toContain("parseDateOnlyParts(value)");
+    expect(source).toContain("formatDateOnlyBR(s)");
     expect(source).toContain('Row label="Data de nascimento" value={formatBirthDate(birthDate)}');
     expect(source).toContain('Row label="Idade" value={ageFromBirthDate(birthDate)}');
 

@@ -1,4 +1,3 @@
-import * as XLSX from "xlsx";
 import type { EventParticipant, EventSummary, LegacyEventParticipant } from "./api";
 
 export type DesktopParticipant = EventParticipant | LegacyEventParticipant;
@@ -170,7 +169,8 @@ export function buildParticipantsCsv(participants: DesktopParticipant[], event: 
 	return `\uFEFF${content}\r\n`;
 }
 
-export function buildParticipantsXlsxBase64(participants: DesktopParticipant[], event: EventSummary): string {
+export async function buildParticipantsXlsxBase64(participants: DesktopParticipant[], event: EventSummary): Promise<string> {
+	const XLSX = await import("xlsx");
 	const { columns, rows } = buildParticipantExportRows(participants, event);
 	const sheet = XLSX.utils.aoa_to_sheet([columns.map((column) => column.header), ...rows.map((row) => row.map((value) => value instanceof Date ? null : typeof value === "number" || typeof value === "boolean" ? value : valueAsText(value)))]);
 	for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
@@ -200,6 +200,8 @@ function encodeUtf8Base64(value: string): string {
 	return btoa(binary);
 }
 
+export { encodeUtf8Base64 };
+
 export function buildParticipantsFilename(event: EventSummary, format: ParticipantExportFormat, date = new Date().toISOString().slice(0, 10)): string {
 	return `participantes-${sanitizeFilenamePart(event.name ?? event.eventId)}-${date}.${format}`;
 }
@@ -211,11 +213,43 @@ export async function exportParticipants(
 	date?: string,
 ): Promise<ParticipantExportResult> {
 	if (participants.length === 0) throw new Error("Nenhum participante para exportar.");
-	const data = format === "csv" ? buildParticipantsCsv(participants, event) : buildParticipantsXlsxBase64(participants, event);
+	const data = await generateExportBase64(participants, event, format);
 	const result = await window.desktopWindow.saveFile({
 		defaultPath: buildParticipantsFilename(event, format, date),
 		filters: [{ name: format.toUpperCase(), extensions: [format] }],
-		base64: format === "csv" ? encodeUtf8Base64(data) : data,
+		base64: data,
 	});
 	return result.saved ? { status: "saved", count: participants.length, path: result.path } : { status: "cancelled", count: participants.length };
+}
+
+async function generateExportBase64(
+	participants: DesktopParticipant[],
+	event: EventSummary,
+	format: ParticipantExportFormat,
+): Promise<string> {
+	if (typeof Worker === "undefined") return generateExportBase64OnMainThread(participants, event, format);
+
+	return new Promise<string>((resolve, reject) => {
+		const worker = new Worker(new URL("./participant-export.worker.ts", import.meta.url), { type: "module" });
+		worker.onmessage = (message: MessageEvent<{ ok: boolean; data?: string; error?: string }>) => {
+			worker.terminate();
+			if (message.data.ok && message.data.data) resolve(message.data.data);
+			else reject(new Error(message.data.error ?? "Falha ao gerar exportação"));
+		};
+		worker.onerror = (error) => {
+			worker.terminate();
+			reject(error.error instanceof Error ? error.error : new Error(error.message));
+		};
+		worker.postMessage({ participants, event, format });
+	});
+}
+
+async function generateExportBase64OnMainThread(
+	participants: DesktopParticipant[],
+	event: EventSummary,
+	format: ParticipantExportFormat,
+): Promise<string> {
+	return format === "csv"
+		? encodeUtf8Base64(buildParticipantsCsv(participants, event))
+		: buildParticipantsXlsxBase64(participants, event);
 }

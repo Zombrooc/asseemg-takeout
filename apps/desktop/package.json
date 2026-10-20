@@ -21,7 +21,7 @@
     "@pickup/api": "workspace:*",
     "@thevent/ds": "^1.0.1",
     "@tanstack/react-query": "catalog:",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "12.9.0",
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "lucide-react": "^0.468.0",

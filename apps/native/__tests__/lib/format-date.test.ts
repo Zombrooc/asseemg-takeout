@@ -1,4 +1,10 @@
-import { formatDateBR, formatDateTimeBR } from "../../lib/format-date";
+import {
+  formatDateBR,
+  formatDateOnlyBR,
+  formatDateTimeBR,
+  normalizeDateOnly,
+  parseDateOnlyParts,
+} from "../../lib/format-date";
 
 describe("format-date", () => {
   describe("formatDateBR", () => {
@@ -37,6 +43,23 @@ describe("format-date", () => {
 
     it("returns '—' for invalid date string", () => {
       expect(formatDateTimeBR("invalid")).toBe("—");
+    });
+  });
+
+  describe("date-only birth dates", () => {
+    it("preserves the calendar date when an API value is an UTC timestamp", () => {
+      expect(formatDateOnlyBR("2000-03-08T00:00:00.000Z")).toBe("8 de mar\u00e7o de 2000");
+      expect(normalizeDateOnly("2000-03-08T00:00:00.000Z")).toBe("2000-03-08");
+    });
+
+    it("does not accept invalid calendar dates", () => {
+      expect(parseDateOnlyParts("2000-02-30")).toBeNull();
+      expect(formatDateOnlyBR("not-a-date")).toBe("—");
+    });
+
+    it("supports Brazilian dates without using the device timezone", () => {
+      expect(normalizeDateOnly("08/03/2000")).toBe("2000-03-08");
+      expect(formatDateOnlyBR("08/03/2000")).toBe("8 de mar\u00e7o de 2000");
     });
   });
 });

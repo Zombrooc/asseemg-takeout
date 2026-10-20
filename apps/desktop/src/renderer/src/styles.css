@@ -113,6 +113,7 @@ td small { margin-top: 4px; color: var(--qz-color-neutral-smoke); }
 .empty strong { color: var(--qz-color-neutral-bone); }
 .empty p { margin-top: -3px; font-size: 12px; }
 .spinner { width: 18px; height: 18px; border: 2px solid var(--qz-color-neutral-divider); border-top-color: var(--qz-color-brand-primary); border-radius: 50%; animation: spin .7s linear infinite; }
+.qr-placeholder { display: block; width: 156px; height: 156px; border-radius: var(--qz-radius-md); background: var(--qz-color-neutral-asphalt-mid); }
 .spinner.light { border-color: color-mix(in srgb, white 35%, transparent); border-top-color: white; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .notice { position: fixed; z-index: 10; top: 62px; right: 28px; display: flex; align-items: center; gap: 18px; min-width: 280px; padding: 13px 14px; border: 1px solid var(--qz-color-neutral-divider); border-radius: var(--qz-radius-md); color: var(--qz-color-neutral-bone); background: var(--qz-color-neutral-asphalt); box-shadow: 0 14px 34px #0005; font-size: 12px; }

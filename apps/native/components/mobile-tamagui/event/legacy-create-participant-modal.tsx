@@ -3,6 +3,7 @@ import type {
   CreateLegacyParticipantPayload,
   LegacyReservedNumber,
 } from "@/lib/takeout-api-types";
+import { normalizeDateOnly, parseDateOnlyParts } from "@/lib/format-date";
 import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -18,11 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const MIN_DATE = "1900-01-01";
 
 function isValidDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) return false;
-  const iso = parsed.toISOString().slice(0, 10);
-  return iso === value && value >= MIN_DATE;
+  return parseDateOnlyParts(value) != null && normalizeDateOnly(value) === value && value >= MIN_DATE;
 }
 
 type Props = {
@@ -90,7 +87,7 @@ export function LegacyCreateParticipantModal({
       reservationId,
       name: name.trim(),
       cpf: cpf.trim(),
-      birthDate: birthDate.trim(),
+      birthDate: normalizeDateOnly(birthDate.trim())!,
       ticketType: ticketType.trim(),
       shirtSize: shirtSize.trim() ? shirtSize.trim() : null,
       team: team.trim() ? team.trim() : null,

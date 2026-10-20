@@ -22,6 +22,7 @@ exports.applyParticipantUpdatePatch = applyParticipantUpdatePatch;
 exports.useTakeoutRealtime = useTakeoutRealtime;
 exports.useEventsListRealtime = useEventsListRealtime;
 var react_query_1 = require("@tanstack/react-query");
+var format_date_1 = require("@/lib/format-date");
 var react_1 = require("react");
 var INITIAL_RECONNECT_DELAY_MS = 1500;
 var MAX_RECONNECT_DELAY_MS = 15000;
@@ -162,6 +163,8 @@ function applyParticipantUpdatePatch(participants, message) {
         patch.modality = message.modality;
     if (!isLegacy && message.ticketName !== undefined)
         patch.ticketName = message.ticketName;
+    if (patch.birthDate !== undefined)
+        patch.birthDate = typeof patch.birthDate === "string" ? (0, format_date_1.normalizeDateOnly)(patch.birthDate) : null;
     return participants.map(function (participant) {
         var matches = isLegacy ? participant.id === target : participant.ticketId === target;
         return matches ? __assign(__assign({}, participant), patch) : participant;

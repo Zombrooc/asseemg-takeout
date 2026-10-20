@@ -54,8 +54,8 @@ export function initializeDatabase(db: SqliteDatabase): void {
 	db.pragma("journal_mode = WAL");
 	db.pragma("foreign_keys = ON");
 	movePeerSchemaCollisions(db);
-	db.exec(SCHEMA_SQL);
 	applyRuntimeMigrations(db);
+	db.exec(SCHEMA_SQL);
 	ensureLegacyQrCodeColumn(db);
 }
 
@@ -112,6 +112,7 @@ function ensureColumn(
 	columnName: string,
 	definition: string,
 ): void {
+	if (!tableExists(db, tableName)) return;
 	if (!tableColumns(db, tableName).has(columnName))
 		db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
 }

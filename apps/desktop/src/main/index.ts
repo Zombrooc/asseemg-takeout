@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openDatabase } from "./db";
@@ -8,32 +8,98 @@ import { createTakeoutServer, startTakeoutServer } from "./server";
 let mainWindow: BrowserWindow | null = null;
 let takeoutServer: ReturnType<typeof createTakeoutServer> | null = null;
 
-app.disableHardwareAcceleration();
+// Chromium's GPU path is the better default for the renderer. Keep an escape
+// hatch for machines with a known driver issue without penalising every user.
+if (process.env.ELECTRON_DISABLE_HARDWARE_ACCELERATION === "1")
+	app.disableHardwareAcceleration();
+
+function isTrustedRenderer(event: IpcMainInvokeEvent): boolean {
+	if (!mainWindow || event.sender !== mainWindow.webContents) return false;
+	const senderUrl = event.senderFrame?.url ?? "";
+	if (!senderUrl) return false;
+
+	if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+		try {
+			return new URL(senderUrl).origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+		} catch {
+			return false;
+		}
+	}
+	return senderUrl.startsWith("file://");
+}
+
+function assertTrustedRenderer(event: IpcMainInvokeEvent): void {
+	if (!isTrustedRenderer(event)) throw new Error("Untrusted renderer");
+}
+
+function isAllowedRendererUrl(url: string): boolean {
+	if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+		try {
+			return new URL(url).origin === new URL(process.env.ELECTRON_RENDERER_URL).origin;
+		} catch {
+			return false;
+		}
+	}
+	return url.startsWith("file://");
+}
+
+function rendererContentSecurityPolicy(): string {
+	const styleSource = app.isPackaged ? "'self'" : "'self' 'unsafe-inline'";
+	const devConnections = app.isPackaged
+		? ""
+		: " ws://localhost:* ws://127.0.0.1:*";
+	return [
+		"default-src 'self'",
+		`connect-src 'self' http://127.0.0.1:5555 http://localhost:5555 ws://127.0.0.1:5555 ws://localhost:5555${devConnections}`,
+		"img-src 'self' data:",
+		`style-src ${styleSource}`,
+		"script-src 'self'",
+	].join("; ");
+}
 
 function registerWindowIpc(): void {
-	ipcMain.handle("window:minimize", () => mainWindow?.minimize());
-	ipcMain.handle("window:maximize", () => {
+	ipcMain.handle("window:minimize", (event) => {
+		assertTrustedRenderer(event);
+		return mainWindow?.minimize();
+	});
+	ipcMain.handle("window:maximize", (event) => {
+		assertTrustedRenderer(event);
 		if (!mainWindow) return;
 		if (mainWindow.isMaximized()) mainWindow.unmaximize();
 		else mainWindow.maximize();
 	});
-	ipcMain.handle("window:close", () => mainWindow?.close());
+	ipcMain.handle("window:close", (event) => {
+		assertTrustedRenderer(event);
+		return mainWindow?.close();
+	});
 	ipcMain.handle(
 		"window:is-maximized",
-		() => mainWindow?.isMaximized() ?? false,
+		(event) => {
+			assertTrustedRenderer(event);
+			return mainWindow?.isMaximized() ?? false;
+		},
 	);
-	ipcMain.handle("firewall:status", () => getFirewallStatus());
-	ipcMain.handle("firewall:allow", () => allowFirewall());
+	ipcMain.handle("firewall:status", (event) => {
+		assertTrustedRenderer(event);
+		return getFirewallStatus();
+	});
+	ipcMain.handle("firewall:allow", (event) => {
+		assertTrustedRenderer(event);
+		return allowFirewall();
+	});
 	ipcMain.handle(
 		"file:save-base64",
 		async (
-			_event,
+			event,
 			payload: {
 				defaultPath: string;
 				filters: Array<{ name: string; extensions: string[] }>;
 				base64: string;
 			},
 		) => {
+			assertTrustedRenderer(event);
+			if (!payload || typeof payload.base64 !== "string")
+				throw new Error("Invalid file payload");
 			const options = {
 				defaultPath: payload.defaultPath,
 				filters: payload.filters,
@@ -60,15 +126,27 @@ async function createMainWindow(): Promise<void> {
 		icon: join(app.getAppPath(), "assets/icon.png"),
 		show: false,
 		webPreferences: {
-			preload: join(__dirname, "../preload/index.mjs"),
+			preload: join(__dirname, "../preload/index.cjs"),
 			contextIsolation: true,
 			nodeIntegration: false,
-			// electron-vite emits the preload as an ESM file. Sandboxed
-			// preloads cannot use ESM imports, so keep the renderer isolated
-			// while allowing this preload to be evaluated.
-			sandbox: false,
+			sandbox: true,
 		},
 	});
+	mainWindow.webContents.on("will-navigate", (event, url) => {
+		if (!isAllowedRendererUrl(url)) event.preventDefault();
+	});
+	mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+	mainWindow.webContents.session.webRequest.onHeadersReceived(
+		{ urls: ["*://*/*", "file://*/*"] },
+		(details, callback) => {
+			callback({
+				responseHeaders: {
+					...details.responseHeaders,
+					"Content-Security-Policy": [rendererContentSecurityPolicy()],
+				},
+			});
+		},
+	);
 
 	mainWindow.webContents.on(
 		"did-fail-load",

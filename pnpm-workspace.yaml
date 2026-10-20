@@ -8,3 +8,9 @@ catalog:
   dotenv: ^17.2.2
   typescript: ^5
   zod: ^4.1.13
+
+ignoredBuiltDependencies:
+  - prisma
+
+onlyBuiltDependencies:
+  - better-sqlite3
