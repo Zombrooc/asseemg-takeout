@@ -328,24 +328,24 @@ export function ConfirmTakeoutModal({
               style={{ paddingTop: insets.top }}
             >
               <XStack gap="$2" style={{ paddingHorizontal: 12, paddingVertical: 8, alignItems: "flex-start" }}>
-                <Button
+                <Pressable
                   testID="takeout-confirm-modal-close"
-                  variant="ghost"
-                  style={{
+                  accessibilityRole="button"
+                  accessibilityLabel="Fechar conferência"
+                  onPress={handleClose}
+                  disabled={loading}
+                  style={({ pressed }) => ({
                     width: 44,
                     height: 44,
                     minWidth: 44,
                     minHeight: 44,
-                    padding: 0,
                     alignItems: "center",
                     justifyContent: "center",
-                  }}
-                  accessibilityLabel="Fechar conferência"
-                  onPress={handleClose}
-                  isDisabled={loading}
+                    opacity: loading ? 0.5 : pressed ? 0.7 : 1,
+                  })}
                 >
                   <Ionicons name="close" size={26} color={closeIconColor} />
-                </Button>
+                </Pressable>
                 <YStack flex={1} gap="$1" style={{ paddingTop: 4 }}>
                   <Text
                     accessibilityRole="header"
