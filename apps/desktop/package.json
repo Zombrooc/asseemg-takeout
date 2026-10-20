@@ -8,9 +8,10 @@
   "type": "module",
   "main": "./out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "pnpm run rebuild:native && electron-vite dev",
     "build": "electron-vite build",
-    "dist": "pnpm run build && electron-builder --win",
+    "dist": "pnpm run rebuild:native && pnpm run build && electron-builder --win",
+    "rebuild:native": "electron-builder install-app-deps",
     "preview": "electron-vite preview",
     "lint": "biome lint .",
     "typecheck": "tsc --noEmit",
