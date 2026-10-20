@@ -1,75 +1,37 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __generator = (this && this.__generator) || function (thisArg, body) {
-    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
-    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
-    function verb(n) { return function (v) { return step([n, v]); }; }
-    function step(op) {
-        if (f) throw new TypeError("Generator is already executing.");
-        while (g && (g = 0, op[0] && (_ = 0)), _) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [op[0] & 2, t.value];
-            switch (op[0]) {
-                case 0: case 1: t = op; break;
-                case 4: _.label++; return { value: op[1], done: false };
-                case 5: _.label++; y = op[1]; op = [0]; continue;
-                case 7: op = _.ops.pop(); _.trys.pop(); continue;
-                default:
-                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
-                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
-                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
-                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
-                    if (t[2]) _.ops.pop();
-                    _.trys.pop(); continue;
-            }
-            op = body.call(thisArg, _);
-        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
-        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
-    }
-};
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getParticipantBirthDate = getParticipantBirthDate;
 exports.ConfirmTakeoutModal = ConfirmTakeoutModal;
-var ui_tamagui_1 = require("@/components/ui-tamagui");
-var takeout_connection_context_1 = require("@/contexts/takeout-connection-context");
-var format_date_1 = require("@/lib/format-date");
-var takeout_api_1 = require("@/lib/takeout-api");
-var takeout_retirante_payload_1 = require("@/lib/takeout-retirante-payload");
-var takeout_queue_1 = require("@/lib/takeout-queue");
-var responsive_1 = require("@/utils/responsive");
-var react_1 = require("react");
-var react_native_1 = require("react-native");
-var react_native_safe_area_context_1 = require("react-native-safe-area-context");
-var tamagui_1 = require("tamagui");
-var confirm_takeout_modal_layout_1 = require("@/components/mobile/audit/confirm-takeout-modal.layout");
-var LOCK_RENEW_INTERVAL_MS = 15000;
+const jsx_runtime_1 = require("react/jsx-runtime");
+const ui_tamagui_1 = require("@/components/ui-tamagui");
+const takeout_connection_context_1 = require("@/contexts/takeout-connection-context");
+const format_date_1 = require("@/lib/format-date");
+const takeout_api_1 = require("@/lib/takeout-api");
+const takeout_retirante_payload_1 = require("@/lib/takeout-retirante-payload");
+const takeout_queue_1 = require("@/lib/takeout-queue");
+const confirm_takeout_modal_data_1 = require("@/components/mobile/audit/confirm-takeout-modal.data");
+const react_1 = require("react");
+const react_native_1 = require("react-native");
+const react_native_safe_area_context_1 = require("react-native-safe-area-context");
+const tamagui_1 = require("tamagui");
+const LOCK_RENEW_INTERVAL_MS = 15_000;
 function formatBirthDate(s) {
     return (0, format_date_1.formatDateBR)(s);
 }
 function getParticipantBirthDate(participant) {
-    var raw = participant;
-    if (participant.birthDate != null)
-        return participant.birthDate;
-    if (raw.birth_date != null)
-        return raw.birth_date;
-    return raw.dataNascimento != null ? raw.dataNascimento : null;
+    const raw = participant;
+    return participant.birthDate ?? raw.birth_date ?? raw.dataNascimento ?? null;
 }
 function ageFromBirthDate(s) {
     if (!s)
         return "-";
-    var d = (0, format_date_1.parseDateValue)(s);
+    const d = (0, format_date_1.parseDateValue)(s);
     if (!d)
         return "-";
-    var now = new Date();
-    var age = now.getFullYear() - d.getFullYear();
-    if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) {
+    const now = new Date();
+    let age = now.getFullYear() - d.getFullYear();
+    if (now.getMonth() < d.getMonth() ||
+        (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) {
         age--;
     }
     return age >= 0 ? String(age) : "-";
@@ -84,7 +46,7 @@ function formatResponseValue(value) {
     try {
         return JSON.stringify(value);
     }
-    catch (_a) {
+    catch {
         return "-";
     }
 }
@@ -93,356 +55,206 @@ function buildTicketConflictKey(participant, sourceType) {
         return participant.id;
     return participant.ticketId;
 }
-function ConfirmTakeoutModal(_a) {
-    var _this = this;
-    var _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o;
-    var visible = _a.visible, participant = _a.participant, _p = _a.readOnly, readOnly = _p === void 0 ? false : _p, _q = _a.alerts, alerts = _q === void 0 ? [] : _q, _r = _a.sourceType, sourceType = _r === void 0 ? "json_sync" : _r, eventId = _a.eventId, onClose = _a.onClose, onConfirmed = _a.onConfirmed, onQueuedOffline = _a.onQueuedOffline, onConflict = _a.onConflict;
-    var insets = (0, react_native_safe_area_context_1.useSafeAreaInsets)();
-    var _r = (0, responsive_1.useResponsiveScale)(), scale = _r.scale, width = _r.width;
-    var windowHeight = (0, react_native_1.useWindowDimensions)().height;
-    var _s = (0, takeout_connection_context_1.useTakeoutConnection)(), api = _s.api, deviceId = _s.deviceId;
-    var _t = (0, react_1.useState)(false), loading = _t[0], setLoading = _t[1];
-    var _u = (0, react_1.useState)(null), error = _u[0], setError = _u[1];
-    var _v = (0, react_1.useState)(false), isProxyTakeout = _v[0], setIsProxyTakeout = _v[1];
-    var _w = (0, react_1.useState)(""), retiranteNome = _w[0], setRetiranteNome = _w[1];
-    var _x = (0, react_1.useState)(""), retiranteCpf = _x[0], setRetiranteCpf = _x[1];
-    var _y = (0, react_1.useState)(null), lockState = _y[0], setLockState = _y[1];
-    var _z = (0, react_1.useState)(0), keyboardHeight = _z[0], setKeyboardHeight = _z[1];
-    var _0 = (0, react_1.useState)(false), isKeyboardVisible = _0[0], setIsKeyboardVisible = _0[1];
-    var renewIntervalRef = (0, react_1.useRef)(null);
-    (0, react_1.useEffect)(function () {
-        if (!visible)
+function ConfirmTakeoutModal({ visible, participant, readOnly = false, alerts = [], sourceType = "json_sync", eventId, onClose, onConfirmed, onQueuedOffline, onConflict, }) {
+    const insets = (0, react_native_safe_area_context_1.useSafeAreaInsets)();
+    const { api, deviceId } = (0, takeout_connection_context_1.useTakeoutConnection)();
+    const [loading, setLoading] = (0, react_1.useState)(false);
+    const [error, setError] = (0, react_1.useState)(null);
+    const [isProxyTakeout, setIsProxyTakeout] = (0, react_1.useState)(false);
+    const [retiranteNome, setRetiranteNome] = (0, react_1.useState)("");
+    const [retiranteCpf, setRetiranteCpf] = (0, react_1.useState)("");
+    const [lockState, setLockState] = (0, react_1.useState)(null);
+    const renewIntervalRef = (0, react_1.useRef)(null);
+    const submittingRef = (0, react_1.useRef)(false);
+    const participantId = participant?.id;
+    (0, react_1.useEffect)(() => {
+        if (!visible || !participantId)
             return;
         setError(null);
+        setLoading(false);
+        submittingRef.current = false;
         setIsProxyTakeout(false);
         setRetiranteNome("");
         setRetiranteCpf("");
-    }, [visible, participant === null || participant === void 0 ? void 0 : participant.id]);
-    (0, react_1.useEffect)(function () {
-        if (!visible) {
-            setKeyboardHeight(0);
-            setIsKeyboardVisible(false);
-            return;
-        }
-        var showEvent = react_native_1.Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-        var hideEvent = react_native_1.Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-        var handleKeyboardShow = function (event) {
-            var _a, _b;
-            setKeyboardHeight((_b = (_a = event.endCoordinates) === null || _a === void 0 ? void 0 : _a.height) !== null && _b !== void 0 ? _b : 0);
-            setIsKeyboardVisible(true);
-        };
-        var handleKeyboardHide = function () {
-            setKeyboardHeight(0);
-            setIsKeyboardVisible(false);
-        };
-        var showSubscription = react_native_1.Keyboard.addListener(showEvent, handleKeyboardShow);
-        var hideSubscription = react_native_1.Keyboard.addListener(hideEvent, handleKeyboardHide);
-        return function () {
-            showSubscription.remove();
-            hideSubscription.remove();
-        };
-    }, [visible]);
-    (0, react_1.useEffect)(function () {
-        if (readOnly || !visible || !participant || !api || !deviceId) {
+    }, [visible, participantId]);
+    (0, react_1.useEffect)(() => {
+        if (readOnly || !visible || !participantId || !api || !deviceId) {
             setLockState(null);
             return;
         }
-        var cancelled = false;
-        (function () { return __awaiter(_this, void 0, void 0, function () {
-            var e_1;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        _a.trys.push([0, 2, , 3]);
-                        return [4 /*yield*/, api.postLocksAcquire(participant.id, deviceId)];
-                    case 1:
-                        _a.sent();
-                        if (cancelled)
-                            return [2 /*return*/];
-                        setLockState("heldByMe");
-                        renewIntervalRef.current = setInterval(function () {
-                            api.postLocksRenew(participant.id, deviceId).catch(function () { });
-                        }, LOCK_RENEW_INTERVAL_MS);
-                        return [3 /*break*/, 3];
-                    case 2:
-                        e_1 = _a.sent();
-                        if (cancelled)
-                            return [2 /*return*/];
-                        if (e_1 instanceof takeout_api_1.TakeoutApiError && e_1.status === 409) {
-                            setLockState("heldByOther");
-                        }
-                        else {
-                            setLockState(null);
-                        }
-                        return [3 /*break*/, 3];
-                    case 3: return [2 /*return*/];
+        let cancelled = false;
+        (async () => {
+            try {
+                await api.postLocksAcquire(participantId, deviceId);
+                if (cancelled)
+                    return;
+                setLockState("heldByMe");
+                renewIntervalRef.current = setInterval(() => {
+                    api.postLocksRenew(participantId, deviceId).catch(() => { });
+                }, LOCK_RENEW_INTERVAL_MS);
+            }
+            catch (e) {
+                if (cancelled)
+                    return;
+                if (e instanceof takeout_api_1.TakeoutApiError && e.status === 409) {
+                    setLockState("heldByOther");
                 }
-            });
-        }); })();
-        return function () {
+                else {
+                    setLockState(null);
+                }
+            }
+        })();
+        return () => {
             cancelled = true;
             if (renewIntervalRef.current) {
                 clearInterval(renewIntervalRef.current);
                 renewIntervalRef.current = null;
             }
-            if (participant && api && deviceId) {
-                api.deleteLocksRelease(participant.id, deviceId).catch(function () { });
+            if (api && deviceId) {
+                api.deleteLocksRelease(participantId, deviceId).catch(() => { });
             }
         };
-    }, [visible, participant === null || participant === void 0 ? void 0 : participant.id, api, deviceId, readOnly]);
-    var handleClose = function () {
-        if (participant && api && deviceId && lockState === "heldByMe") {
-            api.deleteLocksRelease(participant.id, deviceId).catch(function () { });
+    }, [visible, participantId, api, deviceId, readOnly]);
+    const handleClose = () => {
+        if (loading || submittingRef.current)
+            return;
+        if (participantId && api && deviceId && lockState === "heldByMe") {
+            api.deleteLocksRelease(participantId, deviceId).catch(() => { });
         }
         setLockState(null);
         onClose();
     };
-    var handleConfirm = function () { return __awaiter(_this, void 0, void 0, function () {
-        var proxyPayload, proxyPayloadJson, requestId, res, _a, e_2, _b;
-        var _c;
-        return __generator(this, function (_d) {
-            switch (_d.label) {
-                case 0:
-                    // #region agent log
-                    fetch("http://127.0.0.1:7496/ingest/1028bdca-7037-4a64-896c-a6cc5ba2298a", {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "X-Debug-Session-Id": "a61d58",
-                        },
-                        body: JSON.stringify({
-                            sessionId: "a61d58",
-                            runId: "initial",
-                            hypothesisId: "syntax_or_runtime",
-                            location: "confirm-takeout-modal.tsx:handleConfirm",
-                            message: "ConfirmTakeoutModal handleConfirm called",
-                            data: {
-                                participantId: (_c = participant === null || participant === void 0 ? void 0 : participant.id) !== null && _c !== void 0 ? _c : null,
-                                sourceType: sourceType,
-                                deviceId: deviceId !== null && deviceId !== void 0 ? deviceId : null,
-                            },
-                            timestamp: Date.now(),
-                        }),
-                    }).catch(function () { });
-                    // #endregion
-                    if (readOnly || !participant || !api || !deviceId)
-                        return [2 /*return*/];
-                    if (sourceType === "legacy_csv" && !eventId) {
-                        setError("Event ID ausente para confirmacao legado.");
-                        return [2 /*return*/];
-                    }
-                    proxyPayload = (0, takeout_retirante_payload_1.buildTakeoutRetirantePayload)({
-                        isProxyTakeout: isProxyTakeout,
-                        retiranteNome: retiranteNome,
-                        retiranteCpf: retiranteCpf,
-                    });
-                    if (isProxyTakeout && !proxyPayload) {
-                        setError("Informe o nome do retirante.");
-                        return [2 /*return*/];
-                    }
-                    proxyPayloadJson = (0, takeout_retirante_payload_1.buildTakeoutRetirantePayloadJson)({
-                        isProxyTakeout: isProxyTakeout,
-                        retiranteNome: retiranteNome,
-                        retiranteCpf: retiranteCpf,
-                    });
-                    setError(null);
-                    setLoading(true);
-                    requestId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
-                        var r = (Math.random() * 16) | 0;
-                        var v = c === "x" ? r : (r & 0x3) | 0x8;
-                        return v.toString(16);
-                    });
-                    _d.label = 1;
-                case 1:
-                    _d.trys.push([1, 6, 11, 12]);
-                    if (!(sourceType === "legacy_csv")) return [3 /*break*/, 3];
-                    return [4 /*yield*/, api.postLegacyTakeoutConfirm({
-                            request_id: requestId,
-                            event_id: eventId,
-                            participant_id: participant.id,
-                            device_id: deviceId,
-                            payload_json: proxyPayloadJson,
-                        })];
-                case 2:
-                    _a = _d.sent();
-                    return [3 /*break*/, 5];
-                case 3: return [4 /*yield*/, api.postTakeoutConfirm({
-                        request_id: requestId,
-                        ticket_id: participant.ticketId,
-                        device_id: deviceId,
-                        payload_json: proxyPayloadJson,
-                    })];
-                case 4:
-                    _a = _d.sent();
-                    _d.label = 5;
-                case 5:
-                    res = _a;
-                    if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
-                        api.deleteLocksRelease(participant.id, deviceId).catch(function () { });
-                        onConfirmed();
-                        onClose();
-                    }
-                    else {
-                        setError("Resposta inesperada: ".concat(res.status));
-                    }
-                    return [3 /*break*/, 12];
-                case 6:
-                    e_2 = _d.sent();
-                    if (e_2 instanceof takeout_api_1.TakeoutApiError && e_2.status === 409) {
-                        onClose();
-                        onConflict === null || onConflict === void 0 ? void 0 : onConflict(buildTicketConflictKey(participant, sourceType));
-                        react_native_1.Alert.alert("Conflito", "Check-in ja realizado por outro dispositivo.");
-                        return [2 /*return*/];
-                    }
-                    if (sourceType === "legacy_csv") {
-                        react_native_1.Alert.alert("Erro", "Falha ao confirmar retirada no legado.");
-                        return [2 /*return*/];
-                    }
-                    _d.label = 7;
-                case 7:
-                    _d.trys.push([7, 9, , 10]);
-                    return [4 /*yield*/, (0, takeout_queue_1.addToQueue)({
-                            request_id: requestId,
-                            ticket_id: participant.ticketId,
-                            device_id: deviceId,
-                            payload_json: proxyPayloadJson,
-                        })];
-                case 8:
-                    _d.sent();
-                    onQueuedOffline === null || onQueuedOffline === void 0 ? void 0 : onQueuedOffline();
-                    return [3 /*break*/, 10];
-                case 9:
-                    _b = _d.sent();
-                    return [3 /*break*/, 10];
-                case 10:
-                    onClose();
-                    return [3 /*break*/, 12];
-                case 11:
-                    setLoading(false);
-                    return [7 /*endfinally*/];
-                case 12: return [2 /*return*/];
-            }
+    const handleConfirm = async () => {
+        if (submittingRef.current)
+            return;
+        if (readOnly || !participant || !api || !deviceId)
+            return;
+        if (sourceType === "legacy_csv" && !eventId) {
+            setError("Event ID ausente para confirmacao legado.");
+            return;
+        }
+        const proxyPayload = (0, takeout_retirante_payload_1.buildTakeoutRetirantePayload)({
+            isProxyTakeout,
+            retiranteNome,
+            retiranteCpf,
         });
-    }); };
+        if (isProxyTakeout && !proxyPayload) {
+            setError("Informe o nome do retirante.");
+            return;
+        }
+        const proxyPayloadJson = (0, takeout_retirante_payload_1.buildTakeoutRetirantePayloadJson)({
+            isProxyTakeout,
+            retiranteNome,
+            retiranteCpf,
+        });
+        setError(null);
+        submittingRef.current = true;
+        setLoading(true);
+        const requestId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+            const r = (Math.random() * 16) | 0;
+            const v = c === "x" ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+        });
+        try {
+            const res = sourceType === "legacy_csv"
+                ? await api.postLegacyTakeoutConfirm({
+                    request_id: requestId,
+                    event_id: eventId ?? "",
+                    participant_id: participant.id,
+                    device_id: deviceId,
+                    payload_json: proxyPayloadJson,
+                })
+                : await api.postTakeoutConfirm({
+                    request_id: requestId,
+                    ticket_id: participant.ticketId,
+                    device_id: deviceId,
+                    payload_json: proxyPayloadJson,
+                });
+            if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
+                api.deleteLocksRelease(participant.id, deviceId).catch(() => { });
+                onConfirmed();
+                onClose();
+            }
+            else {
+                setError(`Resposta inesperada: ${res.status}`);
+            }
+        }
+        catch (e) {
+            if (e instanceof takeout_api_1.TakeoutApiError && e.status === 409) {
+                onClose();
+                onConflict?.(buildTicketConflictKey(participant, sourceType));
+                react_native_1.Alert.alert("Conflito", "Check-in ja realizado por outro dispositivo.");
+                return;
+            }
+            if (sourceType === "legacy_csv") {
+                react_native_1.Alert.alert("Erro", "Falha ao confirmar retirada no legado.");
+                return;
+            }
+            try {
+                await (0, takeout_queue_1.addToQueue)({
+                    request_id: requestId,
+                    ticket_id: participant.ticketId,
+                    device_id: deviceId,
+                    payload_json: proxyPayloadJson,
+                });
+                onQueuedOffline?.();
+            }
+            catch {
+                // ignore queue persist failure
+            }
+            onClose();
+        }
+        finally {
+            submittingRef.current = false;
+            setLoading(false);
+        }
+    };
     if (!participant)
         return null;
-    var legacy = sourceType === "legacy_csv" ? participant : null;
-    var current = sourceType === "json_sync" ? participant : null;
-    var isLockedByOther = lockState === "heldByOther";
-    var isRetiranteNomeValid = !isProxyTakeout ||
+    const current = sourceType === "json_sync" ? participant : null;
+    const isLockedByOther = lockState === "heldByOther";
+    const isRetiranteNomeValid = !isProxyTakeout ||
         (0, takeout_retirante_payload_1.buildTakeoutRetirantePayload)({
-            isProxyTakeout: isProxyTakeout,
-            retiranteNome: retiranteNome,
-            retiranteCpf: retiranteCpf,
+            isProxyTakeout,
+            retiranteNome,
+            retiranteCpf,
         }) != null;
-    var canConfirm = !isLockedByOther && isRetiranteNomeValid;
-    var modalLayout = (0, confirm_takeout_modal_layout_1.getConfirmTakeoutModalLayout)({
-        windowHeight: windowHeight,
-        keyboardHeight: keyboardHeight,
-        isKeyboardVisible: isKeyboardVisible,
-        insets: { top: insets.top, bottom: insets.bottom },
-    });
-    return (<react_native_1.Modal visible={visible} transparent animationType="fade">
-      <react_native_1.Pressable style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.5)",
-        }} onPress={handleClose}>
-        <react_native_1.KeyboardAvoidingView style={{ flex: 1, width: "100%" }} behavior={react_native_1.Platform.OS === "ios" ? "padding" : "height"}>
-          <react_native_1.ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: modalLayout.justifyContent,
-            alignItems: "center",
-            paddingTop: modalLayout.paddingTop,
-            paddingBottom: modalLayout.paddingBottom,
-            paddingLeft: insets.left,
-            paddingRight: insets.right,
-            paddingHorizontal: scale(16),
-        }}>
-            <react_native_1.Pressable style={{ width: "90%", maxWidth: width * 0.9, maxHeight: modalLayout.cardMaxHeight }} onPress={function (e) { return e.stopPropagation(); }}>
-              <ui_tamagui_1.Card style={{ padding: 24 }}>
-                <tamagui_1.Text fontSize={18} fontWeight="600" color="$foreground">
-                  {readOnly ? "Dados do participante" : "Confirmar check-in"}
-                </tamagui_1.Text>
-                {alerts.length > 0 ? (<tamagui_1.YStack testID="takeout-confirm-modal-alerts" gap="$2" style={{
-                marginTop: 12,
-                marginBottom: 16,
-                padding: 12,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: "#fecaca",
-                backgroundColor: "#fef2f2",
-            }}>
-                    <tamagui_1.Text color="#b91c1c" fontSize={14} fontWeight="600">
-                      Alertas para este participante
-                    </tamagui_1.Text>
-                    {alerts.map(function (alert) { return (<tamagui_1.Text key={"".concat(participant.id, "-").concat(alert.code, "-").concat(alert.message)} color="#b91c1c" fontSize={13}>
-                        {alert.message}
-                      </tamagui_1.Text>); })}
-                  </tamagui_1.YStack>) : null}
-                {lockState === "heldByMe" ? (<tamagui_1.Text color="$textSecondary" fontSize={14}>
-                    Em atendimento por voce
-                  </tamagui_1.Text>) : isLockedByOther ? (<tamagui_1.Text color="$warning" fontSize={14}>
-                    Em atendimento por outro dispositivo
-                  </tamagui_1.Text>) : null}
-                <tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
-                  <Row label="Nome" value={(_c = ((_b = legacy === null || legacy === void 0 ? void 0 : legacy.name) !== null && _b !== void 0 ? _b : current === null || current === void 0 ? void 0 : current.name)) !== null && _c !== void 0 ? _c : "-"}/>
-                  <Row label="CPF" value={(_e = ((_d = legacy === null || legacy === void 0 ? void 0 : legacy.cpf) !== null && _d !== void 0 ? _d : current === null || current === void 0 ? void 0 : current.cpf)) !== null && _e !== void 0 ? _e : "-"}/>
-                  <Row label="Data de nascimento" value={formatBirthDate(getParticipantBirthDate(participant))}/>
-                  <Row label="Idade" value={ageFromBirthDate(getParticipantBirthDate(participant))}/>
-                  <Row label="Ingresso" value={legacy != null ? "#".concat(legacy.bibNumber) : ((_j = ((_h = current === null || current === void 0 ? void 0 : current.sourceTicketId) !== null && _h !== void 0 ? _h : current === null || current === void 0 ? void 0 : current.ticketId)) !== null && _j !== void 0 ? _j : "-")}/>
-                  <Row label="Tipo de ingresso" value={(_l = ((_k = legacy === null || legacy === void 0 ? void 0 : legacy.modality) !== null && _k !== void 0 ? _k : current === null || current === void 0 ? void 0 : current.ticketName)) !== null && _l !== void 0 ? _l : "-"}/>
-                  <Row label="Tamanho da camisa" value={(_m = legacy === null || legacy === void 0 ? void 0 : legacy.shirtSize) !== null && _m !== void 0 ? _m : "-"}/>
-                  <Row label="Equipe" value={(_o = legacy === null || legacy === void 0 ? void 0 : legacy.team) !== null && _o !== void 0 ? _o : "-"}/>
-                 </tamagui_1.YStack>
-                {(current === null || current === void 0 ? void 0 : current.customFormResponses) && current.customFormResponses.length > 0 ? (<tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
-                    <tamagui_1.Text color="$textSecondary" fontSize={12} fontWeight="500">
-                      Dados adicionais
-                    </tamagui_1.Text>
-                    <tamagui_1.YStack gap="$2">
-                      {current.customFormResponses.map(function (r, i) { return (<Row key={i} label={r.label || r.name} value={formatResponseValue(r.response)}/>); })}
-                    </tamagui_1.YStack>
-                  </tamagui_1.YStack>) : null}
-                 {!readOnly ? (<tamagui_1.YStack gap="$2" style={{ marginBottom: 16 }}>
-                  <tamagui_1.Text color="$textSecondary" fontSize={12} fontWeight="500">
-                    Retirante
-                  </tamagui_1.Text>
-                  <ui_tamagui_1.Button testID="takeout-confirm-modal-proxy-toggle" variant={isProxyTakeout ? "secondary" : "bordered"} onPress={function () { return setIsProxyTakeout(function (prev) { return !prev; }); }} isDisabled={loading}>
-                    {isProxyTakeout ? "Retirada por terceiro: Sim" : "Retirada por terceiro: Nao"}
-                  </ui_tamagui_1.Button>
-                  {isProxyTakeout ? (<tamagui_1.YStack gap="$2">
-                      <ui_tamagui_1.Input testID="takeout-confirm-modal-retirante-nome" value={retiranteNome} onChangeText={setRetiranteNome} placeholder="Nome do retirante" autoCapitalize="words" editable={!loading}/>
-                      <ui_tamagui_1.Input testID="takeout-confirm-modal-retirante-cpf" value={retiranteCpf} onChangeText={setRetiranteCpf} placeholder="CPF do retirante (opcional)" keyboardType="number-pad" editable={!loading}/>
-                      {!isRetiranteNomeValid ? (<tamagui_1.Text color="$danger" fontSize={12}>
-                          Nome do retirante e obrigatorio.
-                        </tamagui_1.Text>) : null}
-                    </tamagui_1.YStack>) : null}
-                 </tamagui_1.YStack>) : null}
-                {error ? (<tamagui_1.Text color="$danger" fontSize={14}>
-                    {error}
-                  </tamagui_1.Text>) : null}
-                <tamagui_1.XStack gap="$3">
-                  <ui_tamagui_1.Button testID="takeout-confirm-modal-cancel" variant="bordered" onPress={handleClose} isDisabled={loading}>
-                    Cancelar
-                  </ui_tamagui_1.Button>
-                  {!readOnly ? (<ui_tamagui_1.Button testID="takeout-confirm-modal-confirm" onPress={handleConfirm} isLoading={loading} isDisabled={loading || !canConfirm}>
-                    Confirmar check-in
-                  </ui_tamagui_1.Button>) : null}
-                </tamagui_1.XStack>
-              </ui_tamagui_1.Card>
-            </react_native_1.Pressable>
-          </react_native_1.ScrollView>
-        </react_native_1.KeyboardAvoidingView>
-      </react_native_1.Pressable>
-    </react_native_1.Modal>);
+    const canConfirm = !isLockedByOther && isRetiranteNomeValid;
+    const birthDate = getParticipantBirthDate(participant);
+    const { name: participantName, cpf: participantCpf, ticketType, shirtSize, bibNumber, ticketIdentifier, team, } = (0, confirm_takeout_modal_data_1.getTakeoutModalParticipantDetails)(participant, sourceType);
+    const serviceLabel = readOnly
+        ? "Atendimento concluído"
+        : isLockedByOther
+            ? "Em atendimento por outro dispositivo"
+            : lockState === "heldByMe"
+                ? "Em atendimento por você"
+                : "Validando atendimento";
+    const statusLabel = readOnly
+        ? "CHECK-IN REALIZADO"
+        : isLockedByOther
+            ? "ATENDIMENTO INDISPONÍVEL"
+            : lockState === "heldByMe"
+                ? "CHECK-IN PENDENTE"
+                : "VALIDANDO ATENDIMENTO";
+    return ((0, jsx_runtime_1.jsx)(react_native_1.Modal, { visible: visible, transparent: true, animationType: "fade", onRequestClose: handleClose, children: (0, jsx_runtime_1.jsx)(react_native_1.KeyboardAvoidingView, { style: { flex: 1 }, behavior: react_native_1.Platform.OS === "ios" ? "padding" : "height", children: (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { flex: 1, backgroundColor: "$background", children: [(0, jsx_runtime_1.jsx)(react_native_1.Pressable, { accessibilityLabel: "Fechar confer\u00EAncia", onPress: handleClose, style: {
+                            ...{ position: "absolute", inset: 0 },
+                            backgroundColor: "rgba(0,0,0,0.5)",
+                        } }), (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { flex: 1, backgroundColor: "$background", accessibilityViewIsModal: true, style: { width: "100%", maxWidth: 640, alignSelf: "center" }, children: [(0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { borderBottomWidth: 1, borderColor: "$border", backgroundColor: "$background", style: { paddingTop: insets.top }, children: [(0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$2", style: { paddingHorizontal: 12, paddingVertical: 8, alignItems: "flex-start" }, children: [(0, jsx_runtime_1.jsx)(ui_tamagui_1.Button, { testID: "takeout-confirm-modal-close", variant: "ghost", style: { width: 44, height: 44, padding: 0 }, accessibilityLabel: "Fechar confer\u00EAncia", onPress: handleClose, isDisabled: loading, children: (0, jsx_runtime_1.jsx)(tamagui_1.Text, { fontSize: 30, lineHeight: 32, color: "$foreground", children: "\u00D7" }) }), (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { flex: 1, gap: "$1", style: { paddingTop: 4 }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { accessibilityRole: "header", accessibilityHint: readOnly ? "Dados do participante" : "Confirmar check-in", fontSize: 23, fontWeight: "800", color: "$foreground", children: "Confer\u00EAncia do kit" }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 14, children: "Confira antes de entregar ao participante" })] })] }), (0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$2", style: { paddingHorizontal: 16, paddingBottom: 12, alignItems: "center" }, children: [(0, jsx_runtime_1.jsx)(StatusChip, { label: serviceLabel, tone: isLockedByOther ? "warning" : "neutral" }), (0, jsx_runtime_1.jsx)(StatusChip, { label: statusLabel, tone: readOnly ? "success" : isLockedByOther ? "danger" : "accent" })] })] }), (0, jsx_runtime_1.jsxs)(react_native_1.ScrollView, { style: { flex: 1 }, keyboardShouldPersistTaps: "handled", keyboardDismissMode: "on-drag", contentContainerStyle: { padding: 16, paddingBottom: 24, gap: 20 }, children: [alerts.length > 0 ? ((0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { testID: "takeout-confirm-modal-alerts", gap: "$2", borderWidth: 1, borderColor: "$danger", backgroundColor: "$card", accessibilityRole: "alert", style: { padding: 12, borderRadius: 16 }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$danger", fontSize: 14, fontWeight: "700", children: "Alertas para este participante" }), alerts.map((alert) => ((0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$danger", fontSize: 13, children: alert.message }, `${participant.id}-${alert.code}-${alert.message}`)))] })) : null, (0, jsx_runtime_1.jsxs)(ui_tamagui_1.Card, { backgroundColor: "$card", borderColor: "$border", testID: "takeout-confirm-modal-participant", style: { padding: 16, borderRadius: 20 }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 12, fontWeight: "700", children: "Nome do participante" }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { selectable: true, color: "$foreground", fontSize: 24, lineHeight: 29, fontWeight: "800", style: { marginTop: 4 }, children: participantName }), (0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$2", borderTopWidth: 1, borderColor: "$border", style: { marginTop: 12, paddingTop: 12 }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 13, fontWeight: "700", children: "CPF" }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { selectable: true, color: "$foreground", fontSize: 15, fontWeight: "600", flex: 1, children: participantCpf })] })] }), (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { gap: "$3", children: [(0, jsx_runtime_1.jsx)(SectionTitle, { children: "Conferir no kit f\u00EDsico" }), (0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { testID: "takeout-confirm-modal-kit-cards", gap: "$2", style: { alignItems: "stretch" }, children: [(0, jsx_runtime_1.jsx)(KitCard, { label: "Ingresso", value: ticketType }), (0, jsx_runtime_1.jsx)(KitCard, { label: "Tamanho da camisa", value: shirtSize }), (0, jsx_runtime_1.jsx)(KitCard, { label: "N\u00FAmero de peito", value: bibNumber })] })] }), (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { gap: "$3", children: [(0, jsx_runtime_1.jsx)(SectionTitle, { children: "Dados do participante" }), (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { borderWidth: 1, borderColor: "$border", overflow: "hidden", backgroundColor: "$card", style: { borderRadius: 16 }, children: [(0, jsx_runtime_1.jsx)(Row, { label: "Data de nascimento", value: formatBirthDate(birthDate) }), (0, jsx_runtime_1.jsx)(Row, { label: "Idade", value: ageFromBirthDate(birthDate) }), (0, jsx_runtime_1.jsx)(Row, { label: "Equipe", value: team, isLast: !current }), current ? (0, jsx_runtime_1.jsx)(Row, { label: "Identifica\u00E7\u00E3o do ingresso", value: ticketIdentifier, isLast: true }) : null] })] }), current?.customFormResponses && current.customFormResponses.length > 0 ? ((0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { gap: "$3", children: [(0, jsx_runtime_1.jsx)(SectionTitle, { children: "Dados adicionais" }), (0, jsx_runtime_1.jsx)(tamagui_1.YStack, { borderWidth: 1, borderColor: "$border", overflow: "hidden", backgroundColor: "$card", style: { borderRadius: 16 }, children: current.customFormResponses.map((r, i) => ((0, jsx_runtime_1.jsx)(Row, { label: r.label || r.name, value: formatResponseValue(r.response), isLast: i === (current.customFormResponses?.length ?? 0) - 1 }, `${r.name}-${i}`))) })] })) : null, (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { gap: "$3", children: [(0, jsx_runtime_1.jsx)(SectionTitle, { children: "Retirante" }), (0, jsx_runtime_1.jsx)(ui_tamagui_1.Card, { gap: "$3", backgroundColor: "$card", borderColor: "$border", style: { padding: 16 }, children: readOnly ? ((0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 14, children: "A retirada j\u00E1 foi confirmada. Consulte o hist\u00F3rico de auditoria para os dados do retirante." })) : ((0, jsx_runtime_1.jsxs)(jsx_runtime_1.Fragment, { children: [(0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$3", style: { justifyContent: "space-between", alignItems: "center" }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 14, fontWeight: "700", flex: 1, children: "Retirada por terceiro" }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: isProxyTakeout ? "$warning" : "$foreground", fontSize: 15, fontWeight: "800", children: isProxyTakeout ? "Sim" : "Não" })] }), (0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$2", accessibilityRole: "radiogroup", accessibilityLabel: "Quem est\u00E1 retirando o kit?", children: [(0, jsx_runtime_1.jsx)(ui_tamagui_1.Button, { testID: "takeout-confirm-modal-own-toggle", flex: 1, style: { minHeight: 48 }, variant: !isProxyTakeout ? "primary" : "outline", accessibilityRole: "radio", accessibilityState: { selected: !isProxyTakeout, disabled: loading }, onPress: () => setIsProxyTakeout(false), isDisabled: loading, children: "Pr\u00F3prio atleta" }), (0, jsx_runtime_1.jsx)(ui_tamagui_1.Button, { testID: "takeout-confirm-modal-proxy-toggle", flex: 1, style: { minHeight: 48 }, variant: isProxyTakeout ? "primary" : "outline", accessibilityRole: "radio", accessibilityState: { selected: isProxyTakeout, disabled: loading }, onPress: () => setIsProxyTakeout(true), isDisabled: loading, children: "Outra pessoa" })] }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 13, children: isProxyTakeout ? "Retirante: uma terceira pessoa." : "Retirante: o próprio atleta." }), !readOnly ? (isProxyTakeout ? ((0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { gap: "$2", children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 13, fontWeight: "700", children: "Nome completo do retirante *" }), (0, jsx_runtime_1.jsx)(ui_tamagui_1.Input, { testID: "takeout-confirm-modal-retirante-nome", accessibilityLabel: "Nome completo do retirante", value: retiranteNome, onChangeText: setRetiranteNome, placeholder: "Nome de quem est\u00E1 retirando", autoCapitalize: "words", editable: !loading }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 13, fontWeight: "700", children: "CPF do retirante (opcional)" }), (0, jsx_runtime_1.jsx)(ui_tamagui_1.Input, { testID: "takeout-confirm-modal-retirante-cpf", accessibilityLabel: "CPF do retirante", value: retiranteCpf, onChangeText: setRetiranteCpf, placeholder: "000.000.000-00", keyboardType: "number-pad", editable: !loading }), !isRetiranteNomeValid ? ((0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$danger", fontSize: 12, accessibilityRole: "alert", children: "Nome do retirante e obrigatorio." })) : null] })) : null) : null] })) })] })] }), (0, jsx_runtime_1.jsxs)(tamagui_1.YStack, { borderTopWidth: 1, borderColor: "$border", backgroundColor: "$background", gap: "$2", style: {
+                                    paddingHorizontal: 16,
+                                    paddingTop: 12,
+                                    paddingBottom: Math.max(insets.bottom, 12),
+                                }, children: [error ? ((0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$danger", fontSize: 14, accessibilityRole: "alert", children: error })) : null, (0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$2", children: [(0, jsx_runtime_1.jsx)(ui_tamagui_1.Button, { testID: "takeout-confirm-modal-cancel", flex: readOnly ? 1 : 0.38, style: { minHeight: 52 }, variant: "bordered", onPress: handleClose, isDisabled: loading, children: "Cancelar" }), !readOnly ? ((0, jsx_runtime_1.jsx)(ui_tamagui_1.Button, { testID: "takeout-confirm-modal-confirm", flex: 1, style: { minHeight: 52 }, onPress: handleConfirm, isLoading: loading, isDisabled: loading || !canConfirm, accessibilityLabel: "Confirmar check-in", children: "Confirmar check-in" })) : null] })] })] })] }) }) }));
 }
-function Row(_a) {
-    var label = _a.label, value = _a.value;
-    return (<tamagui_1.XStack style={{ justifyContent: "space-between" }}>
-      <tamagui_1.Text color="$textSecondary" fontSize={14}>
-        {label}
-      </tamagui_1.Text>
-      <tamagui_1.Text color="$foreground" fontSize={14}>
-        {value}
-      </tamagui_1.Text>
-    </tamagui_1.XStack>);
+function SectionTitle({ children }) {
+    return ((0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$foreground", fontSize: 16, fontWeight: "800", children: children }));
+}
+function StatusChip({ label, tone }) {
+    const color = tone === "danger" ? "$danger" : tone === "warning" ? "$warning" : tone === "success" ? "$success" : tone === "accent" ? "$accent" : "$textSecondary";
+    return ((0, jsx_runtime_1.jsx)(tamagui_1.YStack, { borderWidth: 1, borderColor: color, style: { flexShrink: 1, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }, children: (0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: color, fontSize: 11, fontWeight: "800", numberOfLines: 2, children: label }) }));
+}
+function KitCard({ label, value }) {
+    return ((0, jsx_runtime_1.jsxs)(ui_tamagui_1.Card, { testID: `takeout-confirm-modal-kit-${label.toLowerCase().replaceAll(" ", "-")}`, flex: 1, gap: "$2", backgroundColor: "$card", borderColor: "$border", style: { minWidth: 0, paddingHorizontal: 8, paddingVertical: 12, borderRadius: 16 }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 11, lineHeight: 14, fontWeight: "700", children: label }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { selectable: true, color: "$foreground", fontSize: 20, lineHeight: 24, fontWeight: "800", accessibilityLabel: `${label}: ${value}`, style: { flexShrink: 1 }, children: value })] }));
+}
+function Row({ label, value, isLast = false }) {
+    return ((0, jsx_runtime_1.jsxs)(tamagui_1.XStack, { gap: "$3", borderBottomWidth: isLast ? 0 : 1, borderColor: "$border", style: { paddingHorizontal: 16, paddingVertical: 12, alignItems: "flex-start" }, children: [(0, jsx_runtime_1.jsx)(tamagui_1.Text, { color: "$textSecondary", fontSize: 14, flex: 1, children: label }), (0, jsx_runtime_1.jsx)(tamagui_1.Text, { selectable: true, color: "$foreground", fontSize: 14, fontWeight: "600", flex: 1, style: { textAlign: "right" }, children: value })] }));
 }
