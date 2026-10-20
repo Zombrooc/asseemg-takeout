@@ -1,4 +1,5 @@
 import { Button, Card, Input } from "@/components/ui-tamagui";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import { formatDateBR, parseDateValue } from "@/lib/format-date";
 import { TakeoutApiError } from "@/lib/takeout-api";
@@ -27,7 +28,7 @@ import {
   ScrollView,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Text, XStack, YStack } from "tamagui";
+import { Text, XStack, YStack, useTheme } from "tamagui";
 
 const LOCK_RENEW_INTERVAL_MS = 15_000;
 
@@ -103,6 +104,8 @@ export function ConfirmTakeoutModal({
   onConflict,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  const closeIconColor = theme.foreground.get();
   const { api, deviceId } = useTakeoutConnection();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -328,14 +331,20 @@ export function ConfirmTakeoutModal({
                 <Button
                   testID="takeout-confirm-modal-close"
                   variant="ghost"
-                  style={{ width: 44, height: 44, padding: 0 }}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    minWidth: 44,
+                    minHeight: 44,
+                    padding: 0,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
                   accessibilityLabel="Fechar conferência"
                   onPress={handleClose}
                   isDisabled={loading}
                 >
-                  <Text fontSize={30} lineHeight={32} color="$foreground">
-                    ×
-                  </Text>
+                  <Ionicons name="close" size={26} color={closeIconColor} />
                 </Button>
                 <YStack flex={1} gap="$1" style={{ paddingTop: 4 }}>
                   <Text
