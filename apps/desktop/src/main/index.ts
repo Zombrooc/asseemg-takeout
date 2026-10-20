@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, type IpcMainInvokeEvent } from "el
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openDatabase } from "./db";
+import { rendererContentSecurityPolicy } from "./csp";
 import { allowFirewall, getFirewallStatus } from "./firewall";
 import { createTakeoutServer, startTakeoutServer } from "./server";
 
@@ -41,20 +42,6 @@ function isAllowedRendererUrl(url: string): boolean {
 		}
 	}
 	return url.startsWith("file://");
-}
-
-function rendererContentSecurityPolicy(): string {
-	const styleSource = app.isPackaged ? "'self'" : "'self' 'unsafe-inline'";
-	const devConnections = app.isPackaged
-		? ""
-		: " ws://localhost:* ws://127.0.0.1:*";
-	return [
-		"default-src 'self'",
-		`connect-src 'self' http://127.0.0.1:5555 http://localhost:5555 ws://127.0.0.1:5555 ws://localhost:5555${devConnections}`,
-		"img-src 'self' data:",
-		`style-src ${styleSource}`,
-		"script-src 'self'",
-	].join("; ");
 }
 
 function registerWindowIpc(): void {
@@ -142,7 +129,7 @@ async function createMainWindow(): Promise<void> {
 			callback({
 				responseHeaders: {
 					...details.responseHeaders,
-					"Content-Security-Policy": [rendererContentSecurityPolicy()],
+					"Content-Security-Policy": [rendererContentSecurityPolicy(app.isPackaged)],
 				},
 			});
 		},
