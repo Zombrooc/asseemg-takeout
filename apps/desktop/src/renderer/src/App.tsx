@@ -7,6 +7,7 @@ import {
 	Check,
 	CalendarPlus,
 	ClipboardList,
+	Download,
 	FileUp,
 	FolderOpen,
 	ListPlus,
@@ -39,6 +40,7 @@ import { ASSEEMGLogo } from "./AsseemgLogo";
 import { getEventMetadataErrors } from "./event-validation";
 import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
 import { createParticipantSearchIndex, searchParticipantIndex } from "@pickup/api/participant-search";
+import { exportParticipants, type ParticipantExportFormat } from "./participant-export";
 
 type Page = "dashboard" | "event" | "new-event" | "import" | "audit" | "settings";
 type Notice = { kind: "success" | "error"; message: string } | null;
@@ -876,6 +878,7 @@ function EventPage({
 	const [reservationsOpen, setReservationsOpen] = useState(false);
 	const [createParticipantOpen, setCreateParticipantOpen] = useState(false);
 	const [createParticipantBusy, setCreateParticipantBusy] = useState(false);
+	const [exportBusy, setExportBusy] = useState<ParticipantExportFormat | null>(null);
 	useEffect(() => {
 		if (!confirming) return;
 		setIsProxyTakeout(false);
@@ -1044,6 +1047,21 @@ function EventPage({
 			setCreateParticipantBusy(false);
 		}
 	};
+	const exportFile = async (format: ParticipantExportFormat) => {
+		if (participants.data.length === 0) {
+			notify({ kind: "error", message: "Nenhum participante para exportar." });
+			return;
+		}
+		setExportBusy(format);
+		try {
+			const result = await exportParticipants(participants.data, event, format);
+			if (result.status === "saved") notify({ kind: "success", message: `${format.toUpperCase()} salvo com ${result.count} participante(s).` });
+		} catch (caught) {
+			notify({ kind: "error", message: caught instanceof Error ? caught.message : "Falha ao exportar participantes" });
+		} finally {
+			setExportBusy(null);
+		}
+	};
 	return (
 		<div className="page">
 			<button type="button" className="back-link" onClick={onBack}>
@@ -1053,14 +1071,18 @@ function EventPage({
 				eyebrow={legacy ? "Evento legado" : "Evento sincronizado"}
 				title={event.name ?? event.eventId}
 				subtitle={`${participants.data.length} participantes · ${checked} retiradas confirmadas`}
-					action={
-						<button
-							type="button"
-							className="button ghost"
-						onClick={() => participants.reload()}
-					>
-						<RefreshCw size={15} /> Atualizar
-					</button>
+				action={
+					<div className="header-actions">
+						<button type="button" className="button outline" onClick={() => void exportFile("csv")} disabled={exportBusy !== null || participants.loading}>
+							<Download size={15} /> {exportBusy === "csv" ? "Exportando..." : "Exportar CSV"}
+						</button>
+						<button type="button" className="button outline" onClick={() => void exportFile("xlsx")} disabled={exportBusy !== null || participants.loading}>
+							<Download size={15} /> {exportBusy === "xlsx" ? "Exportando..." : "Exportar XLSX"}
+						</button>
+						<button type="button" className="button ghost" onClick={() => participants.reload()} disabled={exportBusy !== null}>
+							<RefreshCw size={15} /> Atualizar
+						</button>
+					</div>
 				}
 			/>
 			<div className="toolbar">

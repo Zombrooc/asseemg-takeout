@@ -21,6 +21,11 @@ declare global {
         port: number;
         reason?: string;
       }>;
+      saveFile(payload: {
+        defaultPath: string;
+        filters: Array<{ name: string; extensions: string[] }>;
+        base64: string;
+      }): Promise<{ saved: boolean; path: string }>;
     };
   }
 }

@@ -8,4 +8,9 @@ contextBridge.exposeInMainWorld("desktopWindow", {
 		ipcRenderer.invoke("window:is-maximized") as Promise<boolean>,
 	firewallStatus: () => ipcRenderer.invoke("firewall:status"),
 	allowFirewall: () => ipcRenderer.invoke("firewall:allow"),
+	saveFile: (payload: {
+		defaultPath: string;
+		filters: Array<{ name: string; extensions: string[] }>;
+		base64: string;
+	}) => ipcRenderer.invoke("file:save-base64", payload) as Promise<{ saved: boolean; path: string }>,
 });

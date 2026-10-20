@@ -37,6 +37,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .page { max-width: 1280px; margin: 0 auto; padding: 42px 48px 64px; }
 .page.narrow { max-width: 840px; }
 .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
+.header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 h1, h2, h3, p { margin: 0; }
 h1 { margin-top: 8px; font: 700 38px/1.06 var(--qz-font-family-display); letter-spacing: -.04em; }
 h2 { margin-top: 8px; font: 700 24px/1.1 var(--qz-font-family-display); letter-spacing: -.025em; }

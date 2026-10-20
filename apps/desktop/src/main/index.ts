@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { openDatabase } from "./db";
 import { allowFirewall, getFirewallStatus } from "./firewall";
@@ -23,6 +24,28 @@ function registerWindowIpc(): void {
 	);
 	ipcMain.handle("firewall:status", () => getFirewallStatus());
 	ipcMain.handle("firewall:allow", () => allowFirewall());
+	ipcMain.handle(
+		"file:save-base64",
+		async (
+			_event,
+			payload: {
+				defaultPath: string;
+				filters: Array<{ name: string; extensions: string[] }>;
+				base64: string;
+			},
+		) => {
+			const options = {
+				defaultPath: payload.defaultPath,
+				filters: payload.filters,
+			};
+			const result = mainWindow
+				? await dialog.showSaveDialog(mainWindow, options)
+				: await dialog.showSaveDialog(options);
+			if (result.canceled || !result.filePath) return { saved: false, path: "" };
+			await writeFile(result.filePath, Buffer.from(payload.base64, "base64"));
+			return { saved: true, path: result.filePath };
+		},
+	);
 }
 
 async function createMainWindow(): Promise<void> {

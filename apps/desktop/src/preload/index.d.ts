@@ -17,6 +17,11 @@ declare global {
 			isMaximized(): Promise<boolean>;
 			firewallStatus(): Promise<FirewallStatus>;
 			allowFirewall(): Promise<FirewallStatus>;
+			saveFile(payload: {
+				defaultPath: string;
+				filters: Array<{ name: string; extensions: string[] }>;
+				base64: string;
+			}): Promise<{ saved: boolean; path: string }>;
 		};
 	}
 }
