@@ -71,7 +71,17 @@ describe("participant export", () => {
 	it("exports every participant as CSV with direct custom columns and ISO dates", () => {
 		const csv = buildParticipantsCsv([synchronizedParticipant, legacyParticipant], event);
 		const lines = csv.replace(/^\uFEFF/, "").split("\r\n");
+		const { columns } = buildParticipantExportRows([synchronizedParticipant, legacyParticipant], event);
+		const headers = columns.map((column) => column.header);
 
+		expect(headers).not.toEqual(expect.arrayContaining([
+			"ID do Evento",
+			"Evento",
+			"Origem",
+			"ID do Participante",
+			"ID do Ticket",
+			"ID Original do Ticket",
+		]));
 		expect(lines[0]).toContain('"Nome Completo"');
 		expect(lines[0]).toContain('"Cidade"');
 		expect(lines[0]).toContain('"Idade informada"');

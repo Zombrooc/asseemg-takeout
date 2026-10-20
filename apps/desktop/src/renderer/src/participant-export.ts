@@ -96,10 +96,6 @@ function getStandardValue(participant: DesktopParticipant, key: string): ExportC
 
 function standardColumns(): ExportColumn[] {
 	return [
-		{ key: "eventId", header: "ID do Evento", getValue: (_participant, event) => event.eventId },
-		{ key: "eventName", header: "Evento", getValue: (_participant, event) => event.name ?? event.eventId },
-		{ key: "sourceType", header: "Origem", getValue: (_participant, event) => event.sourceType ?? "json_sync" },
-		{ key: "participantId", header: "ID do Participante", getValue: (participant) => participant.id },
 		{ key: "name", header: "Nome Completo", getValue: (participant) => getStandardValue(participant, "name") },
 		{ key: "cpf", header: "CPF", getValue: (participant) => getStandardValue(participant, "cpf") },
 		{ key: "birthDate", header: "Data de Nascimento", date: true, getValue: (participant) => getStandardValue(participant, "birthDate") },
@@ -109,8 +105,6 @@ function standardColumns(): ExportColumn[] {
 		{ key: "shirtSize", header: "Tamanho da Camisa", getValue: (participant) => getStandardValue(participant, "shirtSize") },
 		{ key: "team", header: "Equipe", getValue: (participant) => getStandardValue(participant, "team") },
 		{ key: "qrCode", header: "QR Code", getValue: (participant) => getStandardValue(participant, "qrCode") },
-		{ key: "ticketId", header: "ID do Ticket", getValue: (participant) => getStandardValue(participant, "ticketId") },
-		{ key: "ticketSourceId", header: "ID Original do Ticket", getValue: (participant) => getStandardValue(participant, "ticketSourceId") },
 		{ key: "checkinDone", header: "Status da Retirada", getValue: (participant) => getStandardValue(participant, "checkinDone") },
 	];
 }
