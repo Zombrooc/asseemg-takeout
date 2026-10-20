@@ -75,7 +75,9 @@ export function applyParticipantUpdatePatch<T extends { id: string; ticketId?: s
   const target = isLegacy ? message.participant_id : message.ticket_id;
   if (!target) return participants;
 
-  const patch: Record<string, unknown> = {};
+  const patch: Record<string, unknown> = message.participant
+    ? { ...(message.participant as unknown as Record<string, unknown>) }
+    : {};
   if (message.name !== undefined) patch.name = message.name;
   if (message.cpf !== undefined) patch.cpf = message.cpf;
   if (message.birthDate !== undefined) patch.birthDate = message.birthDate;
@@ -290,10 +292,6 @@ export function useTakeoutRealtime(
             queryClient.setQueryData(["takeout-event-participants", eventId], (participants: unknown) =>
               Array.isArray(participants) ? applyParticipantUpdatePatch(participants, data) : participants,
             );
-            void queryClient.refetchQueries({
-              queryKey: ["takeout-event-participants", eventId],
-              type: "active",
-            });
           } else {
             queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
           }

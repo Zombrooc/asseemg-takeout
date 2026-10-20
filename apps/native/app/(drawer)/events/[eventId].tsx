@@ -40,6 +40,7 @@ import { FlatList, Text, View } from "react-native";
 
 const SYNC_LAST_SEQ_KEY = (eventId: string) =>
   `takeout_sync_last_seq_${eventId}`;
+const PARTICIPANTS_REFRESH_INTERVAL_MS = 120_000;
 
 type SourceType = "json_sync" | "legacy_csv";
 type DisplayParticipant = EventParticipant | LegacyEventParticipant;
@@ -143,6 +144,8 @@ export default function EventScreen() {
           : api.getEventParticipants(eventId)
         : Promise.reject(new Error("No API")),
     enabled: !!api && !!eventId && isReachable,
+    refetchInterval: isReachable ? PARTICIPANTS_REFRESH_INTERVAL_MS : false,
+    refetchIntervalInBackground: true,
   });
 
   const reservedNumbersQuery = useQuery<LegacyReservedNumber[]>({

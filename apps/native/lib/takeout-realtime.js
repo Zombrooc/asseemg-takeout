@@ -147,7 +147,7 @@ function applyParticipantUpdatePatch(participants, message) {
     var target = isLegacy ? message.participant_id : message.ticket_id;
     if (!target)
         return participants;
-    var patch = {};
+    var patch = message.participant ? __assign({}, message.participant) : {};
     if (message.name !== undefined)
         patch.name = message.name;
     if (message.cpf !== undefined)
@@ -272,7 +272,6 @@ function useTakeoutRealtime(eventId, baseUrl, deviceId) {
                         queryClient.setQueryData(["takeout-event-participants", eventId], function (participants) { return Array.isArray(participants) ? applyParticipantCheckinPatch(participants, data, data.type === "participant_checked_in") : participants; });
                     else if (data.type === "participant_updated") {
                         queryClient.setQueryData(["takeout-event-participants", eventId], function (participants) { return Array.isArray(participants) ? applyParticipantUpdatePatch(participants, data) : participants; });
-                        void queryClient.refetchQueries({ queryKey: ["takeout-event-participants", eventId], type: "active" });
                     }
                     else
                         queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });

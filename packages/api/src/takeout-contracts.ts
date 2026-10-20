@@ -230,6 +230,7 @@ export type WsTakeoutMessage =
       participant_id: string;
       ticket_id?: string;
       source_type?: "json_sync" | "legacy_csv";
+      participant?: EventParticipant | LegacyEventParticipant;
       name?: string | null;
       cpf?: string | null;
       birthDate?: string | null;

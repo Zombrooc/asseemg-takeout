@@ -153,12 +153,18 @@ export function shouldReloadParticipants(messageData: unknown): boolean {
 export function patchDesktopParticipants<T extends { id: string; ticketId?: string; checkinDone: boolean }>(participants: T[], message: WsTakeoutMessage): T[] {
 	const participantMessage = message as { source_type?: string; participant_id?: string; ticket_id?: string };
 	const isLegacy = participantMessage.source_type === "legacy_csv" || (participantMessage.ticket_id == null && participantMessage.participant_id != null);
+	if (message.type === "participant_updated") {
+		const fields = message as typeof message & { name?: string | null; cpf?: string | null; birthDate?: string | null; ticketName?: string | null; modality?: string | null; shirtSize?: string | null; team?: string | null; participant?: Record<string, unknown> };
+		const patch = { ...(fields.participant ?? {}), ...(fields.name !== undefined ? { name: fields.name } : {}), ...(fields.cpf !== undefined ? { cpf: fields.cpf } : {}), ...(fields.birthDate !== undefined ? { birthDate: fields.birthDate } : {}), ...(fields.ticketName !== undefined ? { ticketName: fields.ticketName } : {}), ...(fields.modality !== undefined ? { modality: fields.modality } : {}), ...(fields.shirtSize !== undefined ? { shirtSize: fields.shirtSize } : {}), ...(fields.team !== undefined ? { team: fields.team } : {}) };
+		return participants.map((item) => {
+			const matches = isLegacy
+				? item.id === participantMessage.participant_id || item.ticketId === participantMessage.ticket_id
+				: item.ticketId === participantMessage.ticket_id || item.id === participantMessage.participant_id;
+			return matches ? { ...item, ...patch } : item;
+		});
+	}
 	const target = isLegacy ? participantMessage.participant_id : participantMessage.ticket_id;
 	if (!target) return participants;
-	if (message.type === "participant_updated") {
-		const fields = message as typeof message & { name?: string | null; cpf?: string | null; birthDate?: string | null; ticketName?: string | null; modality?: string | null };
-		return participants.map((item) => (isLegacy ? item.id === target : item.ticketId === target) ? { ...item, ...(fields.name !== undefined ? { name: fields.name } : {}), ...(fields.cpf !== undefined ? { cpf: fields.cpf } : {}), ...(fields.birthDate !== undefined ? { birthDate: fields.birthDate } : {}), ...(fields.ticketName !== undefined ? { ticketName: fields.ticketName } : {}), ...(fields.modality !== undefined ? { modality: fields.modality } : {}) } : item);
-	}
 	if (message.type !== "participant_checked_in" && message.type !== "participant_checkin_reverted") return participants;
 	const done = message.type === "participant_checked_in";
 	return participants.map((item) =>
@@ -839,6 +845,10 @@ function EventPage({
 		const timer = window.setInterval(() => setLockMap((current) => Object.fromEntries(Object.entries(current).filter(([, lock]) => lock.expiresAt > Date.now() / 1000))), 1000);
 		return () => window.clearInterval(timer);
 	}, []);
+	useEffect(() => {
+		const timer = window.setInterval(() => participants.reload(), 120_000);
+		return () => window.clearInterval(timer);
+	}, [participants.reload]);
 	const [search, setSearch] = useState("");
 	const [busyId, setBusyId] = useState<string | null>(null);
 	const [lockMap, setLockMap] = useState<Record<string, { deviceId: string; expiresAt: number }>>({});

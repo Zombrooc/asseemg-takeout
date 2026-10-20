@@ -120,6 +120,38 @@ describe("participant update patch", () => {
       }),
     ).toEqual([{ id: "legacy-1", name: "Nome antigo", modality: "10KM" }]);
   });
+
+  it("applies the complete participant snapshot, including cleared fields", () => {
+    const participants = [{
+      id: "legacy-1",
+      name: "Nome antigo",
+      cpf: "123",
+      birthDate: "1990-01-01",
+      modality: "5KM",
+      shirtSize: "M",
+      team: "Equipe antiga",
+    }];
+
+    expect(
+      applyParticipantUpdatePatch(participants, {
+        type: "participant_updated",
+        source_type: "legacy_csv",
+        participant_id: "legacy-1",
+        ticket_id: "legacy-1",
+        participant: {
+          id: "legacy-1",
+          bibNumber: 1,
+          name: "Nome novo",
+          cpf: "",
+          birthDate: "2000-02-02",
+          modality: "10KM",
+          shirtSize: null,
+          team: null,
+          checkinDone: false,
+        },
+      }),
+    ).toEqual([{ ...participants[0], name: "Nome novo", cpf: "", birthDate: "2000-02-02", modality: "10KM", shirtSize: null, team: null, bibNumber: 1, checkinDone: false }]);
+  });
 });
 
 describe("realtime message parser", () => {

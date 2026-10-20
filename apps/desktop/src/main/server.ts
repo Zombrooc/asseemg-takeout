@@ -763,16 +763,20 @@ export function createTakeoutServer({
 			"SELECT p.id, p.event_id, p.name, p.cpf, p.birth_date, p.raw_json participant_raw_json, t.id ticket_id, t.code ticket_code, t.raw_json ticket_raw_json, EXISTS(SELECT 1 FROM check_ins c WHERE c.ticket_id=t.id) checkin_done FROM participants p JOIN tickets t ON t.participant_id=p.id WHERE p.id=?",
 			)
 			.get(req.params.participantId) as ParticipantRow;
+		const updated = mapParticipant(row);
 		emitEvent(db, clients, req.params.eventId, "participant_updated", {
 			participant_id: req.params.participantId,
 			ticket_id: row.ticket_id,
-			name: mapParticipant(row).name,
-			cpf: mapParticipant(row).cpf,
-			birthDate: mapParticipant(row).birthDate,
-			ticketName: mapParticipant(row).ticketName,
+			participant: updated,
+			name: updated.name,
+			cpf: updated.cpf,
+			birthDate: updated.birthDate,
+			ticketName: updated.ticketName,
+			shirtSize: updated.shirtSize,
+			team: updated.team,
 			source_type: "json_sync",
 		});
-		return json(res, 200, mapParticipant(row));
+		return json(res, 200, updated);
 	});
 	app.post("/events/:eventId/checkins/reset", (req, res) => {
 		const tickets = db
@@ -1207,16 +1211,20 @@ export function createTakeoutServer({
 		const row = db
 			.prepare("SELECT * FROM legacy_participants WHERE id=?")
 			.get(id) as Record<string, unknown>;
-	emitEvent(db, clients, req.params.eventId, "participant_updated", {
+		const created = mapLegacyParticipant(db, row);
+		emitEvent(db, clients, req.params.eventId, "participant_updated", {
 			participant_id: id,
 			ticket_id: id,
-			name: mapLegacyParticipant(db, row).name,
-			cpf: mapLegacyParticipant(db, row).cpf,
-			birthDate: mapLegacyParticipant(db, row).birthDate,
-			modality: mapLegacyParticipant(db, row).modality,
+			participant: created,
+			name: created.name,
+			cpf: created.cpf,
+			birthDate: created.birthDate,
+			modality: created.modality,
+			shirtSize: created.shirtSize,
+			team: created.team,
 			source_type: "legacy_csv",
 		});
-		return json(res, 200, mapLegacyParticipant(db, row));
+		return json(res, 200, created);
 	});
 	app.put("/events/:eventId/legacy-participants/:participantId", (req, res) => {
 		const body = req.body ?? {};
@@ -1241,7 +1249,20 @@ export function createTakeoutServer({
 		const row = db
 			.prepare("SELECT * FROM legacy_participants WHERE id=?")
 			.get(req.params.participantId) as Record<string, unknown>;
-		return json(res, 200, mapLegacyParticipant(db, row));
+		const updated = mapLegacyParticipant(db, row);
+		emitEvent(db, clients, req.params.eventId, "participant_updated", {
+			participant_id: req.params.participantId,
+			ticket_id: req.params.participantId,
+			participant: updated,
+			name: updated.name,
+			cpf: updated.cpf,
+			birthDate: updated.birthDate,
+			modality: updated.modality,
+			shirtSize: updated.shirtSize,
+			team: updated.team,
+			source_type: "legacy_csv",
+		});
+		return json(res, 200, updated);
 	});
 	app.post("/takeout/confirm/legacy", (req, res) =>
 		legacyCheckin(db, clients, req, res, false),
