@@ -1,6 +1,12 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
-const STORAGE_KEY = "takeout_pending_confirm";
+import {
+  acknowledgeOperation,
+  enqueueCheckin,
+  getReadyOperations,
+  pendingOperationCount,
+  rejectOperation,
+  retryOperation,
+  type SyncOperation,
+} from "@/lib/storage/takeout-outbox";
 
 export type PendingConfirmItem = {
   request_id: string;
@@ -8,35 +14,51 @@ export type PendingConfirmItem = {
   device_id: string;
   payload_json?: string;
   created_at: string;
+  event_id?: string;
+  participant_id?: string;
+  source_type?: "json_sync" | "legacy_csv";
 };
 
 export async function getPendingQueue(): Promise<PendingConfirmItem[]> {
-  try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as PendingConfirmItem[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return (await getReadyOperations()).map((operation) => toPending(operation));
 }
 
 export async function addToQueue(item: Omit<PendingConfirmItem, "created_at">): Promise<void> {
-  const list = await getPendingQueue();
-  const withDate: PendingConfirmItem = {
-    ...item,
-    created_at: new Date().toISOString(),
-  };
-  list.push(withDate);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  await enqueueCheckin({
+    operationId: item.request_id,
+    eventId: item.event_id ?? "unknown",
+    entityId: item.participant_id ?? item.ticket_id,
+    action: "confirm_checkin",
+    sourceType: item.source_type ?? "json_sync",
+    payload: {
+      ticket_id: item.ticket_id,
+      participant_id: item.participant_id,
+      device_id: item.device_id,
+      payload_json: item.payload_json,
+    },
+  });
 }
 
 export async function removeFromQueue(requestId: string): Promise<void> {
-  const list = await getPendingQueue();
-  const next = list.filter((i) => i.request_id !== requestId);
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  const operation = (await getReadyOperations()).find((item) => item.operationId === requestId);
+  if (operation) await acknowledgeOperation(operation);
 }
 
-export async function setQueue(list: PendingConfirmItem[]): Promise<void> {
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+function toPending(operation: SyncOperation): PendingConfirmItem {
+  const payload = operation.payload;
+  return {
+    request_id: operation.operationId,
+    ticket_id: String(payload.ticket_id ?? operation.entityId),
+    device_id: String(payload.device_id ?? ""),
+    payload_json: typeof payload.payload_json === "string" ? payload.payload_json : undefined,
+    created_at: new Date(operation.createdAt).toISOString(),
+    event_id: operation.eventId,
+    participant_id: operation.entityId,
+    source_type: operation.sourceType,
+  };
 }
+
+export async function pendingQueueCount(): Promise<number> { return pendingOperationCount(); }
+/** @deprecated Replacing the queue wholesale is incompatible with a durable outbox. */
+export async function setQueue(_list: PendingConfirmItem[]): Promise<void> { throw new Error("setQueue was removed; enqueue individual operations instead"); }
+export { acknowledgeOperation, getReadyOperations, rejectOperation, retryOperation };

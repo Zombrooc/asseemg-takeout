@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import multer from "multer";
 import { WebSocketServer, WebSocket } from "ws";
 import { extractWixQrIdentifiers, getQrLookupValues } from "@pickup/api/wix-qr";
+import { syncClientMessageSchema, type SyncCommand } from "@pickup/api/takeout-contracts";
 import type { SqliteDatabase } from "./db";
 import {
 	computeAge,
@@ -233,6 +234,17 @@ function getIdentity(
 		: { deviceId: fallbackDeviceId, operatorAlias: null };
 }
 
+function getAuthenticatedIdentity(
+	db: SqliteDatabase,
+	req: Request,
+): { deviceId: string; operatorAlias: string | null } | null {
+	const header = req.header("authorization");
+	const accessToken = header?.startsWith("Bearer ") ? header.slice(7) : null;
+	if (!accessToken) return null;
+	const paired = db.prepare("SELECT device_id, operator_alias FROM paired_devices WHERE access_token = ?").get(accessToken) as { device_id: string; operator_alias: string | null } | undefined;
+	return paired ? { deviceId: paired.device_id, operatorAlias: paired.operator_alias } : null;
+}
+
 function parseRawParticipant(row: ParticipantRow): Record<string, unknown> {
 	return {
 		...safeJson(row.participant_raw_json),
@@ -401,6 +413,16 @@ function emitEvent(
 	return seq;
 }
 
+function appendEvent(
+	db: SqliteDatabase,
+	eventId: string,
+	type: string,
+	payload: object,
+): { eventId: string; message: object } {
+	const result = db.prepare("INSERT INTO event_log (event_id, type, payload_json, created_at) VALUES (?, ?, ?, ?)").run(eventId, type, JSON.stringify(payload), nowEpoch());
+	return { eventId, message: { ...payload, type, event_id: eventId, seq: Number(result.lastInsertRowid) } };
+}
+
 function participantEventId(db: SqliteDatabase, participantId: string): string | null {
 	const row = db.prepare("SELECT event_id FROM participants WHERE id=? UNION ALL SELECT event_id FROM legacy_participants WHERE id=? LIMIT 1").get(participantId, participantId) as { event_id?: string } | undefined;
 	return row?.event_id ?? null;
@@ -561,7 +583,7 @@ export function createTakeoutServer({
 	const currentBaseUrl = () => configuredBaseUrl ?? pairingUrlBase();
 	const app = express();
 	const httpServer = createServer(app);
-	const wsServer = new WebSocketServer({ noServer: true });
+	const wsServer = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 	const clients = new Map<string, Set<WebSocket>>();
 
 	app.use(
@@ -825,11 +847,8 @@ export function createTakeoutServer({
 		const ticketId = String(payload.ticket_id ?? "").trim();
 		if (!requestId || !ticketId)
 			return error(res, 400, "request_id and ticket_id are required", "FAILED");
-		const identity = getIdentity(
-			db,
-			req,
-			String(payload.device_id ?? "desktop"),
-		);
+		const identity = getAuthenticatedIdentity(db, req);
+		if (!identity) return error(res, 401, "authenticated device required", "UNAUTHENTICATED");
 		const existing = db
 			.prepare("SELECT status FROM takeout_events WHERE request_id=?")
 			.get(requestId) as { status: string } | undefined;
@@ -858,6 +877,7 @@ export function createTakeoutServer({
 			  }
 			| undefined;
 		const timestamp = nowIso();
+		const outbound: { current: { eventId: string; message: object } | null } = { current: null };
 		db.transaction(() => {
 			db.prepare(
 				"INSERT INTO check_ins (ticket_id, request_id, device_id, created_at) VALUES (?, ?, ?, ?)",
@@ -883,7 +903,7 @@ export function createTakeoutServer({
 				timestamp,
 			);
 			if (ticket?.event_id)
-				emitEvent(db, clients, ticket.event_id, "participant_checked_in", {
+				outbound.current = appendEvent(db, ticket.event_id, "participant_checked_in", {
 					ticket_id: ticketId,
 					participant_id: ticket.participant_id,
 					device_id: identity.deviceId,
@@ -891,6 +911,7 @@ export function createTakeoutServer({
 					source_type: "json_sync",
 				});
 		})();
+		if (outbound.current) broadcast(clients, outbound.current.eventId, outbound.current.message);
 		return json(res, 200, { status: "CONFIRMED" });
 	});
 	app.post("/takeout/undo", (req, res) => {
@@ -899,11 +920,8 @@ export function createTakeoutServer({
 		const ticketId = String(payload.ticket_id ?? "").trim();
 		if (!requestId || !ticketId)
 			return error(res, 400, "request_id and ticket_id are required", "FAILED");
-		const identity = getIdentity(
-			db,
-			req,
-			String(payload.device_id ?? "desktop"),
-		);
+		const identity = getAuthenticatedIdentity(db, req);
+		if (!identity) return error(res, 401, "authenticated device required", "UNAUTHENTICATED");
 		if (
 			db
 				.prepare("SELECT 1 FROM takeout_events WHERE request_id=?")
@@ -1426,6 +1444,38 @@ export function createTakeoutServer({
 		error(res, 503, "sync unavailable while offline"),
 	);
 
+	type SocketSession = { identity: { deviceId: string; operatorAlias: string | null }; subscriptions: Set<string> };
+	const socketSessions = new Map<WebSocket, SocketSession>();
+	const sendSocket = (socket: WebSocket, message: object) => {
+		if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+	};
+	const subscribeSocket = (client: WebSocket, session: SocketSession, eventId: string, lastSeq: number) => {
+		const eventClients = clients.get(eventId) ?? new Set<WebSocket>();
+		eventClients.add(client); clients.set(eventId, eventClients); session.subscriptions.add(eventId);
+		const replay = db.prepare("SELECT seq,type,event_id,payload_json,created_at FROM event_log WHERE event_id=? AND seq>? ORDER BY seq").all(eventId, lastSeq) as Array<{ seq: number; type: string; event_id: string; payload_json: string | null; created_at: number }>;
+		for (const item of replay) sendSocket(client, { ...safeJson(item.payload_json), type: item.type, event_id: item.event_id, seq: item.seq, created_at: item.created_at });
+		const latest = Number((db.prepare("SELECT COALESCE(MAX(seq),0) seq FROM event_log WHERE event_id=?").get(eventId) as { seq: number }).seq);
+		for (const lock of activeLocksForEvent(db, eventId)) sendSocket(client, { type: "lock_snapshot", event_id: eventId, participant_id: lock.participant_id, device_id: lock.device_id, expires_at: lock.expires_at, seq: latest });
+		sendSocket(client, { type: "sync.completed", eventId, latestSeq: latest });
+	};
+	const executeSocketCommand = (client: WebSocket, session: SocketSession, command: SyncCommand) => {
+		if (command.action !== "confirm_checkin") return sendSocket(client, { type: "command.rejected", operationId: command.operationId, reason: "UNSUPPORTED_COMMAND" });
+		const existing = db.prepare("SELECT status FROM takeout_events WHERE request_id=?").get(command.operationId) as { status: string } | undefined;
+		if (existing) return sendSocket(client, { type: "command.ack", operationId: command.operationId, status: existing.status, duplicate: true });
+		const ticketId = command.payload.ticketId;
+		const checked = db.prepare("SELECT request_id FROM check_ins WHERE ticket_id=?").get(ticketId) as { request_id: string } | undefined;
+		if (checked) return sendSocket(client, { type: "command.rejected", operationId: command.operationId, entityId: ticketId, reason: "CHECKIN_ALREADY_CONFIRMED", existingOperationId: checked.request_id });
+		const ticket = db.prepare("SELECT p.event_id, p.id participant_id, p.name participant_name, p.birth_date, t.code ticket_code FROM tickets t LEFT JOIN participants p ON p.id=t.participant_id WHERE t.id=?").get(ticketId) as { event_id: string | null; participant_id: string | null; participant_name: string | null; birth_date: string | null; ticket_code: string | null } | undefined;
+		if (!ticket?.event_id) return sendSocket(client, { type: "command.rejected", operationId: command.operationId, entityId: ticketId, reason: "TICKET_NOT_FOUND" });
+		const timestamp = nowIso(); const outbound: { current: { eventId: string; message: object } | null } = { current: null };
+		db.transaction(() => {
+			db.prepare("INSERT INTO check_ins (ticket_id, request_id, device_id, created_at) VALUES (?, ?, ?, ?)").run(ticketId, command.operationId, session.identity.deviceId, timestamp);
+			db.prepare("INSERT INTO takeout_events (request_id,ticket_id,device_id,status,payload_json,created_at,source_type,event_id,participant_id,participant_name,birth_date,age_at_checkin,ticket_code,operator_alias,operator_device_id,checked_in_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(command.operationId, ticketId, session.identity.deviceId, "CONFIRMED", command.payload.payloadJson ?? null, timestamp, "json_sync", ticket.event_id, ticket.participant_id, ticket.participant_name, ticket.birth_date, computeAge(ticket.birth_date), ticket.ticket_code, session.identity.operatorAlias, session.identity.deviceId, timestamp);
+			outbound.current = appendEvent(db, ticket.event_id as string, "participant_checked_in", { ticket_id: ticketId, participant_id: ticket.participant_id, device_id: session.identity.deviceId, request_id: command.operationId, source_type: "json_sync" });
+		})();
+		if (outbound.current) broadcast(clients, outbound.current.eventId, outbound.current.message);
+		sendSocket(client, { type: "command.ack", operationId: command.operationId, status: "CONFIRMED" });
+	};
 	httpServer.on("upgrade", (request, socket, head) => {
 		const url = new URL(
 			request.url ?? "/",
@@ -1435,63 +1485,47 @@ export function createTakeoutServer({
 			socket.destroy();
 			return;
 		}
-		const eventId = url.searchParams.get("event_id") ?? "_events";
+		const remoteAddress = (socket as { remoteAddress?: string }).remoteAddress ?? "";
+		const isTrustedDesktop = remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1";
 		wsServer.handleUpgrade(request, socket, head, (client) => {
-			wsServer.emit("connection", client, request, eventId);
+			wsServer.emit("connection", client, request, isTrustedDesktop);
 		});
 	});
-	wsServer.on("connection", (client: WebSocket, _request, eventId: string) => {
-		const eventClients = clients.get(eventId) ?? new Set<WebSocket>();
-		eventClients.add(client);
-		clients.set(eventId, eventClients);
-		const lastSeq = Number(
-			new URL(
-				_request.url ?? "/",
-				`http://${_request.headers.host ?? "127.0.0.1"}`,
-			).searchParams.get("last_seq") ?? 0,
-		);
-		if (lastSeq > 0) {
-			const replay = db
-				.prepare(
-					"SELECT seq,type,event_id,payload_json,created_at FROM event_log WHERE event_id=? AND seq>? ORDER BY seq",
-				)
-				.all(eventId, lastSeq) as Array<{
-				seq: number;
-				type: string;
-				event_id: string;
-				payload_json: string | null;
-				created_at: number;
-			}>;
-			for (const item of replay)
-				client.send(
-					JSON.stringify({
-						...safeJson(item.payload_json),
-						type: item.type,
-						event_id: item.event_id,
-						seq: item.seq,
-						created_at: item.created_at,
-					}),
-				);
-		}
-		const latest = Number((db.prepare("SELECT COALESCE(MAX(seq),0) seq FROM event_log WHERE event_id=?").get(eventId) as { seq: number }).seq);
-		for (const lock of activeLocksForEvent(db, eventId)) {
-			client.send(JSON.stringify({
-				type: "lock_snapshot",
-				event_id: eventId,
-				participant_id: lock.participant_id,
-				device_id: lock.device_id,
-				expires_at: lock.expires_at,
-				seq: latest,
-			}));
+	wsServer.on("connection", (client: WebSocket, request: import("node:http").IncomingMessage, isTrustedDesktop: boolean) => {
+		const authenticationTimeout = setTimeout(() => client.close(1008, "authentication timeout"), 10_000);
+		if (isTrustedDesktop) {
+			// The Electron renderer is hosted on the same machine as the authority.
+			// LAN clients never receive this bypass and must send connection.hello.
+			clearTimeout(authenticationTimeout);
+			const session: SocketSession = { identity: { deviceId: "desktop", operatorAlias: "Desktop" }, subscriptions: new Set() };
+			socketSessions.set(client, session);
+			const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
+			const eventId = url.searchParams.get("event_id");
+			if (eventId) subscribeSocket(client, session, eventId, Number(url.searchParams.get("last_seq") ?? 0));
 		}
 		const heartbeat = setInterval(() => {
-			if (client.readyState === WebSocket.OPEN)
-				client.send(JSON.stringify({ type: "heartbeat", sentAt: Date.now() }));
+			sendSocket(client, { type: "connection.heartbeat", sentAt: Date.now() });
 		}, 30_000);
+		client.on("message", (raw) => {
+			if (Buffer.byteLength(raw.toString()) > 64 * 1024) return client.close(1009, "message too large");
+			let input: unknown; try { input = JSON.parse(raw.toString()); } catch { return client.close(1007, "invalid json"); }
+			const parsed = syncClientMessageSchema.safeParse(input); if (!parsed.success) return client.close(1007, "invalid protocol message");
+			const message = parsed.data;
+			if (message.type === "connection.hello") {
+				const row = db.prepare("SELECT device_id,operator_alias FROM paired_devices WHERE access_token=? AND device_id=?").get(message.token, message.deviceId) as { device_id: string; operator_alias: string | null } | undefined;
+				if (!row) return client.close(1008, "invalid device credentials");
+				clearTimeout(authenticationTimeout); socketSessions.set(client, { identity: { deviceId: row.device_id, operatorAlias: row.operator_alias }, subscriptions: new Set() });
+				return sendSocket(client, { type: "connection.ready", protocolVersion: 1, deviceId: row.device_id });
+			}
+			const session = socketSessions.get(client); if (!session) return client.close(1008, "authenticate first");
+			if (message.type === "sync.subscribe") return subscribeSocket(client, session, message.eventId, message.lastSeq);
+			if (message.type === "command.execute") return executeSocketCommand(client, session, message);
+		});
 		client.on("close", () => {
+			clearTimeout(authenticationTimeout);
 			clearInterval(heartbeat);
-			eventClients.delete(client);
-			if (eventClients.size === 0) clients.delete(eventId);
+			const session = socketSessions.get(client); socketSessions.delete(client);
+			for (const eventId of session?.subscriptions ?? []) { const eventClients = clients.get(eventId); eventClients?.delete(client); if (eventClients?.size === 0) clients.delete(eventId); }
 		});
 	});
 

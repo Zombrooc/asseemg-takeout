@@ -81,12 +81,13 @@ export default function EventScreen() {
   const navigation = useNavigation();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { api, isReachable, checkReachability, baseUrl, deviceId } =
+  const { api, isReachable, checkReachability, baseUrl, deviceId, accessToken } =
     useTakeoutConnection();
   const { lockMap } = useTakeoutRealtime(
     eventId ?? undefined,
     baseUrl,
     deviceId,
+    accessToken,
   );
 
   useEffect(() => {

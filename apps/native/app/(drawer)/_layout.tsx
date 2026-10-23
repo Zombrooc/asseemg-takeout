@@ -11,8 +11,8 @@ import { safeThemeColor } from "@/utils/theme-colors";
 import { Pressable, Text } from "@/lib/primitives";
 
 function DrawerLayout() {
-  const { baseUrl, deviceId } = useTakeoutConnection();
-  useEventsListRealtime(baseUrl, deviceId);
+  const { baseUrl, deviceId, accessToken } = useTakeoutConnection();
+  useEventsListRealtime(baseUrl, deviceId, accessToken);
 
   const themeColorForeground = useThemeColor("foreground");
   const themeColorBackground = useThemeColor("background");

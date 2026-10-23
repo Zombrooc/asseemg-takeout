@@ -1,60 +1,54 @@
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
-import { getPendingQueue, removeFromQueue, type PendingConfirmItem } from "@/lib/takeout-queue";
+import { acknowledgeOperation, getReadyOperations, rejectOperation, retryOperation } from "@/lib/takeout-queue";
+import { markSending, onOutboxChanged } from "@/lib/storage/takeout-outbox";
 import { TakeoutApiError } from "@/lib/takeout-api";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-
-const RETRY_DELAY_MS = 3000;
-const MAX_BACKOFF_MS = 60000;
 
 export function TakeoutQueueProcessor() {
   const queryClient = useQueryClient();
   const { api, deviceId, isReachable } = useTakeoutConnection();
   const processing = useRef(false);
-  const backoff = useRef(RETRY_DELAY_MS);
 
   useEffect(() => {
     if (!api || !deviceId || !isReachable) return;
     let cancelled = false;
     const process = async () => {
       if (cancelled || processing.current) return;
-      const list = await getPendingQueue();
+      const list = await getReadyOperations();
       if (list.length === 0) {
-        if (!cancelled) setTimeout(process, RETRY_DELAY_MS);
         return;
       }
       processing.current = true;
-      const item = list[0] as PendingConfirmItem;
+      const item = list[0];
       try {
-        const res = await api.postTakeoutConfirm({
-          request_id: item.request_id,
-          ticket_id: item.ticket_id,
-          device_id: item.device_id,
-          payload_json: item.payload_json,
-        });
+        if (!(await markSending(item.operationId))) return;
+        const payload = item.payload;
+        const res = item.sourceType === "legacy_csv"
+          ? await api.postLegacyTakeoutConfirm({ request_id: item.operationId, event_id: item.eventId, participant_id: item.entityId, device_id: String(payload.device_id), payload_json: typeof payload.payload_json === "string" ? payload.payload_json : undefined })
+          : await api.postTakeoutConfirm({ request_id: item.operationId, ticket_id: String(payload.ticket_id), device_id: String(payload.device_id), payload_json: typeof payload.payload_json === "string" ? payload.payload_json : undefined });
         if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
-          await removeFromQueue(item.request_id);
+          await acknowledgeOperation(item);
           queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
-          backoff.current = RETRY_DELAY_MS;
         } else {
-          backoff.current = Math.min(backoff.current * 1.5, MAX_BACKOFF_MS);
+          await retryOperation(item, `Unexpected response: ${res.status}`);
         }
       } catch (e) {
         if (e instanceof TakeoutApiError && e.status === 409) {
-          await removeFromQueue(item.request_id);
+          await rejectOperation(item, e.body);
           queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
-          backoff.current = RETRY_DELAY_MS;
         } else {
-          backoff.current = Math.min(backoff.current * 1.5, MAX_BACKOFF_MS);
+          await retryOperation(item, e instanceof Error ? e.message : "Transport failure");
         }
       }
       processing.current = false;
-      if (!cancelled) setTimeout(process, backoff.current);
+      if (!cancelled) void process();
     };
-    const id = setTimeout(process, RETRY_DELAY_MS);
+    void process();
+    const unsubscribe = onOutboxChanged(() => { void process(); });
     return () => {
       cancelled = true;
-      clearTimeout(id);
+      unsubscribe();
     };
   }, [api, deviceId, isReachable, queryClient]);
 

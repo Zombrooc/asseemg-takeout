@@ -176,7 +176,7 @@ export function ConfirmTakeoutModal({
 
   const handleConfirm = async () => {
     if (submittingRef.current) return;
-    if (readOnly || !participant || !api || !deviceId) return;
+    if (readOnly || !participant || !deviceId) return;
     if (sourceType === "legacy_csv" && !eventId) {
       setError("Event ID ausente para confirmacao legado.");
       return;
@@ -208,55 +208,31 @@ export function ConfirmTakeoutModal({
     });
 
     try {
-      const res =
-        sourceType === "legacy_csv"
-          ? await api.postLegacyTakeoutConfirm({
-              request_id: requestId,
-              event_id: eventId ?? "",
-              participant_id: participant.id,
-              device_id: deviceId,
-              payload_json: proxyPayloadJson,
-            })
-          : await api.postTakeoutConfirm({
-              request_id: requestId,
-              ticket_id: (participant as EventParticipant).ticketId,
-              device_id: deviceId,
-              payload_json: proxyPayloadJson,
-            });
-
-      if (res.status === "CONFIRMED" || res.status === "DUPLICATE") {
-        api.deleteLocksRelease(participant.id, deviceId).catch(() => {});
-        onConfirmed();
-        onClose();
-      } else {
-        setError(`Resposta inesperada: ${res.status}`);
-      }
-    } catch (e) {
-      if (e instanceof TakeoutApiError && e.status === 409) {
-        onClose();
-        onConflict?.(buildTicketConflictKey(participant, sourceType));
-        Alert.alert("Conflito", "Check-in ja realizado por outro dispositivo.");
-        return;
-      }
-      if (sourceType === "legacy_csv") {
-        Alert.alert("Erro", "Falha ao confirmar retirada no legado.");
-        return;
-      }
-      try {
-        await addToQueue({
-          request_id: requestId,
-          ticket_id: (participant as EventParticipant).ticketId,
-          device_id: deviceId,
-          payload_json: proxyPayloadJson,
-        });
-        onQueuedOffline?.();
-      } catch {
-        // ignore queue persist failure
-      }
+      // The durable local transaction is the only awaited confirmation step.
+      // Transport acknowledgement is reconciled by TakeoutQueueProcessor.
+      await addToQueue({
+        request_id: requestId,
+        ticket_id: sourceType === "legacy_csv" ? participant.id : (participant as EventParticipant).ticketId,
+        participant_id: participant.id,
+        event_id: eventId,
+        source_type: sourceType,
+        device_id: deviceId,
+        payload_json: proxyPayloadJson,
+      });
+      api?.deleteLocksRelease(participant.id, deviceId).catch(() => {});
+      onQueuedOffline?.();
+      onConfirmed();
       onClose();
-    } finally {
+    } catch {
+      // Never claim success when the local transaction could not be committed.
+      setError("Não foi possível registrar a retirada neste dispositivo.");
       submittingRef.current = false;
       setLoading(false);
+    } finally {
+      if (submittingRef.current) {
+        submittingRef.current = false;
+        setLoading(false);
+      }
     }
   };
 

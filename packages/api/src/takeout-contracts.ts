@@ -1,4 +1,23 @@
+import { z } from "zod";
+
 export type HealthResponse = { status: string };
+
+/** Versioned, authenticated LAN protocol. Credentials are sent only in connection.hello. */
+export const syncCommandSchema = z.object({
+  type: z.literal("command.execute"),
+  protocolVersion: z.literal(1),
+  operationId: z.string().uuid(),
+  eventId: z.string().min(1),
+  action: z.enum(["confirm_checkin", "undo_checkin"]),
+  payload: z.object({ ticketId: z.string().min(1), payloadJson: z.string().max(20_000).optional() }),
+});
+export const syncHelloSchema = z.object({
+  type: z.literal("connection.hello"), protocolVersion: z.literal(1), token: z.string().uuid(), deviceId: z.string().min(1).max(128),
+});
+export const syncSubscribeSchema = z.object({ type: z.literal("sync.subscribe"), eventId: z.string().min(1), lastSeq: z.number().int().nonnegative().default(0) });
+export const syncClientMessageSchema = z.discriminatedUnion("type", [syncHelloSchema, syncSubscribeSchema, syncCommandSchema, z.object({ type: z.literal("connection.heartbeat") })]);
+export type SyncClientMessage = z.infer<typeof syncClientMessageSchema>;
+export type SyncCommand = z.infer<typeof syncCommandSchema>;
 
 export type ConnectionInfo = {
   baseUrl: string;
@@ -206,6 +225,9 @@ export type AuditEvent = {
 };
 
 export type WsTakeoutMessage =
+  | { type: "connection.ready"; protocolVersion: number; deviceId: string }
+  | { type: "connection.heartbeat"; sentAt: number }
+  | { type: "sync.completed"; eventId: string; latestSeq: number }
   | {
       type: "participant_checked_in";
       ticket_id?: string;

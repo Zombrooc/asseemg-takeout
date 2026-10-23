@@ -7,11 +7,9 @@ const INITIAL_RECONNECT_DELAY_MS = 1_500;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
 
-function wsUrl(baseUrl: string, eventId: string, deviceId: string, lastSeq?: string): string {
+function wsUrl(baseUrl: string): string {
   const base = baseUrl.replace(/^http/, "ws").replace(/\/$/, "");
-  const params = new URLSearchParams({ event_id: eventId, device_id: deviceId });
-  if (lastSeq != null) params.set("last_seq", lastSeq);
-  return `${base}/ws?${params.toString()}`;
+  return `${base}/ws`;
 }
 
 /** participantId -> deviceId being handled */
@@ -179,7 +177,8 @@ function getMessageSeq(message: WsTakeoutMessage): number | null {
 export function useTakeoutRealtime(
   eventId: string | undefined,
   baseUrl: string | null,
-  deviceId: string | null
+  deviceId: string | null,
+  accessToken: string | null,
 ): { lockMap: LockMap } {
   const queryClient = useQueryClient();
   const [lockMap, setLockMap] = useState<LockMap>({});
@@ -199,7 +198,7 @@ export function useTakeoutRealtime(
   }, []);
 
   useEffect(() => {
-    if (!eventId || !baseUrl || !deviceId) return;
+    if (!eventId || !baseUrl || !deviceId || !accessToken) return;
     lastSeqRef.current = null;
     locksRef.current = {};
     setLockMap({});
@@ -244,8 +243,8 @@ export function useTakeoutRealtime(
     };
 
     const connect = () => {
-      const lastSeq = lastSeqRef.current != null ? String(lastSeqRef.current) : undefined;
-      ws = new WebSocket(wsUrl(baseUrl, eventId, deviceId, lastSeq));
+      const lastSeq = lastSeqRef.current ?? 0;
+      ws = new WebSocket(wsUrl(baseUrl));
       if (__DEV__) {
         console.log("[ws.mobile] connect", { eventId, baseUrl, lastSeq });
       }
@@ -256,6 +255,7 @@ export function useTakeoutRealtime(
           console.log("[ws.mobile] open", { eventId, baseUrl });
         }
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
+        ws?.send(JSON.stringify({ type: "connection.hello", protocolVersion: 1, token: accessToken, deviceId }));
         resetHeartbeatTimer();
       };
 
@@ -263,7 +263,11 @@ export function useTakeoutRealtime(
         resetHeartbeatTimer();
         const data = parseRealtimeMessageData(event.data);
         if (data == null) return;
-        if (data.type === "heartbeat") return;
+        if (data.type === "connection.ready") {
+          ws?.send(JSON.stringify({ type: "sync.subscribe", eventId, lastSeq }));
+          return;
+        }
+        if (data.type === "heartbeat" || data.type === "connection.heartbeat") return;
         const seq = getMessageSeq(data);
         if (seq != null && data.type !== "lock_snapshot" && lastSeqRef.current != null && seq <= lastSeqRef.current) return;
         if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
@@ -327,7 +331,7 @@ export function useTakeoutRealtime(
       clearTimers();
       if (ws != null) ws.close();
     };
-  }, [eventId, baseUrl, deviceId, queryClient, updateLockMap]);
+  }, [eventId, baseUrl, deviceId, accessToken, queryClient, updateLockMap]);
 
   return { lockMap };
 }
@@ -339,7 +343,7 @@ export const EVENTS_LIST_CHANNEL = "_events";
  * Conecta ao canal global da lista de eventos. Ao receber events_list_changed, invalida a query de eventos
  * para que todos os staffs vejam a lista atualizada (eventos arquivados/apagados somem na hora).
  */
-export function useEventsListRealtime(baseUrl: string | null, deviceId: string | null): void {
+export function useEventsListRealtime(baseUrl: string | null, deviceId: string | null, accessToken: string | null): void {
   const queryClient = useQueryClient();
   const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -347,7 +351,7 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
   const lastSeqRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!baseUrl || !deviceId) return;
+    if (!baseUrl || !deviceId || !accessToken) return;
 
     let isActive = true;
     let ws: WebSocket | null = null;
@@ -383,8 +387,8 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
     };
 
     const connect = () => {
-      const lastSeq = lastSeqRef.current != null ? String(lastSeqRef.current) : undefined;
-      ws = new WebSocket(wsUrl(baseUrl, EVENTS_LIST_CHANNEL, deviceId, lastSeq));
+      const lastSeq = lastSeqRef.current ?? 0;
+      ws = new WebSocket(wsUrl(baseUrl));
       if (__DEV__) {
         console.log("[ws.mobile.events] connect", { baseUrl, lastSeq });
       }
@@ -395,6 +399,7 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
           console.log("[ws.mobile.events] open", { baseUrl });
         }
         reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
+        ws?.send(JSON.stringify({ type: "connection.hello", protocolVersion: 1, token: accessToken, deviceId }));
         resetHeartbeatTimer();
       };
 
@@ -402,7 +407,8 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
         resetHeartbeatTimer();
         const data = parseRealtimeMessageData(event.data);
         if (data == null) return;
-        if (data.type === "heartbeat") return;
+        if (data.type === "connection.ready") { ws?.send(JSON.stringify({ type: "sync.subscribe", eventId: EVENTS_LIST_CHANNEL, lastSeq })); return; }
+        if (data.type === "heartbeat" || data.type === "connection.heartbeat") return;
         const seq = getMessageSeq(data);
         if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
           lastSeqRef.current = seq;
@@ -433,7 +439,7 @@ export function useEventsListRealtime(baseUrl: string | null, deviceId: string |
       clearTimers();
       if (ws != null) ws.close();
     };
-  }, [baseUrl, deviceId, queryClient]);
+  }, [baseUrl, deviceId, accessToken, queryClient]);
 }
 
 export const realtimeConfig = {

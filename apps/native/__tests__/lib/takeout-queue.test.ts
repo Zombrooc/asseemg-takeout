@@ -1,95 +1,57 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   addToQueue,
   getPendingQueue,
   removeFromQueue,
-  setQueue,
 } from "@/lib/takeout-queue";
 
-jest.mock("@react-native-async-storage/async-storage", () => ({
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
+jest.mock("@/lib/storage/takeout-outbox", () => ({
+  getReadyOperations: jest.fn(),
+  enqueueCheckin: jest.fn(),
+  acknowledgeOperation: jest.fn(),
+  pendingOperationCount: jest.fn(),
+  rejectOperation: jest.fn(),
+  retryOperation: jest.fn(),
 }));
+const outbox = jest.requireMock("@/lib/storage/takeout-outbox") as {
+  getReadyOperations: jest.Mock; enqueueCheckin: jest.Mock; acknowledgeOperation: jest.Mock;
+};
 
 describe("takeout-queue", () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
-    (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
+    outbox.getReadyOperations.mockResolvedValue([]);
   });
 
   describe("getPendingQueue", () => {
-    it("returns empty array when storage is empty", async () => {
-      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+    it("returns empty array when durable outbox is empty", async () => {
       const list = await getPendingQueue();
       expect(list).toEqual([]);
     });
 
-    it("returns parsed array when storage has valid JSON", async () => {
-      const stored = [
-        { request_id: "r1", ticket_id: "T1", device_id: "d1", created_at: "2026-01-01T00:00:00Z" },
-      ];
-      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(stored));
+    it("projects durable operations without using AsyncStorage", async () => {
+      outbox.getReadyOperations.mockResolvedValue([{ operationId: "r1", eventId: "e1", entityId: "p1", action: "confirm_checkin", payload: { ticket_id: "T1", device_id: "d1" }, sourceType: "json_sync", status: "pending", attempts: 0, createdAt: 0, nextRetryAt: 0 }]);
       const list = await getPendingQueue();
-      expect(list).toEqual(stored);
-    });
-
-    it("returns empty array when storage has invalid JSON", async () => {
-      (AsyncStorage.getItem as jest.Mock).mockResolvedValue("not json");
-      const list = await getPendingQueue();
-      expect(list).toEqual([]);
+      expect(list[0]).toMatchObject({ request_id: "r1", ticket_id: "T1", device_id: "d1" });
     });
   });
 
   describe("addToQueue", () => {
-    it("appends item with created_at and persists", async () => {
-      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+    it("atomically enqueues an operation and its provisional projection", async () => {
       await addToQueue({
         request_id: "req-1",
         ticket_id: "T1",
         device_id: "d1",
       });
-      expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-        "takeout_pending_confirm",
-        expect.stringContaining("req-1")
-      );
-      const stored = JSON.parse((AsyncStorage.setItem as jest.Mock).mock.calls[0][1]);
-      expect(stored).toHaveLength(1);
-      expect(stored[0]).toMatchObject({
-        request_id: "req-1",
-        ticket_id: "T1",
-        device_id: "d1",
-      });
-      expect(stored[0].created_at).toBeDefined();
+      expect(outbox.enqueueCheckin).toHaveBeenCalledWith(expect.objectContaining({ operationId: "req-1", entityId: "T1" }));
     });
   });
 
   describe("removeFromQueue", () => {
-    it("removes item by request_id and persists", async () => {
-      const stored = [
-        { request_id: "r1", ticket_id: "T1", device_id: "d1", created_at: "2026-01-01T00:00:00Z" },
-        { request_id: "r2", ticket_id: "T2", device_id: "d1", created_at: "2026-01-01T00:00:00Z" },
-      ];
-      (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(stored));
+    it("acknowledges the durable operation instead of deleting intent", async () => {
+      const operation = { operationId: "r1" };
+      outbox.getReadyOperations.mockResolvedValue([operation]);
       await removeFromQueue("r1");
-      expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-        "takeout_pending_confirm",
-        JSON.stringify([stored[1]])
-      );
-    });
-  });
-
-  describe("setQueue", () => {
-    it("overwrites storage with given list", async () => {
-      const list = [
-        { request_id: "r1", ticket_id: "T1", device_id: "d1", created_at: "2026-01-01T00:00:00Z" },
-      ];
-      await setQueue(list);
-      expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-        "takeout_pending_confirm",
-        JSON.stringify(list)
-      );
+      expect(outbox.acknowledgeOperation).toHaveBeenCalledWith(operation);
     });
   });
 });

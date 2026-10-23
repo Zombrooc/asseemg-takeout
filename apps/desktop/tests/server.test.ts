@@ -241,9 +241,15 @@ describe("takeout server", () => {
 		});
 		expect(imported.status).toBe(200);
 
-		const confirmed = await fetch(`${base}/takeout/confirm`, {
+		const pairing = await fetch(`${base}/pair/info`).then((response) => response.json()) as { pairingToken: string };
+		const paired = await fetch(`${base}/pair`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ device_id: "desktop-test", pairing_token: pairing.pairingToken, operator_alias: "Teste" }),
+		}).then((response) => response.json()) as { access_token: string };
+		const confirmed = await fetch(`${base}/takeout/confirm`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", Authorization: `Bearer ${paired.access_token}` },
 			body: JSON.stringify({ request_id: "request-audit-fields", ticket_id: "ticket-10k", device_id: "desktop" }),
 		});
 		expect(confirmed.status).toBe(200);
