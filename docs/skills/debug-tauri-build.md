@@ -1,4 +1,6 @@
-# Skill: Debug Tauri Build
+# Skill: Debug Tauri Build — legado
+
+> O desktop atual é Electron em `apps/desktop`. Use este documento somente para manutenção explícita de `apps/web/src-tauri`; para o fluxo atual, siga `docs/runbook.md` e `docs/system-current-state.md`.
 
 ## Passos
 

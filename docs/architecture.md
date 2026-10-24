@@ -1,26 +1,32 @@
-# Arquitetura do Monorepo
+# Arquitetura atual
 
-## Visão geral
+Para o estado funcional detalhado, consulte [`system-current-state.md`](system-current-state.md). Este arquivo fixa as fronteiras que agentes devem respeitar.
 
-- `apps/web`: UI desktop (React + Vite + TanStack Router).
-- `apps/web/src-tauri`: app Tauri + API HTTP Rust (Axum + SQLite rusqlite), fonte de verdade local.
-- `apps/native`: cliente Expo/React Native na LAN.
-- `apps/server`: stub técnico (não hospeda API takeout).
-- `packages/api`: contratos compartilhados de API/realtime.
-- `packages/env`: validação de variáveis por ambiente (web/native/server).
-- `packages/db`: Prisma/libsql (suporte complementar, fora do core takeout).
-- `packages/config`: configs compartilhadas de TypeScript.
+## Monorepo
 
-## Camadas (minimal moves)
+- `apps/desktop`: Electron atual; UI React/Vite, processo principal, Express, WebSocket e SQLite.
+- `apps/native`: Expo/React Native; cliente LAN, snapshot, outbox e realtime.
+- `packages/api`: contratos Zod/TypeScript de comandos, eventos e DTOs.
+- `apps/server`: stub técnico, sem regras takeout.
+- `apps/web` e `apps/web/src-tauri`: legado/referência; não são a implementação atual do desktop.
 
-1. UI: telas/componentes web/native.
-2. Feature: fluxos de pareamento, eventos, confirmação.
-3. Data/Services: clients HTTP/WS, fila offline, locks.
-4. Infra: Tauri + Axum + SQLite.
+## Fronteiras
 
-## Boundaries
+1. Desktop é a autoridade e decide check-in, conflito, undo, locks e auditoria.
+2. Mobile pode ler cache local e registrar intenção, mas a confirmação final vem do desktop.
+3. Toda operação mutável que cruza a rede precisa de ID idempotente e resposta tratável após timeout.
+4. Estado local de participante é sempre escopado por `eventId + sourceType + entityId`.
+5. Alterações de contrato devem passar por `packages/api` e cobrir HTTP, WebSocket, desktop e native.
 
-1. Apps não importam arquivos internos de outros apps.
-2. Compartilhamento entre apps ocorre por `packages/*`.
-3. `packages/api` é a fonte única para contratos de API/realtime.
-4. `apps/server` não pode receber regras de negócio takeout.
+## Caminho de dados
+
+```text
+UI desktop/native
+  -> client HTTP/WS
+  -> apps/desktop/src/main/server.ts
+  -> transação SQLite / event_log
+  -> broadcast WS após commit
+  -> mobile SQLite (snapshot, cursor, projeção)
+```
+
+Não introduzir camada Express em `apps/server`, uma segunda autoridade ou uma cópia da implementação Tauri para o fluxo atual.

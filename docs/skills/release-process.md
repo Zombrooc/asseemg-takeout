@@ -1,16 +1,25 @@
-# Skill: Release Process
+# Processo de release
+
+## Fonte atual
+
+O artefato desktop é Electron em `apps/desktop`; o pacote é gerado pelo `electron-builder`. Tauri/ `apps/web` é legado e não faz parte do release atual, salvo solicitação explícita.
 
 ## Pré-release
 
-1. Rodar quality gates locais.
-2. Garantir CI verde.
-3. Atualizar docs de run/build se necessário.
+1. Instalar com lockfile.
+2. Rodar gates locais.
+3. Validar fluxo pareamento → importação → busca → check-in → realtime/offline → auditoria.
+4. Conferir que não há token, CPF ou payload completo em logs/artefatos.
+5. Atualizar documentação se contrato, migração ou operação mudou.
 
-## Checklist
+```bash
+pnpm install --frozen-lockfile
+pnpm --dir apps/desktop typecheck
+pnpm --dir apps/desktop lint
+pnpm --dir apps/desktop test
+pnpm --dir apps/desktop build
+pnpm --dir apps/desktop dist
+```
 
-1. `pnpm install`
-2. `pnpm run lint`
-3. `pnpm run typecheck`
-4. `pnpm run test`
-5. `pnpm run build`
-6. Desktop: `pnpm --filter web run desktop:build`
+Para mudanças mobile, acrescentar `pnpm --dir apps/native test`. Para contratos compartilhados, acrescentar `pnpm typecheck`.
+

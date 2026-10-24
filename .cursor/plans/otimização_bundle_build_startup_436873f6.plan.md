@@ -126,3 +126,6 @@ flowchart LR
 - (Rust) `cargo test` em `apps/web/src-tauri`
 
 **Nota:** Corrigir `check-types` em web (falha atual em `input.tsx` linha 8) para gate de qualidade consistente; pode ser feito em Fase 0 ou 1A.
+# ARQUIVADO — plano referente ao desktop Tauri legado
+
+> Não usar este plano para tarefas atuais. O desktop vigente é `apps/desktop` (Electron); qualquer otimização nova deve partir de `docs/system-current-state.md` e `AGENTS.md`.

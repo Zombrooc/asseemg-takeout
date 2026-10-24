@@ -1,4 +1,6 @@
-# Skill: Como validar bundling RN e Tauri (local e CI)
+# Skill: Como validar bundling RN e Tauri (legado)
+
+> O fluxo desktop atual é Electron em `apps/desktop`. Este documento preserva o procedimento histórico de Tauri e não é gate do desktop atual; consulte `docs/verification/metro-bundling-smoke.md`.
 
 ## Objetivo
 

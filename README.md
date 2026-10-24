@@ -1,224 +1,75 @@
 # ASSEEMG Retira (Takeout Offline)
 
-Sistema de retirada de kits em eventos de corrida, com operacao prioritariamente offline em LAN.
+Sistema de retirada de kits em eventos de corrida, operando offline em LAN. O desktop Electron é a autoridade local (SQLite + API HTTP/WebSocket); o mobile Expo pareia e usa essa autoridade.
 
-- Desktop e a fonte de verdade (SQLite + API HTTP no mesmo processo Tauri).
-- Mobile pareia com o desktop (QR/token) e usa a mesma API.
+## Estado atual
 
-## Funcionalidades atuais
+- Desktop atual: `apps/desktop`.
+- API: Express + `ws`, no mesmo processo Electron, `0.0.0.0:5555`.
+- Banco autoritativo: `takeout.db` em `app.getPath("userData")`, SQLite WAL.
+- Mobile: `apps/native`, com SecureStore para credenciais e SQLite para snapshots, cursores, projeção e outbox.
+- Fontes suportadas: `json_sync` (ticket) e `legacy_csv` (participante legado), além de evento manual.
+- Check-in: idempotente por UUID, com conflito explícito, auditoria e realtime.
+- `/sync/pull` e `/sync/push`: placeholders offline, retornam `503`; não são integração externa ativa.
 
-### Desktop (`apps/web`)
-- Dashboard com status do servidor, pareamento e lista de eventos importados.
-- Importacao de JSON no formato `checkin-sync` (via `/sync/import`).
-- Auditoria de confirmacoes (`CONFIRMED`, `DUPLICATE`, `FAILED`).
-- Detalhe de evento com lista de participantes e confirmacao manual de check-in.
-- Acoes por evento: arquivar, desarquivar, apagar, desfazer check-ins.
-- Atualizacao em tempo real por WebSocket para alteracoes de participantes/eventos.
+Documentação operacional: [`docs/system-current-state.md`](docs/system-current-state.md), [`docs/local-first-sync.md`](docs/local-first-sync.md), [`docs/runbook.md`](docs/runbook.md). Instruções para agentes: [`AGENTS.md`](AGENTS.md).
 
-### Backend Takeout em Rust (`apps/web/src-tauri`)
-- API Axum em `0.0.0.0:5555` no mesmo processo do app desktop.
-- Persistencia em SQLite (`takeout.db` no `app_data_dir` do Tauri).
-- Pareamento por token com emissao de `access_token`.
-- Confirmacao de check-in com idempotencia por `request_id`.
-- Locks por participante para reduzir conflito entre dispositivos.
-- Sync pull/push/import para integracao com plataforma externa (`thevent`).
-
-### Mobile (`apps/native`)
-- Pareamento por QR code ou URL + token manual.
-- Lista de eventos e participantes por evento.
-- Busca local (nome, CPF, data, ticket, QR).
-- Scanner de QR de ingresso para selecao rapida.
-- Confirmacao de check-in com modal de validacao.
-- Fila offline local (AsyncStorage) com reprocessamento automatico quando reconecta.
-- Atualizacoes em tempo real (WebSocket) para check-ins, locks e lista de eventos.
-
-## Arquitetura
-
-- Nao ha Express/tRPC no fluxo takeout.
-- A API principal esta em Rust: `apps/web/src-tauri/src/api`.
-- Camadas do backend: `handlers -> services -> repository -> SQLite`.
-- `apps/server` e apenas stub tecnico para o monorepo.
-
-### Estrutura principal
+## Estrutura
 
 ```text
-apps/
-  web/           Frontend desktop (React + Vite + TanStack Router)
-                 + Tauri + backend Rust (Axum/rusqlite)
-  native/        App mobile (Expo/React Native)
-  server/        Stub (nao hospeda a API takeout)
-packages/
-  env/           Schemas de variaveis de ambiente
-  config/        Config TS compartilhada
-  api/           Contratos legados (placeholder)
-  db/            Prisma/libsql (uso opcional, fora do core do takeout)
+apps/desktop/     Electron + React/Vite + Express/ws + SQLite
+apps/native/      Expo/React Native, cliente LAN e outbox offline
+packages/api/     contratos HTTP/WebSocket compartilhados
+apps/server/      stub técnico, sem regras takeout
+apps/web/         legado/referência, fora do fluxo desktop atual
 ```
 
-## Padroes de codigo e qualidade
+## Rodar e validar
 
-- Monorepo com `pnpm workspace` + `turborepo`.
-- TypeScript em modo `strict` (web/native/packages).
-- Alias `@/*` para imports locais em web e native.
-- Lint/format com Biome (`pnpm run check`).
-- Regras de dominio em `.cursor/rules/`:
-  - `takeout-offline.mdc`
-  - `testing-regression.mdc`
-- Convencao de testes:
-  - Bug fix com teste de regressao.
-  - Feature nova com teste de unidade e/ou integracao.
-
-## UI Redesign (Desktop)
-
-A UI do desktop foi alinhada ao redesign em [v0-redesenho-ui-tauri](https://github.com/Zombrooc/v0-redesenho-ui-tauri): design tokens, Geist, componentes (Header, StatusCard, EventCard, PairingSection, ParticipantsTable, AuditFilters, etc.). O app continua com React + TanStack Router (sem Next.js).
-
-- **Plano e relatorio**: `apps/web/PLAN_UI_MIGRATION.md`, `apps/web/MIGRATION_REPORT.md`.
-- **Testes de regressao**: `cd apps/web && pnpm run test:unit`.
-
-## Requisitos
-
-- Node.js 22+ (fixado em `.nvmrc`)
-- pnpm 10+
-- Rust toolchain (para Tauri desktop)
-- Android Studio / Xcode (se for rodar build nativo mobile)
-
-## How To Run (raiz)
+Requisitos: Node 20–21, pnpm 10.28+, Rust apenas para ferramentas legadas; Android Studio/Xcode para mobile.
 
 ```bash
 pnpm install
-pnpm run lint
-pnpm run typecheck
-pnpm run test
-pnpm run build
+pnpm --dir apps/desktop dev
+pnpm --dir apps/native dev
 ```
 
-## Como rodar localmente
-
-1. Instale dependencias:
+Gates do desktop:
 
 ```bash
-pnpm install
+pnpm --dir apps/desktop typecheck
+pnpm --dir apps/desktop lint
+pnpm --dir apps/desktop test
+pnpm --dir apps/desktop build
 ```
 
-2. Suba o desktop completo (UI + API Rust):
+Gates adicionais do monorepo/mobile:
 
 ```bash
-cd apps/web
-pnpm run desktop:dev
+pnpm typecheck
+pnpm --dir apps/native test
 ```
 
-Observacoes:
-- O frontend abre em `http://localhost:3001` (Vite).
-- A API sobe em `http://0.0.0.0:5555`.
-- O script `apps/web/scripts/dev-with-wait.mjs` garante que o Vite esteja pronto antes da janela Tauri abrir.
+O desktop renderer usa `http://127.0.0.1:5555`; o mobile deve usar o IP LAN exibido em `GET /network/addresses` ou no QR. Em Android/iOS, HTTP claro precisa permanecer permitido conforme a configuração atual do Expo.
 
-3. Em paralelo, rode o mobile:
+## Fluxo de uso
 
-```bash
-pnpm run dev:native
-```
+1. Iniciar o desktop e importar JSON `checkin-sync` ou CSV legado.
+2. Exibir QR/token no desktop; parear o mobile informando alias do operador.
+3. Selecionar evento, buscar por nome/CPF/data/ticket/QR ou escanear QR.
+4. Confirmar retirada. Online, o comando chega por WS/HTTP; offline, fica na outbox e é reenviado com o mesmo ID.
+5. Acompanhar status, conflitos, locks e auditoria. O desktop continua sendo a decisão final.
 
-4. No mobile:
-- Abra `Pair`.
-- Escaneie o QR exibido no desktop (ou informe URL + token).
-- Apos parear, selecione evento, abra participante e confirme check-in.
+## Endpoints principais
 
-## Variaveis de ambiente
+`GET /health`, `GET /network/addresses`, `GET /pair/info`, `POST /pair`, `POST /pair/renew`, `GET/POST /events`, participantes e busca por evento, `POST /sync/import`, `POST /admin/import/legacy-csv`, `POST /takeout/confirm`, `POST /takeout/undo`, variantes `/legacy`, `GET /audit`, `/locks`, `GET /sync/events` e WebSocket `/ws`.
 
-### Mobile
-- Arquivo de exemplo: `apps/native/.env.example`
-- Chave:
-  - `EXPO_PUBLIC_SERVER_URL` (default: `http://127.0.0.1:5555`)
+## Regras de manutenção
 
-### Web
-- Cliente web pode usar `VITE_TAKEOUT_API_URL` (fallback para `http://127.0.0.1:5555`).
-
-## Endpoints principais da API
-
-- `GET /health`
-- `GET /network/addresses`
-- `GET /pair/info`
-- `POST /pair/renew`
-- `POST /pair`
-- `GET /events`
-- `GET /events/:event_id/participants`
-- `GET /events/:event_id/participants/search?q=<texto>&mode=<modo>`
-- `POST /events/:event_id/checkins/reset`
-- `POST /events/:event_id/archive`
-- `POST /events/:event_id/unarchive`
-- `DELETE /events/:event_id`
-- `POST /takeout/confirm`
-- `GET /audit`
-- `POST /locks`
-- `POST /locks/renew`
-- `GET /locks/:participant_id`
-- `DELETE /locks/:participant_id`
-- `GET /sync/pull`
-- `GET /sync/events`
-- `POST /sync/import`
-- `POST /sync/push`
-
-### Exemplos de busca por evento
-
-- Buscar por nome (parcial, sem diferenciar acento/caixa):
-  - `GET /events/ev-123/participants/search?q=joao&mode=nome`
-- Buscar por CPF (exato):
-  - `GET /events/ev-123/participants/search?q=12345678900&mode=cpf`
-- Buscar por QR code (exato):
-  - `GET /events/ev-123/participants/search?q=QR-ABC-123&mode=qr`
-- Buscar por ticket id (exato):
-  - `GET /events/ev-123/participants/search?q=seat-001&mode=ticket_id`
-- Buscar por data de nascimento (exato):
-  - `GET /events/ev-123/participants/search?q=1990-01-01&mode=birth_date`
-
-## Scripts uteis
-
-### Raiz
-- `pnpm run dev`
-- `pnpm run dev:web`
-- `pnpm run dev:native`
-- `pnpm run dev:server`
-- `pnpm run lint`
-- `pnpm run typecheck`
-- `pnpm run test`
-- `pnpm run build`
-- `pnpm run check-types`
-- `pnpm run check`
-- `pnpm run db:push`
-- `pnpm run db:generate`
-- `pnpm run db:migrate`
-- `pnpm run db:studio`
-- `pnpm run db:local`
-
-### Desktop (`apps/web`)
-- `pnpm run dev`
-- `pnpm run desktop:dev`
-- `pnpm run desktop:build`
-- `pnpm run desktop:icons`
-
-### Mobile (`apps/native`)
-- `pnpm run dev`
-- `pnpm run android`
-- `pnpm run ios`
-- `pnpm run test`
-
-## Medicao e validacao de build
-
-- **Manifest:** `pnpm run build:manifest` gera/atualiza `build-manifest.json` na raiz (schema estavel: commit, timestamp, versoes node/pnpm/cargo/rustc, OS, tamanhos de artefatos em `dist/`, resultado de `check-types` e testes mobile). Nao commitar o ficheiro; CI publica como artifact.
-- **Baseline:** `pnpm run build:baseline` mede o tempo de `pnpm run build` e em seguida executa `build:manifest`.
-- **Scripts em `scripts/`:** `measure-build.mjs`, `collect-artifacts.mjs`, `generate-manifest.mjs`, `constants.mjs`.
-
-## Testes
-
-### Backend Rust (integracao Axum + SQLite em memoria)
-
-```bash
-cd apps/web/src-tauri
-cargo test
-```
-
-### Mobile (Jest)
-
-```bash
-cd apps/native
-pnpm run test
-```
+- Preservar `request_id` em retry; não gerar outro após timeout.
+- Não tratar `pending` como confirmado e não apagar outbox conflitante/falha automaticamente.
+- Check-in, auditoria e evento devem permanecer atômicos; broadcast somente após commit.
+- Locks duram 30 s e reduzem disputa, mas a unicidade vem do SQLite.
+- Preservar WAL, índices, transações mobile serializadas, cursores e escopo `eventId + sourceType + entityId`.
+- Não logar tokens, CPF ou payloads completos.
+- Para mudanças, seguir `AGENTS.md`, `.cursor/rules/takeout-offline.mdc` e `.cursor/rules/testing-regression.mdc`.

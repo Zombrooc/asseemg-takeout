@@ -1,19 +1,8 @@
-# Rust Backend (Axum + SQLite)
+# Backend Rust — legado
 
-## Estrutura
+> O backend Rust/Axum em `apps/web/src-tauri` não é o backend do desktop atual. Este arquivo só orienta manutenção de legado solicitada explicitamente.
 
-- `handlers`: endpoints HTTP/WS.
-- `services`: regras de negócio.
-- `repository`: acesso SQLite.
+O fluxo vigente usa `apps/desktop/src/main/server.ts` (Express + `ws`) e SQLite no processo Electron. Não criar novos handlers Rust para funcionalidades do takeout atual.
 
-## Diretrizes
+Para manutenção do sistema vigente, use `AGENTS.md`, `docs/system-current-state.md` e os testes de `apps/desktop`.
 
-1. Não acoplar regra de negócio direto em handler.
-2. Erros devem mapear para status HTTP explícito.
-3. Toda correção de bug relevante deve incluir teste no `cargo test`.
-
-## Testes
-
-```bash
-cargo test --manifest-path apps/web/src-tauri/Cargo.toml
-```

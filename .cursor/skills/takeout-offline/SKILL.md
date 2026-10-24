@@ -1,33 +1,39 @@
 ---
 name: takeout-offline
-description: Implements and reviews code for the takeout ecosystem (desktop Tauri, mobile). Use when working on takeout desktop, takeout mobile, pairing, CSV import, participant search, or takeout confirmation flows.
+description: Implementa, revisa e documenta o fluxo atual do ASSEEMG Retira em Electron, Expo, pairing, importação, check-in, locks, outbox e realtime LAN.
 ---
 
-# Takeout Offline
+# Skill: Takeout Offline
 
-Use when implementing or reviewing code in the takeout ecosystem (desktop, mobile).
+Leia primeiro `AGENTS.md`, `docs/system-current-state.md` e `docs/local-first-sync.md`. A implementação atual é Electron em `apps/desktop`; referências Tauri em `apps/web` não devem ser usadas para novas alterações.
 
-## Takeout Desktop
+## Desktop
 
-- **API**: HTTP server in same process as Tauri app; port **5555**, bind `0.0.0.0` for LAN access.
-- **IP discovery**: List all IPv4 addresses of local interfaces (multi-NIC); show on initial screen.
-- **Connection QR**: URL = `http://<IP>:5555` with `pairing_token` in query or fragment; short, expiring token; UI option to "renew" token.
-- **Import CSV**: Expected columns: nome, cpf, data_nascimento, idade, ticket_comprado, categoria_ticket, status_takeout, valor_pago, custom_forms or custom_*; validate columns before import; preview; upsert by ticket_id and/or (cpf + data_nascimento); normalize custom_forms (if JSON string, parse; if column-based, map to key/value).
+- API Express + `ws` no processo principal, bind `0.0.0.0:5555`.
+- SQLite em `app.getPath("userData")`, WAL, foreign keys e migrações aditivas.
+- Pareamento por token de 15 minutos e `access_token` por dispositivo/alias.
+- Importações: JSON `/sync/import` e CSV legado `/admin/import/legacy-csv`.
+- Check-in autoritativo e idempotente por `request_id`; conflito por ticket ou participante legado.
+- Locks por participante com TTL de 30 s; são coordenação, não garantia de integridade.
 
-## Takeout Mobile
+## Mobile
 
-- **Connection**: Read QR (URL + pairing_token) or type IP:port; POST `/pair` with device_id + pairing_token; store access_token (e.g. expo-secure-store).
-- **Search**: Modes qr | ticket_id | nome | cpf | birth_date; GET `/participants/search?q=...&mode=...` or GET `/participants/:id` for QR/ticket_id.
-- **Confirmation modal**: Show participant (nome, cpf, data nascimento, idade, ticket, categoria, custom_forms, status takeout, valor pago); "Confirmar retirada" button.
-- **Confirmation queue**: Persist pending attempts locally; retry with backoff; remove only when response is CONFIRMED; payload: request_id (UUID), timestamp, staff_device_id, ticket_id/participant_id.
+- QR ou URL/token manual; credenciais em SecureStore.
+- Snapshot em SQLite local; chave lógica `eventId + sourceType + entityId`.
+- Outbox durável: `pending` → `sending` → `acknowledged`, ou `conflict`/`failed`; lease de envio de 30 s e retry com backoff.
+- Um `TakeoutSyncManager` por dispositivo mantém WS, heartbeat, reconnect, comandos e subscriptions.
+- Eventos e cursor são persistidos juntos; timeout repete a mesma operação.
 
-## Contratos e client
+## Não fazer
 
-- **Types e client HTTP**: `apps/web/src/lib/takeout-api.ts` — BASE_URL (default `http://127.0.0.1:5555`), types (HealthResponse, ConnectionInfo, TakeoutConfirmPayload, etc.), funções `getHealth`, `getConnectionInfo`, `confirmTakeout`, `getAudit`, etc.
-- **Mobile**: usa esses types ou reimplementa chamadas; `request_id` é gerado no client (UUID v4), e.g. em `apps/native/components/takeout/confirm-takeout-modal.tsx`.
-- `packages/api` existe mas está vazio (contratos vivem no frontend).
+- Não usar `apps/server` como backend takeout.
+- Não reativar `/sync/pull`/`push` sem decisão de produto; hoje retornam 503 offline.
+- Não tratar cache mobile ou estado `pending` como confirmação final.
+- Não gerar novo `request_id` no retry, nem apagar conflito/falha automaticamente.
+- Não logar token, CPF, PII ou payload integral.
 
-## External references
+## Mudanças e validação
 
-- React Native: [.agents/skills/vercel-react-native-skills/AGENTS.md](.agents/skills/vercel-react-native-skills/AGENTS.md).
-- React composition and best practices when applicable (avoid prop drilling, minimal state).
+Para bugs, escreva primeiro o teste de regressão. Para features, cubra sucesso, retry, conflito e offline quando aplicável. Valide desktop com `pnpm --dir apps/desktop typecheck`, `lint`, `test` e, para mudança de build, `build`; valide mobile com `pnpm --dir apps/native test`.
+
+Se o comportamento ou contrato mudar, atualize a documentação de estado atual e os contratos em `packages/api` junto com os consumidores.

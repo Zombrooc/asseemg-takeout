@@ -1,25 +1,20 @@
-# Tauri Desktop
+# Tauri — legado
 
-## Papel no produto
+> Este documento é histórico. O desktop atual é Electron em `apps/desktop`. Não usar estes comandos para tarefas novas.
 
-`apps/web/src-tauri` executa app desktop e API HTTP local na porta `5555`.
+`apps/web/src-tauri` contém a implementação Tauri/Rust anterior do produto. Ela permanece apenas para referência e manutenção explícita de legado.
 
-## Comandos
+Para o fluxo atual, consulte:
+- `docs/system-current-state.md`
+- `AGENTS.md`
+- `docs/runbook.md`
+
+Gates atuais:
 
 ```bash
-pnpm --filter web run desktop:dev
-pnpm --filter web run desktop:build
-cargo test --manifest-path apps/web/src-tauri/Cargo.toml
+pnpm --dir apps/desktop typecheck
+pnpm --dir apps/desktop lint
+pnpm --dir apps/desktop test
+pnpm --dir apps/desktop build
 ```
 
-## Contrato frontend↔backend
-
-1. HTTP JSON padronizado com status codes explícitos.
-2. WebSocket `/ws` com eventos tipados em `@pickup/api/takeout-contracts`.
-3. Heartbeat periódico do backend para liveness.
-
-## Troubleshooting
-
-1. Verificar porta 5555 ocupada.
-2. Confirmar acesso `GET /health`.
-3. Validar logs da aplicação em modo dev.
