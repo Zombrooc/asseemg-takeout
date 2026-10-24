@@ -1,11 +1,14 @@
 import {
   acknowledgeOperation,
   enqueueCheckin,
+  getActiveOperations,
   getReadyOperations,
   pendingOperationCount,
   rejectOperation,
+  failOperation,
   retryOperation,
   type SyncOperation,
+  type OperationStatus,
 } from "@/lib/storage/takeout-outbox";
 
 export type PendingConfirmItem = {
@@ -17,17 +20,20 @@ export type PendingConfirmItem = {
   event_id?: string;
   participant_id?: string;
   source_type?: "json_sync" | "legacy_csv";
+  status?: OperationStatus;
 };
 
 export async function getPendingQueue(): Promise<PendingConfirmItem[]> {
-  return (await getReadyOperations()).map((operation) => toPending(operation));
+  return (await getActiveOperations()).map((operation) => toPending(operation));
 }
 
 export async function addToQueue(item: Omit<PendingConfirmItem, "created_at">): Promise<void> {
   await enqueueCheckin({
     operationId: item.request_id,
     eventId: item.event_id ?? "unknown",
-    entityId: item.participant_id ?? item.ticket_id,
+    entityId: item.source_type === "legacy_csv"
+      ? (item.participant_id ?? item.ticket_id)
+      : item.ticket_id,
     action: "confirm_checkin",
     sourceType: item.source_type ?? "json_sync",
     payload: {
@@ -40,7 +46,7 @@ export async function addToQueue(item: Omit<PendingConfirmItem, "created_at">): 
 }
 
 export async function removeFromQueue(requestId: string): Promise<void> {
-  const operation = (await getReadyOperations()).find((item) => item.operationId === requestId);
+  const operation = (await getActiveOperations()).find((item) => item.operationId === requestId);
   if (operation) await acknowledgeOperation(operation);
 }
 
@@ -55,10 +61,11 @@ function toPending(operation: SyncOperation): PendingConfirmItem {
     event_id: operation.eventId,
     participant_id: operation.entityId,
     source_type: operation.sourceType,
+    status: operation.status,
   };
 }
 
 export async function pendingQueueCount(): Promise<number> { return pendingOperationCount(); }
 /** @deprecated Replacing the queue wholesale is incompatible with a durable outbox. */
 export async function setQueue(_list: PendingConfirmItem[]): Promise<void> { throw new Error("setQueue was removed; enqueue individual operations instead"); }
-export { acknowledgeOperation, getReadyOperations, rejectOperation, retryOperation };
+export { acknowledgeOperation, failOperation, getReadyOperations, rejectOperation, retryOperation };

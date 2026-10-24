@@ -13,6 +13,8 @@ import {
   buildTakeoutRetirantePayloadJson,
 } from "@/lib/takeout-retirante-payload";
 import { addToQueue } from "@/lib/takeout-queue";
+import { secureOperationId } from "@/lib/takeout-identity";
+import { metricNow, recordTakeoutMetric } from "@/lib/takeout-metrics";
 import {
   getTakeoutModalParticipantDetails,
   type TakeoutModalParticipant,
@@ -20,7 +22,6 @@ import {
 } from "@/components/mobile/audit/confirm-takeout-modal.data";
 import { useEffect, useRef, useState } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -89,11 +90,6 @@ function formatResponseValue(value: unknown): string {
   }
 }
 
-function buildTicketConflictKey(participant: ModalParticipant, sourceType: SourceType): string {
-  if (sourceType === "legacy_csv") return participant.id;
-  return (participant as EventParticipant).ticketId;
-}
-
 export function ConfirmTakeoutModal({
   visible,
   participant,
@@ -104,12 +100,11 @@ export function ConfirmTakeoutModal({
   onClose,
   onConfirmed,
   onQueuedOffline,
-  onConflict,
 }: Props) {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const closeIconColor = theme.foreground.get();
-  const { api, deviceId } = useTakeoutConnection();
+  const { api, deviceId, isReachable } = useTakeoutConnection();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isProxyTakeout, setIsProxyTakeout] = useState(false);
@@ -201,15 +196,20 @@ export function ConfirmTakeoutModal({
     setError(null);
     submittingRef.current = true;
     setLoading(true);
-    const requestId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === "x" ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+    let requestId: string;
+    try {
+      requestId = secureOperationId();
+    } catch {
+      setError("Este dispositivo não oferece geração segura de identificadores.");
+      submittingRef.current = false;
+      setLoading(false);
+      return;
+    }
 
     try {
       // The durable local transaction is the only awaited confirmation step.
       // Transport acknowledgement is reconciled by TakeoutQueueProcessor.
+      const commitStartedAt = metricNow();
       await addToQueue({
         request_id: requestId,
         ticket_id: sourceType === "legacy_csv" ? participant.id : (participant as EventParticipant).ticketId,
@@ -219,8 +219,9 @@ export function ConfirmTakeoutModal({
         device_id: deviceId,
         payload_json: proxyPayloadJson,
       });
+      recordTakeoutMetric("local_commit_ms", metricNow() - commitStartedAt);
       api?.deleteLocksRelease(participant.id, deviceId).catch(() => {});
-      onQueuedOffline?.();
+      if (!isReachable) onQueuedOffline?.();
       onConfirmed();
       onClose();
     } catch {

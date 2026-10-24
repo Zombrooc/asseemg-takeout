@@ -9,6 +9,7 @@ module.exports = {
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/$1",
     "^@pickup/api/(.*)$": "<rootDir>/../../packages/api/src/$1",
+    "^expo-crypto$": "<rootDir>/__tests__/mocks/expo-crypto.ts",
   },
   transform: {
     "^.+\\.tsx?$": ["ts-jest", { useESM: false, tsconfig: { module: "commonjs", esModuleInterop: true } }],

@@ -25,13 +25,12 @@ describe("event screen confirmation performance", () => {
 		expect(source).toContain(
 			"contentContainerStyle={PARTICIPANT_LIST_CONTENT_STYLE}",
 		);
-		expect(source).toContain(
-			"runtime.participantAlertMap[item.id] ?? EMPTY_PARTICIPANT_ALERTS",
-		);
-		expect(source).toContain(
-			"const participantListRuntimeRef = useRef<ParticipantListRuntimeState>",
-		);
-		expect(source).toContain("extraData={participantListExtraData}");
+		expect(source).toContain("alerts={[...snapshot.alerts]}");
+		expect(source).toContain("data={filteredParticipantIds}");
+		expect(source).toContain("<ParticipantRow");
+		expect(source).toContain("useParticipantEntity(entityKey)");
+		expect(source).not.toContain("extraData={participantListExtraData}");
+		expect(source).not.toContain("participants.find((p)");
 	});
 
 	it("does not keep closed edit and reservation modal trees mounted", () => {
@@ -61,7 +60,7 @@ describe("event screen confirmation performance", () => {
 			source.indexOf("const handleConflict"),
 		);
 
-		expect(confirmedHandler).toContain("setSelectedParticipant(null);");
+		expect(confirmedHandler).toContain("setSelectedEntityKey(null);");
 		expect(confirmedHandler).not.toContain("auditQuery.refetch()");
 	});
 });

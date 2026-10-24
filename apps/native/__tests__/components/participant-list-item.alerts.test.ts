@@ -40,7 +40,7 @@ describe("participant list item alerts", () => {
 
     for (const source of sources) {
       expect(source).toContain("{state.primaryActionLabel}");
-      expect(source).toContain("onPress={() => onPrimaryAction(id)}");
+      expect(source).toMatch(/onPress=\{\(\) => onPrimaryAction\((?:entityKey|id)\)\}/);
     }
   });
 });

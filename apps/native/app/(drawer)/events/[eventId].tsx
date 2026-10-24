@@ -1,10 +1,5 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { buildLegacyParticipantAlertMap } from "@pickup/api/legacy-participant-alerts";
-import {
-	createParticipantSearchIndex,
-	searchParticipantIndex,
-} from "@pickup/api/participant-search";
-import { qrValueMatches } from "@pickup/api/wix-qr";
+import { getQrLookupValues } from "@pickup/api/wix-qr";
 import { useTakeoutConnection } from "@/contexts/takeout-connection-context";
 import type {
 	CreateLegacyParticipantPayload,
@@ -40,35 +35,36 @@ import {
 import { formatDateShort, normalizeDateOnly } from "@/lib/format-date";
 import { useTakeoutRealtime } from "@/lib/takeout-realtime";
 import { getPendingQueue } from "@/lib/takeout-queue";
+import {
+	participantStore,
+	useParticipantCounts,
+	useParticipantEntity,
+	useParticipantIds,
+} from "@/lib/participant-store";
+import {
+	isLegacyParticipant,
+	type TakeoutParticipant,
+	type TakeoutSourceType,
+} from "@/lib/takeout-identity";
+import {
+	loadParticipantSnapshot,
+	loadParticipantSourceType,
+	persistParticipantSnapshot,
+} from "@/lib/storage/participant-repository";
+import { getSyncCursor } from "@/lib/storage/takeout-database";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { FlatList, Text, View } from "react-native";
+import { FlashList } from "@shopify/flash-list";
+import { Text, View } from "react-native";
+import { recordTakeoutMetric } from "@/lib/takeout-metrics";
 
-const SYNC_LAST_SEQ_KEY = (eventId: string) =>
-	`takeout_sync_last_seq_${eventId}`;
 const PARTICIPANTS_REFRESH_INTERVAL_MS = 120_000;
 const EMPTY_PARTICIPANT_ALERTS: ParticipantAlert[] = [];
 const EMPTY_PARTICIPANT_ALERT_MAP: Record<string, ParticipantAlert[]> = {};
 const PARTICIPANT_LIST_CONTENT_STYLE = { paddingVertical: 8 };
-const participantKeyExtractor = (participant: { id: string }) => participant.id;
+const participantKeyExtractor = (entityKey: string) => entityKey;
 
-type SourceType = "json_sync" | "legacy_csv";
-type DisplayParticipant = EventParticipant | LegacyEventParticipant;
-type ParticipantListRuntimeState = {
-	participantsById: Map<string, DisplayParticipant>;
-	sourceType: SourceType;
-	auditConfirmedTicketIds: Set<string>;
-	pendingTicketIds: Set<string>;
-	conflictTicketIds: Set<string>;
-	lockMap: Record<string, string>;
-	deviceId: string | null;
-	participantAlertMap: Record<string, ParticipantAlert[]>;
-};
-
-function isLegacyParticipant(
-	participant: DisplayParticipant,
-): participant is LegacyEventParticipant {
-	return typeof (participant as LegacyEventParticipant).bibNumber === "number";
-}
+type SourceType = TakeoutSourceType;
+type DisplayParticipant = TakeoutParticipant;
 
 function normalizeParticipantBirthDate(
 	participant: DisplayParticipant,
@@ -84,16 +80,49 @@ function normalizeParticipantBirthDate(
 		: { ...participant, birthDate: normalized };
 }
 
-function getParticipantKey(
-	participant: DisplayParticipant,
-	sourceType: SourceType,
-): string {
-	if (sourceType === "legacy_csv" && isLegacyParticipant(participant))
-		return participant.id;
-	return (participant as EventParticipant).ticketId;
-}
-
 const PENDING_QUEUE_KEY = ["takeout-pending-queue"] as const;
+
+type ParticipantRowProps = {
+	entityKey: string;
+	deviceId: string | null;
+	onPrimaryAction: (entityKey: string) => void;
+	onEdit: (entityKey: string) => void;
+	onDismissConflict: (entityId: string) => void;
+};
+
+const ParticipantRow = memo(function ParticipantRow({
+	entityKey,
+	deviceId,
+	onPrimaryAction,
+	onEdit,
+	onDismissConflict,
+}: ParticipantRowProps) {
+	recordTakeoutMetric("participant_render");
+	const snapshot = useParticipantEntity(entityKey);
+	if (!snapshot) return null;
+	const item = snapshot.participant;
+	const ticketLabel = snapshot.sourceType === "legacy_csv" && isLegacyParticipant(item)
+		? `${item.modality ?? "Legado"} #${item.bibNumber}`
+		: ((item as EventParticipant).sourceTicketId ?? (item as EventParticipant).ticketId);
+	return (
+		<ParticipantListItem
+			entityKey={entityKey}
+			id={item.id}
+			ticketId={snapshot.entityId}
+			name={item.name}
+			ticketLabel={ticketLabel}
+			isConfirmed={snapshot.authoritativeCheckin}
+			isPendingSync={snapshot.syncStatus === "pending" || snapshot.syncStatus === "sending"}
+			isConflict={snapshot.syncStatus === "conflict"}
+			syncStatus={snapshot.syncStatus}
+			lockedByOther={deviceId != null && snapshot.lockDeviceId != null && snapshot.lockDeviceId !== deviceId}
+			alerts={[...snapshot.alerts]}
+			onPrimaryAction={onPrimaryAction}
+			onEdit={onEdit}
+			onDismissConflict={onDismissConflict}
+		/>
+	);
+});
 
 const EmptyList = memo(function EmptyList() {
 	return (
@@ -118,56 +147,24 @@ export default function EventScreen() {
 		deviceId,
 		accessToken,
 	} = useTakeoutConnection();
-	const { lockMap } = useTakeoutRealtime(
+	useTakeoutRealtime(
 		eventId ?? undefined,
 		baseUrl,
 		deviceId,
 		accessToken,
 	);
 
-	useEffect(() => {
-		if (!api || !eventId || !isReachable) return;
-		let cancelled = false;
-		(async () => {
-			try {
-				const raw = await AsyncStorage.getItem(SYNC_LAST_SEQ_KEY(eventId));
-				const sinceSeq = raw != null ? Number(raw) : 0;
-				const { events, latestSeq } = await api.getSyncEvents(
-					eventId,
-					sinceSeq,
-				);
-				if (cancelled) return;
-				if (events.length > 0) {
-					queryClient.invalidateQueries({ queryKey: ["takeout-audit"] });
-					queryClient.invalidateQueries({
-						queryKey: ["takeout-event-participants", eventId],
-					});
-				}
-				await AsyncStorage.setItem(
-					SYNC_LAST_SEQ_KEY(eventId),
-					String(latestSeq),
-				);
-			} catch {
-				// ignore
-			}
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [api, eventId, isReachable, queryClient]);
-
-	const [selectedParticipant, setSelectedParticipant] =
-		useState<DisplayParticipant | null>(null);
+	const [selectedEntityKey, setSelectedEntityKey] = useState<string | null>(null);
+	const selectedSnapshot = useParticipantEntity(selectedEntityKey);
+	const selectedParticipant = selectedSnapshot?.participant ?? null;
 	const [editingParticipant, setEditingParticipant] =
 		useState<DisplayParticipant | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [showQrScanner, setShowQrScanner] = useState(false);
 	const [showCreateModal, setShowCreateModal] = useState(false);
 	const [offlineNoticeVisible, setOfflineNoticeVisible] = useState(false);
-	const [conflictTicketIds, setConflictTicketIds] = useState<Set<string>>(
-		new Set(),
-	);
 	const [permission, requestPermission] = useCameraPermissions();
+	const qrScanInFlightRef = useRef(false);
 
 	const eventQuery = useQuery({
 		queryKey: ["takeout-events"],
@@ -180,20 +177,40 @@ export default function EventScreen() {
 		() => eventQuery.data?.find((e) => e.eventId === eventId) ?? null,
 		[eventQuery.data, eventId],
 	);
+	const [persistedSourceType, setPersistedSourceType] = useState<SourceType | null>(null);
+	useEffect(() => {
+		if (!eventId) return;
+		let cancelled = false;
+		void loadParticipantSourceType(eventId).then((value) => {
+			if (!cancelled) setPersistedSourceType(value);
+		});
+		return () => { cancelled = true; };
+	}, [eventId]);
 	const sourceType: SourceType =
-		event?.sourceType === "legacy_csv" ? "legacy_csv" : "json_sync";
+		event
+			? event.sourceType === "legacy_csv" ? "legacy_csv" : "json_sync"
+			: persistedSourceType ?? "json_sync";
 
 	const participantsQuery = useQuery<DisplayParticipant[]>({
 		queryKey: ["takeout-event-participants", eventId],
 		queryFn: async () => {
-			if (!api || !eventId) throw new Error("No API");
-			const participants =
-				sourceType === "legacy_csv"
-					? await api.getLegacyEventParticipants(eventId)
-					: await api.getEventParticipants(eventId);
-			return participants.map(normalizeParticipantBirthDate);
+			if (!eventId) throw new Error("No event");
+			if (!api || !isReachable) {
+				return sourceType === "legacy_csv"
+					? loadParticipantSnapshot(eventId, "legacy_csv")
+					: loadParticipantSnapshot(eventId, "json_sync");
+			}
+			const snapshotCursor = await getSyncCursor(eventId);
+			const participants = sourceType === "legacy_csv"
+				? await api.getLegacyEventParticipants(eventId)
+				: await api.getEventParticipants(eventId);
+			const normalized = participants.map(normalizeParticipantBirthDate);
+			await persistParticipantSnapshot(eventId, sourceType, normalized, snapshotCursor?.lastSeq ?? 0);
+			return sourceType === "legacy_csv"
+				? loadParticipantSnapshot(eventId, "legacy_csv")
+				: loadParticipantSnapshot(eventId, "json_sync");
 		},
-		enabled: !!api && !!eventId && isReachable,
+		enabled: !!eventId && (!!event || !!persistedSourceType || (isReachable && eventQuery.isSuccess)),
 		refetchInterval: isReachable ? PARTICIPANTS_REFRESH_INTERVAL_MS : false,
 		refetchIntervalInBackground: true,
 	});
@@ -223,11 +240,6 @@ export default function EventScreen() {
 		refetchInterval: isReachable ? 5000 : false,
 	});
 
-	const pendingTicketIds = useMemo(
-		() => new Set((pendingQueueQuery.data ?? []).map((i) => i.ticket_id)),
-		[pendingQueueQuery.data],
-	);
-
 	useEffect(() => {
 		if (event?.name) {
 			navigation.setOptions({ headerTitle: event.name });
@@ -244,45 +256,6 @@ export default function EventScreen() {
 	}, [showQrScanner]);
 
 	const participants: DisplayParticipant[] = participantsQuery.data ?? [];
-	const participantsById = useMemo(
-		() =>
-			new Map(participants.map((participant) => [participant.id, participant])),
-		[participants],
-	);
-	const participantSearchIndex = useMemo(
-		() =>
-			createParticipantSearchIndex(participants, (participant) =>
-				isLegacyParticipant(participant)
-					? {
-							exact: [
-								participant.name,
-								participant.cpf,
-								participant.birthDate,
-								participant.bibNumber,
-								participant.modality,
-								participant.team,
-								participant.qrCode,
-							],
-							fuzzy: [participant.name, participant.modality, participant.team],
-						}
-					: {
-							exact: [
-								participant.name,
-								participant.cpf,
-								participant.birthDate,
-								participant.sourceTicketId,
-								participant.ticketId,
-								participant.qrCode,
-							],
-							fuzzy: [participant.name],
-						},
-			),
-		[participants],
-	);
-	const filteredParticipants = useMemo(
-		() => searchParticipantIndex(participantSearchIndex, searchQuery),
-		[participantSearchIndex, searchQuery],
-	);
 	const participantAlertMap = useMemo<Record<string, ParticipantAlert[]>>(
 		() =>
 			sourceType === "legacy_csv"
@@ -293,6 +266,19 @@ export default function EventScreen() {
 		[participants, sourceType],
 	);
 
+	useEffect(() => {
+		if (!eventId) return;
+		participantStore.hydrate(eventId, sourceType, participants, participantAlertMap);
+	}, [eventId, sourceType, participants, participantAlertMap]);
+	const participantIds = useParticipantIds(eventId ?? "", sourceType);
+	const participantCounts = useParticipantCounts(eventId ?? "", sourceType);
+	const filteredParticipantIds = useMemo(
+		() => participantIds.length === 0
+			? participantIds
+			: participantStore.searchIds(eventId ?? "", sourceType, searchQuery),
+		[eventId, sourceType, searchQuery, participantIds],
+	);
+
 	const auditStatusByTicket = useMemo(() => {
 		const map = new Map<string, string>();
 		(auditQuery.data ?? []).forEach((a) => {
@@ -301,93 +287,40 @@ export default function EventScreen() {
 		return map;
 	}, [auditQuery.data]);
 
-	const auditConfirmedTicketIds = useMemo(() => {
-		const confirmed = new Set<string>();
-		auditStatusByTicket.forEach((status, ticketId) => {
-			if (status === "CONFIRMED" || status === "DUPLICATE") {
-				confirmed.add(ticketId);
-			}
-		});
-		return confirmed;
-	}, [auditStatusByTicket]);
-
-	const participantListRuntimeRef = useRef<ParticipantListRuntimeState>({
-		participantsById,
-		sourceType,
-		auditConfirmedTicketIds,
-		pendingTicketIds,
-		conflictTicketIds,
-		lockMap,
-		deviceId,
-		participantAlertMap,
-	});
-	participantListRuntimeRef.current = {
-		participantsById,
-		sourceType,
-		auditConfirmedTicketIds,
-		pendingTicketIds,
-		conflictTicketIds,
-		lockMap,
-		deviceId,
-		participantAlertMap,
-	};
-	const participantListExtraData = useMemo(
-		() => ({
-			sourceType,
-			auditConfirmedTicketIds,
-			pendingTicketIds,
-			conflictTicketIds,
-			lockMap,
-			deviceId,
-			participantAlertMap,
-		}),
-		[
-			sourceType,
-			auditConfirmedTicketIds,
-			pendingTicketIds,
-			conflictTicketIds,
-			lockMap,
-			deviceId,
-			participantAlertMap,
-		],
-	);
+	useEffect(() => {
+		if (!eventId) return;
+		for (const item of pendingQueueQuery.data ?? []) {
+			if (item.event_id !== eventId) continue;
+			const itemSource = item.source_type ?? "json_sync";
+			const entityId = itemSource === "legacy_csv" ? (item.participant_id ?? item.ticket_id) : item.ticket_id;
+			participantStore.setSyncStatus(eventId, itemSource, entityId, item.status ?? "pending", item.request_id);
+		}
+	}, [eventId, pendingQueueQuery.data]);
 
 	useEffect(() => {
 		if (!auditQuery.data?.length) return;
 		if (sourceType === "legacy_csv") return;
-		setConflictTicketIds((prev) => {
-			const next = new Set(prev);
-			auditStatusByTicket.forEach((status, ticketId) => {
-				if (status === "CONFIRMED" || status === "DUPLICATE") {
-					next.delete(ticketId);
-				}
-			});
-			return next;
+		auditStatusByTicket.forEach((status, ticketId) => {
+			if (status === "CONFIRMED" || status === "DUPLICATE") {
+				participantStore.setAuthoritativeCheckin(eventId ?? "", sourceType, ticketId, true);
+			}
 		});
-	}, [auditQuery.data, auditStatusByTicket, sourceType]);
+	}, [auditQuery.data, auditStatusByTicket, sourceType, eventId]);
 
-	const total = participants.length;
-	const confirmed = participants.filter((p) =>
-		sourceType === "legacy_csv"
-			? p.checkinDone
-			: p.checkinDone ||
-				auditConfirmedTicketIds.has((p as EventParticipant).ticketId),
-	).length;
+	const total = participantCounts.total;
+	const confirmed = participantCounts.confirmed;
 	const pending = total - confirmed;
 
 	const onQrScanned = useCallback(
 		({ data }: { data: string }) => {
+			if (qrScanInFlightRef.current) return;
+			qrScanInFlightRef.current = true;
 			const code = data.trim();
-			const participant = participants.find((p) => {
-				if (isLegacyParticipant(p)) {
-					return (
-						String(p.bibNumber) === code ||
-						p.cpf === code ||
-						qrValueMatches(code, [p.qrCode])
-					);
-				}
-				return qrValueMatches(code, [p.ticketId, p.sourceTicketId, p.qrCode]);
-			});
+			const key = getQrLookupValues(code)
+				.map((value) => participantStore.searchIds(eventId ?? "", sourceType, value)[0])
+				.find((value): value is string => value != null);
+			const snapshot = key ? participantStore.get(key) : null;
+			const participant = snapshot?.participant;
 			setShowQrScanner(false);
 			if (!participant) {
 				Alert.alert(
@@ -396,19 +329,15 @@ export default function EventScreen() {
 				);
 				return;
 			}
-			const participantKey = getParticipantKey(participant, sourceType);
-			const isConfirmed =
-				sourceType === "legacy_csv"
-					? participant.checkinDone
-					: auditConfirmedTicketIds.has(participantKey);
+			const isConfirmed = snapshot.authoritativeCheckin;
 			if (isConfirmed) {
-				setSelectedParticipant(participant);
+				setSelectedEntityKey(key ?? null);
 				return;
 			}
 			if (
 				deviceId != null &&
-				lockMap[participant.id] != null &&
-				lockMap[participant.id] !== deviceId
+				snapshot.lockDeviceId != null &&
+				snapshot.lockDeviceId !== deviceId
 			) {
 				Alert.alert(
 					"Em atendimento",
@@ -416,9 +345,9 @@ export default function EventScreen() {
 				);
 				return;
 			}
-			setSelectedParticipant(participant);
+			setSelectedEntityKey(key ?? null);
 		},
-		[participants, auditConfirmedTicketIds, lockMap, deviceId, sourceType],
+		[eventId, deviceId, sourceType],
 	);
 
 	const offlineNoticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -459,6 +388,7 @@ export default function EventScreen() {
 	}, [isReachable, reservedNumbers.length]);
 
 	const handleOpenQrScanner = useCallback(() => {
+		qrScanInFlightRef.current = false;
 		setShowQrScanner(true);
 	}, []);
 
@@ -512,114 +442,53 @@ export default function EventScreen() {
 		},
 	});
 
-	const handlePrimaryAction = useCallback((participantId: string) => {
-		const participant =
-			participantListRuntimeRef.current.participantsById.get(participantId);
-		if (!participant) return;
-		setSelectedParticipant(participant);
+	const handlePrimaryAction = useCallback((entityKey: string) => {
+		if (!participantStore.get(entityKey)) return;
+		setSelectedEntityKey(entityKey);
 	}, []);
 
-	const handleEdit = useCallback((participantId: string) => {
-		const runtime = participantListRuntimeRef.current;
-		const participant = runtime.participantsById.get(participantId);
-		if (!participant) return;
-		if (
-			participant.checkinDone ||
-			runtime.auditConfirmedTicketIds.has(
-				getParticipantKey(participant, runtime.sourceType),
-			)
-		) {
+	const handleEdit = useCallback((entityKey: string) => {
+		const snapshot = participantStore.get(entityKey);
+		if (!snapshot) return;
+		if (snapshot.authoritativeCheckin || snapshot.syncStatus === "pending" || snapshot.syncStatus === "sending") {
 			Alert.alert(
 				"Edição indisponível",
 				"Participante já confirmado não pode ser editado.",
 			);
 			return;
 		}
-		setEditingParticipant(participant);
+		setEditingParticipant(snapshot.participant);
 	}, []);
 
-	const selectedParticipantIsConfirmed =
-		selectedParticipant != null &&
-		(sourceType === "legacy_csv"
-			? selectedParticipant.checkinDone
-			: selectedParticipant.checkinDone ||
-				auditConfirmedTicketIds.has(
-					getParticipantKey(selectedParticipant, sourceType),
-				));
+	const selectedParticipantIsConfirmed = selectedSnapshot?.authoritativeCheckin ?? false;
 
 	const handleDismissConflict = useCallback((ticketId: string) => {
-		setConflictTicketIds((prev) => {
-			const next = new Set(prev);
-			next.delete(ticketId);
-			return next;
-		});
-	}, []);
+		participantStore.setSyncStatus(eventId ?? "", sourceType, ticketId, "idle", null);
+	}, [eventId, sourceType]);
 
 	const handleConfirmed = useCallback(() => {
-		if (selectedParticipant) {
-			queryClient.setQueryData<DisplayParticipant[]>(
-				["takeout-event-participants", eventId],
-				(current) =>
-					current?.map((item) =>
-						item.id === selectedParticipant.id
-							? { ...item, checkinDone: true }
-							: item,
-					),
-			);
-		}
-		setSelectedParticipant(null);
-	}, [selectedParticipant, queryClient, eventId]);
+		setSelectedEntityKey(null);
+	}, []);
 
 	const handleConflict = useCallback(
 		(ticketId: string) => {
-			setConflictTicketIds((prev) => new Set(prev).add(ticketId));
+			participantStore.setSyncStatus(eventId ?? "", sourceType, ticketId, "conflict", null);
 			auditQuery.refetch();
 		},
-		[auditQuery],
+		[auditQuery, eventId, sourceType],
 	);
 
-	const renderItem = useCallback(({ item }: { item: DisplayParticipant }) => {
-		const runtime = participantListRuntimeRef.current;
-		const participantKey = getParticipantKey(item, runtime.sourceType);
-		const isConfirmed =
-			runtime.sourceType === "legacy_csv"
-				? item.checkinDone
-				: item.checkinDone ||
-					runtime.auditConfirmedTicketIds.has(participantKey);
-		const isPendingSync =
-			runtime.sourceType === "legacy_csv"
-				? false
-				: runtime.pendingTicketIds.has(participantKey);
-		const isConflict = runtime.conflictTicketIds.has(participantKey);
-		const lockedByOther =
-			runtime.deviceId != null &&
-			runtime.lockMap[item.id] != null &&
-			runtime.lockMap[item.id] !== runtime.deviceId;
-		const alerts =
-			runtime.participantAlertMap[item.id] ?? EMPTY_PARTICIPANT_ALERTS;
-
+	const renderItem = useCallback(({ item }: { item: string }) => {
 		return (
-			<ParticipantListItem
-				id={item.id}
-				ticketId={participantKey}
-				name={item.name}
-				ticketLabel={
-					runtime.sourceType === "legacy_csv" && isLegacyParticipant(item)
-						? `${item.modality ?? "Legado"} #${item.bibNumber}`
-						: ((item as EventParticipant).sourceTicketId ??
-							(item as EventParticipant).ticketId)
-				}
-				isConfirmed={isConfirmed}
-				isPendingSync={isPendingSync}
-				isConflict={isConflict}
-				lockedByOther={lockedByOther}
-				alerts={alerts}
+			<ParticipantRow
+				entityKey={item}
+				deviceId={deviceId}
 				onPrimaryAction={handlePrimaryAction}
 				onEdit={handleEdit}
 				onDismissConflict={handleDismissConflict}
 			/>
 		);
-	}, []);
+	}, [deviceId, handlePrimaryAction, handleEdit, handleDismissConflict]);
 
 	if (!eventId) {
 		return (
@@ -754,7 +623,8 @@ export default function EventScreen() {
 					total={total}
 					confirmed={confirmed}
 					pending={pending}
-					pendingSync={sourceType === "legacy_csv" ? 0 : pendingTicketIds.size}
+					pendingSync={participantCounts.pendingSync}
+					conflicts={participantCounts.conflicts}
 				/>
 
 				{participantsQuery.isLoading ? (
@@ -770,36 +640,25 @@ export default function EventScreen() {
 						<Spinner size="large" />
 					</View>
 				) : (
-					<FlatList
-						data={filteredParticipants}
-						extraData={participantListExtraData}
+					<FlashList
+						data={filteredParticipantIds}
 						keyExtractor={participantKeyExtractor}
 						renderItem={renderItem}
 						contentContainerStyle={PARTICIPANT_LIST_CONTENT_STYLE}
 						ListEmptyComponent={EmptyList}
-						initialNumToRender={12}
-						maxToRenderPerBatch={10}
-						windowSize={7}
-						updateCellsBatchingPeriod={50}
-						removeClippedSubviews
 						keyboardShouldPersistTaps="handled"
 					/>
 				)}
 			</ScreenContainer>
 
 			<ConfirmTakeoutModal
-				visible={!!selectedParticipant}
+				visible={selectedEntityKey != null}
 				participant={selectedParticipant}
 				readOnly={selectedParticipantIsConfirmed}
-				alerts={
-					selectedParticipant
-						? (participantAlertMap[selectedParticipant.id] ??
-							EMPTY_PARTICIPANT_ALERTS)
-						: EMPTY_PARTICIPANT_ALERTS
-				}
+				alerts={selectedSnapshot?.alerts ? [...selectedSnapshot.alerts] : EMPTY_PARTICIPANT_ALERTS}
 				sourceType={sourceType}
 				eventId={eventId}
-				onClose={() => setSelectedParticipant(null)}
+				onClose={() => setSelectedEntityKey(null)}
 				onConfirmed={handleConfirmed}
 				onQueuedOffline={handleQueuedOffline}
 				onConflict={handleConflict}

@@ -4,8 +4,10 @@ import { Text, View } from "react-native";
 import { Button, Card } from "@/components/ui-tamagui";
 import { getParticipantListState } from "@/lib/participant-list-state";
 import type { ParticipantAlert } from "@/lib/takeout-api-types";
+import type { ParticipantSyncStatus } from "@/lib/participant-store";
 
 export type ParticipantListItemProps = {
+  entityKey: string;
   id: string;
   ticketId: string;
   name: string | null;
@@ -13,10 +15,11 @@ export type ParticipantListItemProps = {
   isConfirmed: boolean;
   isPendingSync: boolean;
   isConflict: boolean;
+  syncStatus?: ParticipantSyncStatus;
   lockedByOther: boolean;
   alerts?: ParticipantAlert[];
-  onPrimaryAction: (participantId: string) => void;
-  onEdit: (participantId: string) => void;
+  onPrimaryAction: (entityKey: string) => void;
+  onEdit: (entityKey: string) => void;
   onDismissConflict: (ticketId: string) => void;
 };
 
@@ -27,6 +30,7 @@ const statusColorMap = {
 } as const;
 
 function ParticipantListItemComponent({
+  entityKey,
   id,
   ticketId,
   name,
@@ -34,6 +38,7 @@ function ParticipantListItemComponent({
   isConfirmed,
   isPendingSync,
   isConflict,
+  syncStatus,
   lockedByOther,
   alerts = [],
   onPrimaryAction,
@@ -45,6 +50,7 @@ function ParticipantListItemComponent({
     lockedByOther,
     isConflict,
     isPendingSync,
+    syncStatus: syncStatus === "pending" || syncStatus === "sending" || syncStatus === "failed" ? syncStatus : null,
   });
 
   const statusColor =
@@ -57,7 +63,7 @@ function ParticipantListItemComponent({
           : "#111827";
 
   const initials =
-    name != null && name.trim()
+    name?.trim()
       ? name
           .split(" ")
           .slice(0, 2)
@@ -146,14 +152,14 @@ function ParticipantListItemComponent({
             <Button
               testID={`participant-edit-${id}`}
               variant="outline"
-              onPress={() => onEdit(id)}
+              onPress={() => onEdit(entityKey)}
               isDisabled={isConfirmed || state.primaryActionDisabled}
             >
               Editar
             </Button>
             <Button
               testID={`participant-confirm-${id}`}
-              onPress={() => onPrimaryAction(id)}
+              onPress={() => onPrimaryAction(entityKey)}
               isDisabled={state.primaryActionDisabled}
             >
               {state.primaryActionLabel}

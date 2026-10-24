@@ -54,11 +54,24 @@ describe("participant-list-state", () => {
       isPendingSync: true,
     });
 
-    expect(state.statusLabel).toBe("Pendente");
+    expect(state.statusLabel).toBe("Registrado neste aparelho — aguardando sincronização");
     expect(state.statusTone).toBe("warning");
-    expect(state.primaryActionLabel).toBe("Pendente");
+    expect(state.primaryActionLabel).toBe("Registrado localmente");
     expect(state.primaryActionDisabled).toBe(true);
     expect(state.showDismissConflict).toBe(false);
+  });
+
+  it("distinguishes an in-flight operation from one waiting locally", () => {
+    const state = getParticipantListState({
+      isConfirmed: false,
+      lockedByOther: false,
+      isConflict: false,
+      isPendingSync: true,
+      syncStatus: "sending",
+    });
+
+    expect(state.statusLabel).toBe("Sincronizando com o desktop");
+    expect(state.primaryActionLabel).toBe("Sincronizando");
   });
 
   it("returns default state when no flags are active", () => {

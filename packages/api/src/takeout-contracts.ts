@@ -9,7 +9,19 @@ export const syncCommandSchema = z.object({
   operationId: z.string().uuid(),
   eventId: z.string().min(1),
   action: z.enum(["confirm_checkin", "undo_checkin"]),
-  payload: z.object({ ticketId: z.string().min(1), payloadJson: z.string().max(20_000).optional() }),
+  payload: z.object({
+    sourceType: z.enum(["json_sync", "legacy_csv"]).default("json_sync"),
+    ticketId: z.string().min(1).optional(),
+    participantId: z.string().min(1).optional(),
+    payloadJson: z.string().max(20_000).optional(),
+  }),
+}).superRefine((command, context) => {
+  if (command.payload.sourceType === "legacy_csv" && !command.payload.participantId) {
+    context.addIssue({ code: "custom", path: ["payload", "participantId"], message: "participantId is required for legacy_csv" });
+  }
+  if (command.payload.sourceType === "json_sync" && !command.payload.ticketId) {
+    context.addIssue({ code: "custom", path: ["payload", "ticketId"], message: "ticketId is required for json_sync" });
+  }
 });
 export const syncHelloSchema = z.object({
   type: z.literal("connection.hello"), protocolVersion: z.literal(1), token: z.string().uuid(), deviceId: z.string().min(1).max(128),
@@ -225,9 +237,11 @@ export type AuditEvent = {
 };
 
 export type WsTakeoutMessage =
-  | { type: "connection.ready"; protocolVersion: number; deviceId: string }
+  | { type: "connection.ready"; protocolVersion: number; deviceId: string; serverInstanceId?: string }
   | { type: "connection.heartbeat"; sentAt: number }
   | { type: "sync.completed"; eventId: string; latestSeq: number }
+  | { type: "command.ack"; operationId: string; status: string; duplicate?: boolean }
+  | { type: "command.rejected"; operationId: string; entityId?: string; reason: string; existingOperationId?: string }
   | {
       type: "participant_checked_in";
       ticket_id?: string;

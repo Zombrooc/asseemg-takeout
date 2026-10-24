@@ -5,6 +5,7 @@ type Props = {
   confirmed: number;
   pending: number;
   pendingSync?: number;
+  conflicts?: number;
 };
 
 export function SummaryStats({
@@ -12,6 +13,7 @@ export function SummaryStats({
   confirmed,
   pending,
   pendingSync = 0,
+  conflicts = 0,
 }: Props) {
   return (
     <View
@@ -85,6 +87,22 @@ export function SummaryStats({
         >
           <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}>{pendingSync}</Text>
           <Text style={{ color: "#6b7280", fontSize: 12, marginTop: 2 }}>Sync</Text>
+        </View>
+      ) : null}
+      {conflicts > 0 ? (
+        <View
+          style={{
+            borderRadius: 8,
+            padding: 12,
+            backgroundColor: "rgba(220,38,38,0.1)",
+            borderWidth: 1,
+            borderColor: "rgba(220,38,38,0.25)",
+            alignSelf: "center",
+            overflow: "hidden",
+          }}
+        >
+          <Text style={{ fontSize: 14, fontWeight: "600", color: "#dc2626" }}>{conflicts}</Text>
+          <Text style={{ color: "#6b7280", fontSize: 12, marginTop: 2 }}>Conflitos</Text>
         </View>
       ) : null}
     </View>

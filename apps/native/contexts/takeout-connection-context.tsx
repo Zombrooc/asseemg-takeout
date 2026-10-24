@@ -1,10 +1,12 @@
 import { env } from "@pickup/env/native";
 import * as SecureStore from "expo-secure-store";
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type React from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 
 import { createTakeoutClient } from "@/lib/takeout-api";
 import type { TakeoutApi } from "@/lib/takeout-api";
+import { takeoutSyncManager, type TakeoutSyncManager } from "@/lib/takeout-sync-manager";
 
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
 
@@ -13,14 +15,6 @@ const KEYS = {
   accessToken: "takeout_access_token",
   deviceId: "takeout_device_id",
 } as const;
-
-function generateDeviceId(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
 
 type ConnectionState = {
   baseUrl: string | null;
@@ -36,6 +30,7 @@ type TakeoutConnectionContextValue = ConnectionState & {
   clearConnection: () => Promise<void>;
   checkReachability: () => Promise<void>;
   api: TakeoutApi | null;
+  syncManager: TakeoutSyncManager;
   defaultBaseUrl: string;
 };
 
@@ -44,6 +39,7 @@ const defaultBaseUrl = env.EXPO_PUBLIC_SERVER_URL.replace(/\/$/, "");
 const TakeoutConnectionContext = createContext<TakeoutConnectionContextValue | null>(null);
 
 export function TakeoutConnectionProvider({ children }: { children: React.ReactNode }) {
+  const syncManager = takeoutSyncManager;
   const [state, setState] = useState<ConnectionState>({
     baseUrl: null,
     accessToken: null,
@@ -99,7 +95,7 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
     checkReachability();
     const id = setInterval(checkReachability, HEALTH_CHECK_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [state.isPaired, state.baseUrl]);
+  }, [state.isPaired, state.baseUrl, checkReachability]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
@@ -156,6 +152,15 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
     });
   }, [state.baseUrl, state.accessToken, state.deviceId]);
 
+  useEffect(() => {
+    syncManager.configure(
+      state.baseUrl && state.accessToken && state.deviceId
+        ? { baseUrl: state.baseUrl, accessToken: state.accessToken, deviceId: state.deviceId }
+        : null,
+    );
+    return () => syncManager.configure(null);
+  }, [state.baseUrl, state.accessToken, state.deviceId]);
+
   const value = useMemo<TakeoutConnectionContextValue>(
     () => ({
       ...state,
@@ -163,6 +168,7 @@ export function TakeoutConnectionProvider({ children }: { children: React.ReactN
       clearConnection,
       checkReachability,
       api,
+      syncManager,
       defaultBaseUrl,
     }),
     [state, setConnection, clearConnection, checkReachability, api]

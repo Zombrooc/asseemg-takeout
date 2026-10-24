@@ -109,6 +109,7 @@ export const SCHEMA_SQL = `
 PRAGMA foreign_keys = ON;
 PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS pairing_tokens (token TEXT PRIMARY KEY, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS authority_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS paired_devices (device_id TEXT PRIMARY KEY, access_token TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL, operator_alias TEXT);
 CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, name TEXT, start_date TEXT, end_date TEXT, start_time TEXT, imported_at TEXT NOT NULL, source_type TEXT NOT NULL DEFAULT 'json_sync', archived_at TEXT);
 CREATE TABLE IF NOT EXISTS takeout_events (id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL UNIQUE, ticket_id TEXT NOT NULL, device_id TEXT NOT NULL, status TEXT NOT NULL, payload_json TEXT, created_at TEXT NOT NULL, source_type TEXT, event_id TEXT, participant_id TEXT, participant_name TEXT, birth_date TEXT, age_at_checkin INTEGER, ticket_source_id TEXT, ticket_name TEXT, ticket_code TEXT, operator_alias TEXT, operator_device_id TEXT, checked_in_at TEXT);

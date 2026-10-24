@@ -6,20 +6,23 @@ import {
 
 jest.mock("@/lib/storage/takeout-outbox", () => ({
   getReadyOperations: jest.fn(),
+  getActiveOperations: jest.fn(),
   enqueueCheckin: jest.fn(),
   acknowledgeOperation: jest.fn(),
   pendingOperationCount: jest.fn(),
   rejectOperation: jest.fn(),
+  failOperation: jest.fn(),
   retryOperation: jest.fn(),
 }));
 const outbox = jest.requireMock("@/lib/storage/takeout-outbox") as {
-  getReadyOperations: jest.Mock; enqueueCheckin: jest.Mock; acknowledgeOperation: jest.Mock;
+  getReadyOperations: jest.Mock; getActiveOperations: jest.Mock; enqueueCheckin: jest.Mock; acknowledgeOperation: jest.Mock;
 };
 
 describe("takeout-queue", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     outbox.getReadyOperations.mockResolvedValue([]);
+    outbox.getActiveOperations.mockResolvedValue([]);
   });
 
   describe("getPendingQueue", () => {
@@ -29,7 +32,7 @@ describe("takeout-queue", () => {
     });
 
     it("projects durable operations without using AsyncStorage", async () => {
-      outbox.getReadyOperations.mockResolvedValue([{ operationId: "r1", eventId: "e1", entityId: "p1", action: "confirm_checkin", payload: { ticket_id: "T1", device_id: "d1" }, sourceType: "json_sync", status: "pending", attempts: 0, createdAt: 0, nextRetryAt: 0 }]);
+      outbox.getActiveOperations.mockResolvedValue([{ operationId: "r1", eventId: "e1", entityId: "p1", action: "confirm_checkin", payload: { ticket_id: "T1", device_id: "d1" }, sourceType: "json_sync", status: "pending", attempts: 0, createdAt: 0, nextRetryAt: 0 }]);
       const list = await getPendingQueue();
       expect(list[0]).toMatchObject({ request_id: "r1", ticket_id: "T1", device_id: "d1" });
     });
@@ -49,7 +52,7 @@ describe("takeout-queue", () => {
   describe("removeFromQueue", () => {
     it("acknowledges the durable operation instead of deleting intent", async () => {
       const operation = { operationId: "r1" };
-      outbox.getReadyOperations.mockResolvedValue([operation]);
+      outbox.getActiveOperations.mockResolvedValue([operation]);
       await removeFromQueue("r1");
       expect(outbox.acknowledgeOperation).toHaveBeenCalledWith(operation);
     });

@@ -1,16 +1,13 @@
 import type { WsTakeoutMessage } from "@pickup/api/takeout-contracts";
 import { useQueryClient } from "@tanstack/react-query";
 import { normalizeDateOnly } from "@/lib/format-date";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { participantStore } from "@/lib/participant-store";
+import { takeoutSyncManager } from "@/lib/takeout-sync-manager";
+import { useEffect } from "react";
 
 const INITIAL_RECONNECT_DELAY_MS = 1_500;
 const MAX_RECONNECT_DELAY_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 90_000;
-
-function wsUrl(baseUrl: string): string {
-  const base = baseUrl.replace(/^http/, "ws").replace(/\/$/, "");
-  return `${base}/ws`;
-}
 
 /** participantId -> deviceId being handled */
 export type LockMap = Record<string, string>;
@@ -181,110 +178,21 @@ export function useTakeoutRealtime(
   accessToken: string | null,
 ): { lockMap: LockMap } {
   const queryClient = useQueryClient();
-  const [lockMap, setLockMap] = useState<LockMap>({});
-  const locksRef = useRef<Record<string, LockEntry>>({});
-
-  const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lockExpiryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastSeqRef = useRef<number | null>(null);
-
-  const setLockMapRef = useRef(setLockMap);
-  setLockMapRef.current = setLockMap;
-
-  const updateLockMap = useCallback((updater: (prev: LockMap) => LockMap) => {
-    setLockMapRef.current(updater);
-  }, []);
+  const syncManager = takeoutSyncManager;
 
   useEffect(() => {
     if (!eventId || !baseUrl || !deviceId || !accessToken) return;
-    lastSeqRef.current = null;
-    locksRef.current = {};
-    setLockMap({});
-
-    let isActive = true;
-    let ws: WebSocket | null = null;
-
-    const clearTimers = () => {
-      if (reconnectTimerRef.current != null) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      if (heartbeatTimerRef.current != null) {
-        clearTimeout(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = null;
-      }
-      if (lockExpiryTimerRef.current != null) {
-        clearInterval(lockExpiryTimerRef.current);
-        lockExpiryTimerRef.current = null;
-      }
-    };
-
-    const resetHeartbeatTimer = () => {
-      if (heartbeatTimerRef.current != null) {
-        clearTimeout(heartbeatTimerRef.current);
-      }
-      heartbeatTimerRef.current = setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.close();
-        }
-      }, HEARTBEAT_TIMEOUT_MS);
-    };
-
-    const scheduleReconnect = () => {
-      if (!isActive || reconnectTimerRef.current != null) return;
-      const delay = reconnectDelayRef.current;
-      reconnectTimerRef.current = setTimeout(() => {
-        reconnectTimerRef.current = null;
-        if (isActive) connect();
-      }, delay);
-      reconnectDelayRef.current = nextReconnectDelay(reconnectDelayRef.current);
-    };
-
-    const connect = () => {
-      const lastSeq = lastSeqRef.current ?? 0;
-      ws = new WebSocket(wsUrl(baseUrl));
-      if (__DEV__) {
-        console.log("[ws.mobile] connect", { eventId, baseUrl, lastSeq });
-      }
-      resetHeartbeatTimer();
-
-      ws.onopen = () => {
-        if (__DEV__) {
-          console.log("[ws.mobile] open", { eventId, baseUrl });
-        }
-        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-        ws?.send(JSON.stringify({ type: "connection.hello", protocolVersion: 1, token: accessToken, deviceId }));
-        resetHeartbeatTimer();
-      };
-
-      ws.onmessage = (event) => {
-        resetHeartbeatTimer();
-        const data = parseRealtimeMessageData(event.data);
-        if (data == null) return;
-        if (data.type === "connection.ready") {
-          ws?.send(JSON.stringify({ type: "sync.subscribe", eventId, lastSeq }));
-          return;
-        }
-        if (data.type === "heartbeat" || data.type === "connection.heartbeat") return;
+    return syncManager.subscribe(eventId, async (data) => {
         const seq = getMessageSeq(data);
-        if (seq != null && data.type !== "lock_snapshot" && lastSeqRef.current != null && seq <= lastSeqRef.current) return;
-        if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
-          lastSeqRef.current = seq;
-        }
-
-        if (__DEV__) {
-          console.log("[ws.mobile] message", {
-            eventId,
-            type: data.type,
-            seq,
-          });
-        }
-
         if (data.type === "lock_acquired" || data.type === "lock_renewed" || data.type === "lock_snapshot" || data.type === "lock_released") {
-          locksRef.current = expireLocks(applyLockEvent(locksRef.current, data));
-          setLockMap(Object.fromEntries(Object.entries(locksRef.current).map(([id, lock]) => [id, lock.deviceId])));
+          const released = data.type === "lock_released";
+          participantStore.setLockForParticipant(
+            eventId,
+            data.participant_id,
+            released ? null : data.device_id,
+            released ? null : data.expires_at,
+            data.seq,
+          );
           return;
         }
         const invalidation = getRealtimeInvalidation(data);
@@ -293,13 +201,30 @@ export function useTakeoutRealtime(
         }
         if (invalidation.invalidateParticipants) {
           if (data.type === "participant_checked_in" || data.type === "participant_checkin_reverted") {
-            queryClient.setQueryData(["takeout-event-participants", eventId], (participants: unknown) =>
-              Array.isArray(participants) ? applyParticipantCheckinPatch(participants, data, data.type === "participant_checked_in") : participants,
-            );
+            const sourceType = data.source_type === "legacy_csv" ? "legacy_csv" : "json_sync";
+            const entityId = sourceType === "legacy_csv" ? data.participant_id : data.ticket_id;
+            if (entityId) participantStore.setAuthoritativeCheckin(eventId, sourceType, entityId, data.type === "participant_checked_in", seq ?? 0);
           } else if (data.type === "participant_updated") {
-            queryClient.setQueryData(["takeout-event-participants", eventId], (participants: unknown) =>
-              Array.isArray(participants) ? applyParticipantUpdatePatch(participants, data) : participants,
-            );
+            const sourceType = data.source_type === "legacy_csv" ? "legacy_csv" : "json_sync";
+            const entityId = sourceType === "legacy_csv" ? data.participant_id : data.ticket_id;
+            if (entityId) {
+              const patch = data.participant
+                ? data.participant
+                : {
+                    ...(data.name !== undefined ? { name: data.name } : {}),
+                    ...(data.cpf !== undefined ? { cpf: data.cpf } : {}),
+                    ...(data.birthDate !== undefined ? { birthDate: normalizeDateOnly(data.birthDate) } : {}),
+                    ...(data.shirtSize !== undefined ? { shirtSize: data.shirtSize } : {}),
+                    ...(data.team !== undefined ? { team: data.team } : {}),
+                    ...(data.modality !== undefined ? { modality: data.modality } : {}),
+                    ...(data.ticketName !== undefined ? { ticketName: data.ticketName } : {}),
+                  };
+              if (data.participant) {
+                participantStore.upsertParticipant(eventId, sourceType, data.participant, seq ?? 0);
+              } else {
+                participantStore.patchParticipant(eventId, sourceType, entityId, patch, seq ?? 0);
+              }
+            }
           } else {
             queryClient.invalidateQueries({ queryKey: ["takeout-event-participants", eventId] });
           }
@@ -308,32 +233,10 @@ export function useTakeoutRealtime(
           }
           return;
         }
-      };
+      });
+  }, [eventId, baseUrl, deviceId, accessToken, queryClient]);
 
-      ws.onerror = () => {};
-      ws.onclose = () => {
-        if (__DEV__) {
-          console.log("[ws.mobile] close", { eventId, baseUrl });
-        }
-        if (!isActive) return;
-        scheduleReconnect();
-      };
-    };
-
-    connect();
-    lockExpiryTimerRef.current = setInterval(() => {
-      locksRef.current = expireLocks(locksRef.current);
-      setLockMap(Object.fromEntries(Object.entries(locksRef.current).map(([id, lock]) => [id, lock.deviceId])));
-    }, 1000);
-
-    return () => {
-      isActive = false;
-      clearTimers();
-      if (ws != null) ws.close();
-    };
-  }, [eventId, baseUrl, deviceId, accessToken, queryClient, updateLockMap]);
-
-  return { lockMap };
+  return { lockMap: {} };
 }
 
 /** WS channel for desktop event list changes (archive/delete/unarchive). */
@@ -345,100 +248,16 @@ export const EVENTS_LIST_CHANNEL = "_events";
  */
 export function useEventsListRealtime(baseUrl: string | null, deviceId: string | null, accessToken: string | null): void {
   const queryClient = useQueryClient();
-  const reconnectDelayRef = useRef(INITIAL_RECONNECT_DELAY_MS);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const heartbeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSeqRef = useRef<number | null>(null);
+  const syncManager = takeoutSyncManager;
 
   useEffect(() => {
     if (!baseUrl || !deviceId || !accessToken) return;
-
-    let isActive = true;
-    let ws: WebSocket | null = null;
-
-    const clearTimers = () => {
-      if (reconnectTimerRef.current != null) {
-        clearTimeout(reconnectTimerRef.current);
-        reconnectTimerRef.current = null;
-      }
-      if (heartbeatTimerRef.current != null) {
-        clearTimeout(heartbeatTimerRef.current);
-        heartbeatTimerRef.current = null;
-      }
-    };
-
-    const resetHeartbeatTimer = () => {
-      if (heartbeatTimerRef.current != null) clearTimeout(heartbeatTimerRef.current);
-      heartbeatTimerRef.current = setTimeout(() => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.close();
-        }
-      }, HEARTBEAT_TIMEOUT_MS);
-    };
-
-    const scheduleReconnect = () => {
-      if (!isActive || reconnectTimerRef.current != null) return;
-      const delay = reconnectDelayRef.current;
-      reconnectTimerRef.current = setTimeout(() => {
-        reconnectTimerRef.current = null;
-        if (isActive) connect();
-      }, delay);
-      reconnectDelayRef.current = nextReconnectDelay(reconnectDelayRef.current);
-    };
-
-    const connect = () => {
-      const lastSeq = lastSeqRef.current ?? 0;
-      ws = new WebSocket(wsUrl(baseUrl));
-      if (__DEV__) {
-        console.log("[ws.mobile.events] connect", { baseUrl, lastSeq });
-      }
-      resetHeartbeatTimer();
-
-      ws.onopen = () => {
-        if (__DEV__) {
-          console.log("[ws.mobile.events] open", { baseUrl });
-        }
-        reconnectDelayRef.current = INITIAL_RECONNECT_DELAY_MS;
-        ws?.send(JSON.stringify({ type: "connection.hello", protocolVersion: 1, token: accessToken, deviceId }));
-        resetHeartbeatTimer();
-      };
-
-      ws.onmessage = (event) => {
-        resetHeartbeatTimer();
-        const data = parseRealtimeMessageData(event.data);
-        if (data == null) return;
-        if (data.type === "connection.ready") { ws?.send(JSON.stringify({ type: "sync.subscribe", eventId: EVENTS_LIST_CHANNEL, lastSeq })); return; }
-        if (data.type === "heartbeat" || data.type === "connection.heartbeat") return;
-        const seq = getMessageSeq(data);
-        if (seq != null && (lastSeqRef.current == null || seq > lastSeqRef.current)) {
-          lastSeqRef.current = seq;
-        }
-        if (__DEV__) {
-          console.log("[ws.mobile.events] message", { type: data.type, seq });
-        }
+    return syncManager.subscribe(EVENTS_LIST_CHANNEL, (data) => {
         const invalidation = getRealtimeInvalidation(data);
         if (invalidation.invalidateEvents) {
           queryClient.invalidateQueries({ queryKey: ["takeout-events"] });
         }
-      };
-
-      ws.onerror = () => {};
-      ws.onclose = () => {
-        if (__DEV__) {
-          console.log("[ws.mobile.events] close", { baseUrl });
-        }
-        if (!isActive) return;
-        scheduleReconnect();
-      };
-    };
-
-    connect();
-
-    return () => {
-      isActive = false;
-      clearTimers();
-      if (ws != null) ws.close();
-    };
+      });
   }, [baseUrl, deviceId, accessToken, queryClient]);
 }
 

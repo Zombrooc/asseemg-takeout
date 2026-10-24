@@ -31,7 +31,7 @@ describe("confirm-takeout-modal alerts", () => {
 
     expect(source).toContain("readOnly?: boolean;");
     expect(source).toContain('{readOnly ? "Dados do participante" : "Confirmar check-in"}');
-    expect(source).toContain("if (readOnly || !participant || !api || !deviceId) return;");
+    expect(source).toContain("if (readOnly || !participant || !deviceId) return;");
     expect(source).toContain("{!readOnly ? (");
   });
 });

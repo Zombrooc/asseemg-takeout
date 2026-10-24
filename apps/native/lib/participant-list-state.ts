@@ -3,6 +3,7 @@ export type ParticipantListStateInput = {
   lockedByOther: boolean;
   isConflict: boolean;
   isPendingSync: boolean;
+  syncStatus?: "pending" | "sending" | "failed" | null;
 };
 
 export type ParticipantListStateTone = "success" | "warning" | "danger" | null;
@@ -46,11 +47,31 @@ export function getParticipantListState(input: ParticipantListStateInput): Parti
     };
   }
 
+  if (input.syncStatus === "failed") {
+    return {
+      statusLabel: "Falha de sincronização — requer intervenção",
+      statusTone: "danger",
+      primaryActionLabel: "Falha de sincronização",
+      primaryActionDisabled: true,
+      showDismissConflict: false,
+    };
+  }
+
+  if (input.syncStatus === "sending") {
+    return {
+      statusLabel: "Sincronizando com o desktop",
+      statusTone: "warning",
+      primaryActionLabel: "Sincronizando",
+      primaryActionDisabled: true,
+      showDismissConflict: false,
+    };
+  }
+
   if (input.isPendingSync) {
     return {
-      statusLabel: "Pendente",
+      statusLabel: "Registrado neste aparelho — aguardando sincronização",
       statusTone: "warning",
-      primaryActionLabel: "Pendente",
+      primaryActionLabel: "Registrado localmente",
       primaryActionDisabled: true,
       showDismissConflict: false,
     };

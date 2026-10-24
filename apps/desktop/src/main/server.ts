@@ -423,6 +423,55 @@ function appendEvent(
 	return { eventId, message: { ...payload, type, event_id: eventId, seq: Number(result.lastInsertRowid) } };
 }
 
+type AuthorityIdentity = { deviceId: string; operatorAlias: string | null };
+type ConfirmResult =
+	| { kind: "ack"; status: "CONFIRMED" | "DUPLICATE"; duplicate: boolean; outbound: { eventId: string; message: object } | null }
+	| { kind: "conflict"; entityId: string; existingOperationId: string }
+	| { kind: "invalid"; reason: "TICKET_NOT_FOUND" | "PARTICIPANT_NOT_FOUND" | "IDEMPOTENCY_PAYLOAD_MISMATCH" };
+
+function confirmJsonCheckin(
+	db: SqliteDatabase,
+	input: { operationId: string; ticketId: string; payloadJson?: string | null; identity: AuthorityIdentity },
+): ConfirmResult {
+	const existing = db.prepare("SELECT status,ticket_id,payload_json FROM takeout_events WHERE request_id=?").get(input.operationId) as { status: string; ticket_id: string; payload_json: string | null } | undefined;
+	if (existing) return existing.ticket_id === input.ticketId && existing.payload_json === (input.payloadJson ?? null)
+		? { kind: "ack", status: "DUPLICATE", duplicate: true, outbound: null }
+		: { kind: "invalid", reason: "IDEMPOTENCY_PAYLOAD_MISMATCH" };
+	const checked = db.prepare("SELECT request_id FROM check_ins WHERE ticket_id=?").get(input.ticketId) as { request_id: string } | undefined;
+	if (checked) return { kind: "conflict", entityId: input.ticketId, existingOperationId: checked.request_id };
+	const ticket = db.prepare("SELECT p.event_id, p.id participant_id, p.name participant_name, p.birth_date, t.code ticket_code FROM tickets t LEFT JOIN participants p ON p.id=t.participant_id WHERE t.id=?").get(input.ticketId) as { event_id: string | null; participant_id: string | null; participant_name: string | null; birth_date: string | null; ticket_code: string | null } | undefined;
+	if (!ticket?.event_id) return { kind: "invalid", reason: "TICKET_NOT_FOUND" };
+	const timestamp = nowIso();
+	const outbound: { current: { eventId: string; message: object } | null } = { current: null };
+	db.transaction(() => {
+		db.prepare("INSERT INTO check_ins (ticket_id, request_id, device_id, created_at) VALUES (?, ?, ?, ?)").run(input.ticketId, input.operationId, input.identity.deviceId, timestamp);
+		db.prepare("INSERT INTO takeout_events (request_id,ticket_id,device_id,status,payload_json,created_at,source_type,event_id,participant_id,participant_name,birth_date,age_at_checkin,ticket_code,operator_alias,operator_device_id,checked_in_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(input.operationId, input.ticketId, input.identity.deviceId, "CONFIRMED", input.payloadJson ?? null, timestamp, "json_sync", ticket.event_id, ticket.participant_id, ticket.participant_name, ticket.birth_date, computeAge(ticket.birth_date), ticket.ticket_code, input.identity.operatorAlias, input.identity.deviceId, timestamp);
+		outbound.current = appendEvent(db, ticket.event_id as string, "participant_checked_in", { ticket_id: input.ticketId, participant_id: ticket.participant_id, device_id: input.identity.deviceId, request_id: input.operationId, source_type: "json_sync" });
+	})();
+	return { kind: "ack", status: "CONFIRMED", duplicate: false, outbound: outbound.current };
+}
+
+function confirmLegacyCheckin(
+	db: SqliteDatabase,
+	input: { operationId: string; eventId: string; participantId: string; payloadJson?: string | null; identity: AuthorityIdentity },
+): ConfirmResult {
+	const existing = db.prepare("SELECT status,participant_id,event_id,payload_json FROM legacy_checkins WHERE request_id=?").get(input.operationId) as { status: string; participant_id: string; event_id: string; payload_json: string | null } | undefined;
+	if (existing) return existing.participant_id === input.participantId && existing.event_id === input.eventId && existing.payload_json === (input.payloadJson ?? null)
+		? { kind: "ack", status: "DUPLICATE", duplicate: true, outbound: null }
+		: { kind: "invalid", reason: "IDEMPOTENCY_PAYLOAD_MISMATCH" };
+	const checked = db.prepare("SELECT request_id FROM legacy_checkins WHERE event_id=? AND participant_id=? AND status='CONFIRMED'").get(input.eventId, input.participantId) as { request_id: string } | undefined;
+	if (checked) return { kind: "conflict", entityId: input.participantId, existingOperationId: checked.request_id };
+	const participant = db.prepare("SELECT full_name,birth_date_iso FROM legacy_participants WHERE id=? AND event_id=?").get(input.participantId, input.eventId) as { full_name: string; birth_date_iso: string } | undefined;
+	if (!participant) return { kind: "invalid", reason: "PARTICIPANT_NOT_FOUND" };
+	const timestamp = nowIso();
+	const outbound: { current: { eventId: string; message: object } | null } = { current: null };
+	db.transaction(() => {
+		db.prepare("INSERT INTO legacy_checkins (request_id,event_id,participant_id,device_id,status,payload_json,created_at,source_type,participant_name,birth_date,age_at_checkin,operator_alias,operator_device_id,checked_in_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(input.operationId, input.eventId, input.participantId, input.identity.deviceId, "CONFIRMED", input.payloadJson ?? null, timestamp, "legacy_csv", participant.full_name, participant.birth_date_iso, computeAge(participant.birth_date_iso), input.identity.operatorAlias, input.identity.deviceId, timestamp);
+		outbound.current = appendEvent(db, input.eventId, "participant_checked_in", { participant_id: input.participantId, device_id: input.identity.deviceId, request_id: input.operationId, source_type: "legacy_csv" });
+	})();
+	return { kind: "ack", status: "CONFIRMED", duplicate: false, outbound: outbound.current };
+}
+
 function participantEventId(db: SqliteDatabase, participantId: string): string | null {
 	const row = db.prepare("SELECT event_id FROM participants WHERE id=? UNION ALL SELECT event_id FROM legacy_participants WHERE id=? LIMIT 1").get(participantId, participantId) as { event_id?: string } | undefined;
 	return row?.event_id ?? null;
@@ -579,6 +628,9 @@ export function createTakeoutServer({
 	db,
 	baseUrl,
 }: ServerOptions): TakeoutServer {
+	const storedInstance = db.prepare("SELECT value FROM authority_metadata WHERE key='server_instance_id'").get() as { value: string } | undefined;
+	const serverInstanceId = storedInstance?.value ?? randomUUID();
+	if (!storedInstance) db.prepare("INSERT INTO authority_metadata(key,value) VALUES('server_instance_id',?)").run(serverInstanceId);
 	const configuredBaseUrl = baseUrl;
 	const currentBaseUrl = () => configuredBaseUrl ?? pairingUrlBase();
 	const app = express();
@@ -849,70 +901,11 @@ export function createTakeoutServer({
 			return error(res, 400, "request_id and ticket_id are required", "FAILED");
 		const identity = getAuthenticatedIdentity(db, req);
 		if (!identity) return error(res, 401, "authenticated device required", "UNAUTHENTICATED");
-		const existing = db
-			.prepare("SELECT status FROM takeout_events WHERE request_id=?")
-			.get(requestId) as { status: string } | undefined;
-		if (existing) return json(res, 200, { status: "DUPLICATE" });
-		const checked = db
-			.prepare("SELECT request_id FROM check_ins WHERE ticket_id=?")
-			.get(ticketId) as { request_id: string } | undefined;
-		if (checked)
-			return json(res, 409, {
-				status: "CONFLICT",
-				existing_request_id: checked.request_id,
-				ticket_id: ticketId,
-			});
-		const ticket = db
-			.prepare(
-			"SELECT p.event_id, p.id participant_id, p.name participant_name, p.birth_date, t.code ticket_code, t.raw_json FROM tickets t LEFT JOIN participants p ON p.id=t.participant_id WHERE t.id=?",
-			)
-			.get(ticketId) as
-			| {
-					event_id: string | null;
-					participant_id: string | null;
-					participant_name: string | null;
-					birth_date: string | null;
-					ticket_code: string | null;
-					raw_json: string | null;
-			  }
-			| undefined;
-		const timestamp = nowIso();
-		const outbound: { current: { eventId: string; message: object } | null } = { current: null };
-		db.transaction(() => {
-			db.prepare(
-				"INSERT INTO check_ins (ticket_id, request_id, device_id, created_at) VALUES (?, ?, ?, ?)",
-			).run(ticketId, requestId, identity.deviceId, timestamp);
-			db.prepare(
-				"INSERT INTO takeout_events (request_id,ticket_id,device_id,status,payload_json,created_at,source_type,event_id,participant_id,participant_name,birth_date,age_at_checkin,ticket_code,operator_alias,operator_device_id,checked_in_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-			).run(
-				requestId,
-				ticketId,
-				identity.deviceId,
-				"CONFIRMED",
-				payload.payload_json ?? null,
-				timestamp,
-				"json_sync",
-				ticket?.event_id ?? null,
-				ticket?.participant_id ?? null,
-				ticket?.participant_name ?? null,
-				ticket?.birth_date ?? null,
-				computeAge(ticket?.birth_date),
-				ticket?.ticket_code ?? null,
-				identity.operatorAlias,
-				identity.deviceId,
-				timestamp,
-			);
-			if (ticket?.event_id)
-				outbound.current = appendEvent(db, ticket.event_id, "participant_checked_in", {
-					ticket_id: ticketId,
-					participant_id: ticket.participant_id,
-					device_id: identity.deviceId,
-					request_id: requestId,
-					source_type: "json_sync",
-				});
-		})();
-		if (outbound.current) broadcast(clients, outbound.current.eventId, outbound.current.message);
-		return json(res, 200, { status: "CONFIRMED" });
+		const result = confirmJsonCheckin(db, { operationId: requestId, ticketId, payloadJson: payload.payload_json, identity });
+		if (result.kind === "invalid") return error(res, result.reason === "TICKET_NOT_FOUND" ? 404 : 409, result.reason, result.reason);
+		if (result.kind === "conflict") return json(res, 409, { status: "CONFLICT", existing_request_id: result.existingOperationId, ticket_id: result.entityId });
+		if (result.outbound) broadcast(clients, result.outbound.eventId, result.outbound.message);
+		return json(res, 200, { status: result.status });
 	});
 	app.post("/takeout/undo", (req, res) => {
 		const payload = req.body ?? {};
@@ -1449,32 +1442,41 @@ export function createTakeoutServer({
 	const sendSocket = (socket: WebSocket, message: object) => {
 		if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
 	};
-	const subscribeSocket = (client: WebSocket, session: SocketSession, eventId: string, lastSeq: number) => {
+	const subscribeSocket = async (client: WebSocket, session: SocketSession, eventId: string, lastSeq: number) => {
+		const replayCutoff = Number((db.prepare("SELECT COALESCE(MAX(seq),0) seq FROM event_log WHERE event_id=?").get(eventId) as { seq: number }).seq);
+		let cursor = lastSeq;
+		while (cursor < replayCutoff && client.readyState === WebSocket.OPEN) {
+			const replay = db.prepare("SELECT seq,type,event_id,payload_json,created_at FROM event_log WHERE event_id=? AND seq>? AND seq<=? ORDER BY seq LIMIT 250").all(eventId, cursor, replayCutoff) as Array<{ seq: number; type: string; event_id: string; payload_json: string | null; created_at: number }>;
+			if (replay.length === 0) break;
+			for (const item of replay) sendSocket(client, { ...safeJson(item.payload_json), type: item.type, event_id: item.event_id, seq: item.seq, created_at: item.created_at });
+			cursor = replay.at(-1)?.seq ?? cursor;
+			if (client.bufferedAmount > 512 * 1024) await new Promise((resolve) => setTimeout(resolve, 10));
+			else await new Promise((resolve) => setImmediate(resolve));
+		}
 		const eventClients = clients.get(eventId) ?? new Set<WebSocket>();
 		eventClients.add(client); clients.set(eventId, eventClients); session.subscriptions.add(eventId);
-		const replay = db.prepare("SELECT seq,type,event_id,payload_json,created_at FROM event_log WHERE event_id=? AND seq>? ORDER BY seq").all(eventId, lastSeq) as Array<{ seq: number; type: string; event_id: string; payload_json: string | null; created_at: number }>;
-		for (const item of replay) sendSocket(client, { ...safeJson(item.payload_json), type: item.type, event_id: item.event_id, seq: item.seq, created_at: item.created_at });
+		const tail = db.prepare("SELECT seq,type,event_id,payload_json,created_at FROM event_log WHERE event_id=? AND seq>? ORDER BY seq").all(eventId, replayCutoff) as Array<{ seq: number; type: string; event_id: string; payload_json: string | null; created_at: number }>;
+		for (const item of tail) sendSocket(client, { ...safeJson(item.payload_json), type: item.type, event_id: item.event_id, seq: item.seq, created_at: item.created_at });
 		const latest = Number((db.prepare("SELECT COALESCE(MAX(seq),0) seq FROM event_log WHERE event_id=?").get(eventId) as { seq: number }).seq);
 		for (const lock of activeLocksForEvent(db, eventId)) sendSocket(client, { type: "lock_snapshot", event_id: eventId, participant_id: lock.participant_id, device_id: lock.device_id, expires_at: lock.expires_at, seq: latest });
 		sendSocket(client, { type: "sync.completed", eventId, latestSeq: latest });
 	};
 	const executeSocketCommand = (client: WebSocket, session: SocketSession, command: SyncCommand) => {
 		if (command.action !== "confirm_checkin") return sendSocket(client, { type: "command.rejected", operationId: command.operationId, reason: "UNSUPPORTED_COMMAND" });
-		const existing = db.prepare("SELECT status FROM takeout_events WHERE request_id=?").get(command.operationId) as { status: string } | undefined;
-		if (existing) return sendSocket(client, { type: "command.ack", operationId: command.operationId, status: existing.status, duplicate: true });
-		const ticketId = command.payload.ticketId;
-		const checked = db.prepare("SELECT request_id FROM check_ins WHERE ticket_id=?").get(ticketId) as { request_id: string } | undefined;
-		if (checked) return sendSocket(client, { type: "command.rejected", operationId: command.operationId, entityId: ticketId, reason: "CHECKIN_ALREADY_CONFIRMED", existingOperationId: checked.request_id });
-		const ticket = db.prepare("SELECT p.event_id, p.id participant_id, p.name participant_name, p.birth_date, t.code ticket_code FROM tickets t LEFT JOIN participants p ON p.id=t.participant_id WHERE t.id=?").get(ticketId) as { event_id: string | null; participant_id: string | null; participant_name: string | null; birth_date: string | null; ticket_code: string | null } | undefined;
-		if (!ticket?.event_id) return sendSocket(client, { type: "command.rejected", operationId: command.operationId, entityId: ticketId, reason: "TICKET_NOT_FOUND" });
-		const timestamp = nowIso(); const outbound: { current: { eventId: string; message: object } | null } = { current: null };
-		db.transaction(() => {
-			db.prepare("INSERT INTO check_ins (ticket_id, request_id, device_id, created_at) VALUES (?, ?, ?, ?)").run(ticketId, command.operationId, session.identity.deviceId, timestamp);
-			db.prepare("INSERT INTO takeout_events (request_id,ticket_id,device_id,status,payload_json,created_at,source_type,event_id,participant_id,participant_name,birth_date,age_at_checkin,ticket_code,operator_alias,operator_device_id,checked_in_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(command.operationId, ticketId, session.identity.deviceId, "CONFIRMED", command.payload.payloadJson ?? null, timestamp, "json_sync", ticket.event_id, ticket.participant_id, ticket.participant_name, ticket.birth_date, computeAge(ticket.birth_date), ticket.ticket_code, session.identity.operatorAlias, session.identity.deviceId, timestamp);
-			outbound.current = appendEvent(db, ticket.event_id as string, "participant_checked_in", { ticket_id: ticketId, participant_id: ticket.participant_id, device_id: session.identity.deviceId, request_id: command.operationId, source_type: "json_sync" });
-		})();
-		if (outbound.current) broadcast(clients, outbound.current.eventId, outbound.current.message);
-		sendSocket(client, { type: "command.ack", operationId: command.operationId, status: "CONFIRMED" });
+		const result = command.payload.sourceType === "legacy_csv"
+			? command.payload.participantId
+				? confirmLegacyCheckin(db, { operationId: command.operationId, eventId: command.eventId, participantId: command.payload.participantId, payloadJson: command.payload.payloadJson, identity: session.identity })
+				: { kind: "invalid", reason: "PARTICIPANT_NOT_FOUND" } as const
+			: command.payload.ticketId
+				? confirmJsonCheckin(db, { operationId: command.operationId, ticketId: command.payload.ticketId, payloadJson: command.payload.payloadJson, identity: session.identity })
+				: { kind: "invalid", reason: "TICKET_NOT_FOUND" } as const;
+		if (result.kind === "ack") {
+			if (result.outbound) broadcast(clients, result.outbound.eventId, result.outbound.message);
+			return sendSocket(client, { type: "command.ack", operationId: command.operationId, status: result.status, duplicate: result.duplicate });
+		}
+		return sendSocket(client, result.kind === "conflict"
+			? { type: "command.rejected", operationId: command.operationId, entityId: result.entityId, reason: "CHECKIN_ALREADY_CONFIRMED", existingOperationId: result.existingOperationId }
+			: { type: "command.rejected", operationId: command.operationId, reason: result.reason });
 	};
 	httpServer.on("upgrade", (request, socket, head) => {
 		const url = new URL(
@@ -1501,7 +1503,7 @@ export function createTakeoutServer({
 			socketSessions.set(client, session);
 			const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
 			const eventId = url.searchParams.get("event_id");
-			if (eventId) subscribeSocket(client, session, eventId, Number(url.searchParams.get("last_seq") ?? 0));
+			if (eventId) void subscribeSocket(client, session, eventId, Number(url.searchParams.get("last_seq") ?? 0));
 		}
 		const heartbeat = setInterval(() => {
 			sendSocket(client, { type: "connection.heartbeat", sentAt: Date.now() });
@@ -1515,10 +1517,10 @@ export function createTakeoutServer({
 				const row = db.prepare("SELECT device_id,operator_alias FROM paired_devices WHERE access_token=? AND device_id=?").get(message.token, message.deviceId) as { device_id: string; operator_alias: string | null } | undefined;
 				if (!row) return client.close(1008, "invalid device credentials");
 				clearTimeout(authenticationTimeout); socketSessions.set(client, { identity: { deviceId: row.device_id, operatorAlias: row.operator_alias }, subscriptions: new Set() });
-				return sendSocket(client, { type: "connection.ready", protocolVersion: 1, deviceId: row.device_id });
+				return sendSocket(client, { type: "connection.ready", protocolVersion: 1, deviceId: row.device_id, serverInstanceId });
 			}
 			const session = socketSessions.get(client); if (!session) return client.close(1008, "authenticate first");
-			if (message.type === "sync.subscribe") return subscribeSocket(client, session, message.eventId, message.lastSeq);
+			if (message.type === "sync.subscribe") { void subscribeSocket(client, session, message.eventId, message.lastSeq); return; }
 			if (message.type === "command.execute") return executeSocketCommand(client, session, message);
 		});
 		client.on("close", () => {
@@ -1560,12 +1562,21 @@ function legacyCheckin(
 			400,
 			"request_id, event_id and participant_id are required",
 		);
-	if (
-		db
-			.prepare("SELECT 1 FROM legacy_checkins WHERE request_id=?")
-			.get(requestId)
-	)
-		return json(res, 200, { status: "DUPLICATE" });
+	if (!undo) {
+		const identity = getIdentity(db, req, String(payload.device_id ?? "desktop"));
+		const result = confirmLegacyCheckin(db, { operationId: requestId, eventId, participantId, payloadJson: payload.payload_json, identity });
+		if (result.kind === "invalid") return error(res, result.reason === "PARTICIPANT_NOT_FOUND" ? 404 : 409, result.reason, result.reason);
+		if (result.kind === "conflict") return json(res, 409, { status: "CONFLICT", existing_request_id: result.existingOperationId, participant_id: result.entityId });
+		if (result.outbound) broadcast(clients, result.outbound.eventId, result.outbound.message);
+		return json(res, 200, { status: result.status });
+	}
+	const priorRequest = db
+		.prepare("SELECT event_id,participant_id FROM legacy_checkins WHERE request_id=?")
+		.get(requestId) as { event_id: string; participant_id: string } | undefined;
+	if (priorRequest)
+		return priorRequest.event_id === eventId && priorRequest.participant_id === participantId
+			? json(res, 200, { status: "DUPLICATE" })
+			: error(res, 409, "request_id already belongs to another participant", "IDEMPOTENCY_PAYLOAD_MISMATCH");
 	const identity = getIdentity(db, req, String(payload.device_id ?? "desktop"));
 	const existing = db
 		.prepare(
@@ -1590,6 +1601,7 @@ function legacyCheckin(
 	if (!participant) return error(res, 404, "participant not found");
 	const timestamp = nowIso();
 	const status = undo ? "REVERSED" : "CONFIRMED";
+	const outbound: { current: { eventId: string; message: object } | null } = { current: null };
 	db.transaction(() => {
 		if (undo)
 			db.prepare(
@@ -1613,9 +1625,8 @@ function legacyCheckin(
 			identity.deviceId,
 			timestamp,
 		);
-	emitEvent(
+	outbound.current = appendEvent(
 		db,
-		clients,
 		eventId,
 			undo ? "participant_checkin_reverted" : "participant_checked_in",
 			{
@@ -1626,6 +1637,7 @@ function legacyCheckin(
 			},
 		);
 	})();
+	if (outbound.current) broadcast(clients, outbound.current.eventId, outbound.current.message);
 	return json(res, 200, { status });
 }
 
